@@ -1,0 +1,39 @@
+From adc66ac6796969005731d304ba1d76f0b0740842 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Fri, 9 Dec 2022 17:49:45 +0800
+Subject: [PATCH] Support MCT board related configrtion
+
+---
+ arch/arm/mach-aspeed/ast2600/Makefile | 2 +-
+ arch/arm/mach-aspeed/cpuinfo.c        | 2 ++
+ 2 files changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm/mach-aspeed/ast2600/Makefile b/arch/arm/mach-aspeed/ast2600/Makefile
+index d48aabc17e..f0ca7008a1 100644
+--- a/arch/arm/mach-aspeed/ast2600/Makefile
++++ b/arch/arm/mach-aspeed/ast2600/Makefile
+@@ -1,3 +1,3 @@
+-obj-y   += platform.o board_common.o scu_info.o utils.o cache.o
++obj-y   += platform.o board_common.o scu_info.o utils.o cache.o mct_board_info.o
+ obj-$(CONFIG_SPL_BUILD) += spl.o
+ obj-$(CONFIG_ASPEED_LOADERS) += spl_boot.o crypto.o aspeed_verify.o
+diff --git a/arch/arm/mach-aspeed/cpuinfo.c b/arch/arm/mach-aspeed/cpuinfo.c
+index 3deadc59e6..46881c7835 100644
+--- a/arch/arm/mach-aspeed/cpuinfo.c
++++ b/arch/arm/mach-aspeed/cpuinfo.c
+@@ -8,10 +8,12 @@
+ #include <command.h>
+ #include <asm/io.h>
+ #include <asm/arch/aspeed_scu_info.h>
++#include <asm/arch/mct_board_info.h>
+ #include <asm/arch/platform.h>
+ 
+ int print_cpuinfo(void)
+ {
++	mct_print_board_info();
+ 	aspeed_print_soc_id();
+ 	aspeed_print_sysrst_info();
+ 	aspeed_print_security_info();
+-- 
+2.25.1
+

@@ -1,0 +1,440 @@
+From bb775abe6bd5e623a439864a1e18e8d06fbad558 Mon Sep 17 00:00:00 2001
+From: Eric Chen <Eric_LC_Chen@wiwynn.com>
+Date: Wed, 29 Sep 2021 09:56:22 +0800
+Subject: [PATCH] [sv310a] Set/Get BIOS version by IPMI set/get system info
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Description:
+- To set system info command:
+ - BIOS version can only be set by BIOS.
+ - Once EEPROM hasn't recorded BIOS version yet or BIOS version changed,
+   record the request BIOS version to EEPROM and set dbus property to BMC updater.
+- To get system info command:
+ - Get BIOS version no matter BIOS set the value after service started or not.
+
+Designed:
+- Revise set system info handler
+ - Block out-of-band set BIOS version request.
+ - If request data is different from EEPROM record, overwrite request to EEPROM from addr 0x1970.
+  - Byte 0: Encoding type
+  - Byte 1: Version string length
+  - Byte 2-n: Version data and its zero checksum (N < 17)
+ - Error handling
+  - Out-of-band set BIOS version request: Command not available.
+  - Set selector is not 0: Not Supported.
+  - Read/write EEPROM fail: Unspecified error with corresponding exception message.
+  - Set BIOS version property on dbus: Unspecified error with corresponding exception message.
+- Revise get system info handler
+ - Get BIOS version by reading the last record on EEPROM.
+ - Error handling
+  - Set selector is not 0: Not Supported.
+  - Invalid version length recorded on EEPROM: Response error.
+  - Zero checksum calculated from version data is different from which recorded on EEPROM: Response error.
+  - Read EEPROM fail: Unspecified error with corresponding exception message.
+ - Response
+  - Byte 0: 0x11 for parameter revision
+  - Byte 1: Encoding type
+  - Byte 2: Version string length
+  - Byte 3-n: version data
+
+Test Case:
+1. Set BIOS version from out-of-band set system info command.
+2. Update BIOS, check EEPROM was overwritten and dbus property was set.
+3. Reboot HOST then check dbus property was not set.
+4. Get BIOS version by IPMI get system info command.
+5. Restart ipmid then get BIOS version by IPMI get system info command again.
+
+Test Result:
+1. Set BIOS version from out-of-band set system info command:
+eric@gen8:~/training/F5A/f5aww$ ipmitool -H 10.248.41.36 -U root -P root -I lanplus raw 0x6 0x58 0x1 0x0 0x0 0x8 0x46 0x35 0x41 0x57 0x57 0x4d 0x30 0x31
+Unable to send RAW command (channel=0x0 netfn=0x6 lun=0x0 cmd=0x58 rsp=0xd5): Command not supported in present state
+2. Update BIOS, check EEPROM was overwritten and dbus property was set:
+root@sv310a:~# hexdump -C /sys/class/i2c-dev/i2c-3/device/3-0050/eeprom
+...
+00001970  00 08 46 36 41 57 57 4d  30 32 de ff ff ff ff ff  |..F6AWWM02......|
+00001980  ff ff ff ff ff ff ff ff  ff ff ff ff ff ff ff ff  |................|
+*
+00002000
+root@sv310a:~# busctl introspect xyz.openbmc_project.Software.BMC.Updater /xyz/openbmc_project/software/BIOS
+NAME                                         TYPE      SIGNATURE RESULT/VALUE                             FLAGS
+org.freedesktop.DBus.Introspectable          interface -         -                                        -
+.Introspect                                  method    -         s                                        -
+org.freedesktop.DBus.Peer                    interface -         -                                        -
+.GetMachineId                                method    -         s                                        -
+.Ping                                        method    -         -                                        -
+org.freedesktop.DBus.Properties              interface -         -                                        -
+.Get                                         method    ss        v                                        -
+.GetAll                                      method    s         a{sv}                                    -
+.Set                                         method    ssv       -                                        -
+.PropertiesChanged                           signal    sa{sv}as  -                                        -
+xyz.openbmc_project.Association.Definitions  interface -         -                                        -
+.Associations                                property  a(sss)    1 "inventory" "activation" ""            emits-change writable
+xyz.openbmc_project.Common.FilePath          interface -         -                                        -
+.Path                                        property  s         ""                                       emits-change writable
+xyz.openbmc_project.Object.Delete            interface -         -                                        -
+.Delete                                      method    -         -                                        -
+xyz.openbmc_project.Software.Activation      interface -         -                                        -
+.Activation                                  property  s         "xyz.openbmc_project.Software.Activatio… emits-change writable
+.RequestedActivation                         property  s         "xyz.openbmc_project.Software.Activatio… emits-change writable
+xyz.openbmc_project.Software.ExtendedVersion interface -         -                                        -
+.ExtendedVersion                             property  s         ""                                       emits-change writable
+xyz.openbmc_project.Software.Version         interface -         -                                        -
+.Purpose                                     property  s         "xyz.openbmc_project.Software.Version.V… emits-change writable
+.Version                                     property  s         "NULL"                                   emits-change writable
+eric@gen8:~/f6a-formal-image$ python obmc_firmware_update_tool.py -f F6AWWD01.tar -b 10.248.41.36 -m REST -s yes
+https://root:root@10.248.41.36
+['curl', '-g', '-k', 'https://root:root@10.248.41.36/xyz/openbmc_project/']
+BMC is alive
+Setting ssh ...
+['ipmitool', '-H', '10.248.41.36', '-U', 'root', '-P', 'root', '-I', 'lanplus', 'raw', '0x3e', '0xba', '0x01']
+0x01
+Skip to check FRU
+Start to check update method...
+Update ...
+Upload via REST...
+Uploading 'F6AWWD01.tar' to 'https://root:root@10.248.41.36/upload/image' ...
+['curl', '-g', '-k', '-H', 'Content-Type: application/octet-stream', '-X', 'POST', '-T', 'F6AWWD01.tar', 'https://root:root@10.248.41.36/upload/image']
+Ready to update device : BIOS
+Please check ipmi SEL and make sure the update is successful.
+Please waitting for host power on.
+Setting ssh ...
+['ipmitool', '-H', '10.248.41.36', '-U', 'root', '-P', 'root', '-I', 'lanplus', 'raw', '0x3e', '0xba', '0x00']
+0x00
+root@sv310a:~# hexdump -C /sys/class/i2c-dev/i2c-3/device/3-0050/eeprom
+...
+00001970  00 08 46 36 41 57 57 44  30 31 e8 ff ff ff ff ff  |..F6AWWD01......|
+00001980  ff ff ff ff ff ff ff ff  ff ff ff ff ff ff ff ff  |................|
+*
+00002000
+root@sv310a:~# busctl introspect xyz.openbmc_project.Software.BMC.Updater /xyz/openbmc_project/software/BIOS
+NAME                                         TYPE      SIGNATURE RESULT/VALUE                             FLAGS
+org.freedesktop.DBus.Introspectable          interface -         -                                        -
+.Introspect                                  method    -         s                                        -
+org.freedesktop.DBus.Peer                    interface -         -                                        -
+.GetMachineId                                method    -         s                                        -
+.Ping                                        method    -         -                                        -
+org.freedesktop.DBus.Properties              interface -         -                                        -
+.Get                                         method    ss        v                                        -
+.GetAll                                      method    s         a{sv}                                    -
+.Set                                         method    ssv       -                                        -
+.PropertiesChanged                           signal    sa{sv}as  -                                        -
+xyz.openbmc_project.Association.Definitions  interface -         -                                        -
+.Associations                                property  a(sss)    1 "inventory" "activation" ""            emits-change writable
+xyz.openbmc_project.Common.FilePath          interface -         -                                        -
+.Path                                        property  s         ""                                       emits-change writable
+xyz.openbmc_project.Object.Delete            interface -         -                                        -
+.Delete                                      method    -         -                                        -
+xyz.openbmc_project.Software.Activation      interface -         -                                        -
+.Activation                                  property  s         "xyz.openbmc_project.Software.Activatio… emits-change writable
+.RequestedActivation                         property  s         "xyz.openbmc_project.Software.Activatio… emits-change writable
+xyz.openbmc_project.Software.ExtendedVersion interface -         -                                        -
+.ExtendedVersion                             property  s         ""                                       emits-change writable
+xyz.openbmc_project.Software.Version         interface -         -                                        -
+.Purpose                                     property  s         "xyz.openbmc_project.Software.Version.V… emits-change writable
+.Version                                     property  s         "F6AWWD01"                               emits-change writable
+3. Reboot BMC then reboot HOST then check dbus property was not set:
+root@sv310a:~# reboot
+root@sv310a:~# ipmitool chassis power status
+Chassis Power is on
+root@sv310a:~# ipmitool chassis power cycle
+Chassis Power Control: Cycle
+root@sv310a:~# ipmitool sel clear
+Clearing SEL.  Please allow a few seconds to erase.
+root@sv310a:~# ipmitool sel elist
+   1 | 10/04/21 | 09:54:41 UTC | Event Logging Disabled Event Logging | Log area reset/cleared | Asserted
+root@sv310a:~# ipmitool sel elist
+   1 | 10/04/21 | 09:54:41 UTC | Event Logging Disabled Event Logging | Log area reset/cleared | Asserted
+   2 | 10/04/21 | 09:55:59 UTC | System Event End of POST | OEM System boot event | Asserted
+root@sv310a:~# busctl introspect xyz.openbmc_project.Software.BMC.Updater /xyz/openbmc_project/software/BIOS
+NAME                                         TYPE      SIGNATURE RESULT/VALUE                             FLAGS
+org.freedesktop.DBus.Introspectable          interface -         -                                        -
+.Introspect                                  method    -         s                                        -
+org.freedesktop.DBus.Peer                    interface -         -                                        -
+.GetMachineId                                method    -         s                                        -
+.Ping                                        method    -         -                                        -
+org.freedesktop.DBus.Properties              interface -         -                                        -
+.Get                                         method    ss        v                                        -
+.GetAll                                      method    s         a{sv}                                    -
+.Set                                         method    ssv       -                                        -
+.PropertiesChanged                           signal    sa{sv}as  -                                        -
+xyz.openbmc_project.Association.Definitions  interface -         -                                        -
+.Associations                                property  a(sss)    1 "inventory" "activation" ""            emits-change writable
+xyz.openbmc_project.Common.FilePath          interface -         -                                        -
+.Path                                        property  s         ""                                       emits-change writable
+xyz.openbmc_project.Object.Delete            interface -         -                                        -
+.Delete                                      method    -         -                                        -
+xyz.openbmc_project.Software.Activation      interface -         -                                        -
+.Activation                                  property  s         "xyz.openbmc_project.Software.Activatio… emits-change writable
+.RequestedActivation                         property  s         "xyz.openbmc_project.Software.Activatio… emits-change writable
+xyz.openbmc_project.Software.ExtendedVersion interface -         -                                        -
+.ExtendedVersion                             property  s         ""                                       emits-change writable
+xyz.openbmc_project.Software.Version         interface -         -                                        -
+.Purpose                                     property  s         "xyz.openbmc_project.Software.Version.V… emits-change writable
+.Version                                     property  s         "NULL"                                   emits-change writable
+4. Get BIOS version by IPMI get system info command:
+root@sv310a:~# ipmitool raw 0x6 0x59 0x0 0x1 0x0 0x0
+ 11 00 00 08 46 36 41 57 57 44 30 31 00 00 00 00
+ 00 00
+5. Restart ipmid then get BIOS version by IPMI get system info command again:
+root@sv310a:~# systemctl restart phosphor-ipmi-host
+root@sv310a:~# ipmitool raw 0x6 0x59 0x0 0x1 0x0 0x0
+ 11 00 00 08 46 36 41 57 57 44 30 31 00 00 00 00
+ 00 00
+
+Related Items:
+IPMI - Set system info
+IPMI - Get system info
+---
+ Makefile.am    |   1 +
+ apphandler.cpp | 159 ++++++++++++++++++++++++++++++++++++++++++++++++-
+ 2 files changed, 157 insertions(+), 3 deletions(-)
+
+diff --git a/Makefile.am b/Makefile.am
+index b718318..ce3c1dd 100644
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -128,6 +128,7 @@ libipmi20_la_LIBADD = \
+ 	libipmid/libipmid.la \
+ 	user_channel/libchannellayer.la
+ libipmi20_la_LDFLAGS = \
++	-lobmcsysfs \
+ 	$(SYSTEMD_LIBS) \
+ 	$(libmapper_LIBS) \
+ 	$(PHOSPHOR_LOGGING_LIBS) \
+diff --git a/apphandler.cpp b/apphandler.cpp
+index 90818a9..1e519d5 100644
+--- a/apphandler.cpp
++++ b/apphandler.cpp
+@@ -26,12 +26,14 @@
+ #include <ipmid/utils.hpp>
+ #include <memory>
+ #include <nlohmann/json.hpp>
++#include <openbmc/libsysfs.hpp>
+ #include <phosphor-logging/elog-errors.hpp>
+ #include <phosphor-logging/log.hpp>
+ #include <sdbusplus/message/types.hpp>
+ #include <string>
+ #include <sys_info_param.hpp>
+ #include <tuple>
++#include <user_channel/channel_mgmt.hpp>
+ #include <vector>
+ #include <xyz/openbmc_project/Common/error.hpp>
+ #include <xyz/openbmc_project/Control/Power/ACPIPowerState/server.hpp>
+@@ -51,6 +53,10 @@ static constexpr auto activationIntf =
+     "xyz.openbmc_project.Software.Activation";
+ static constexpr auto softwareRoot = "/xyz/openbmc_project/software";
+ 
++static constexpr auto biosUpdateService =
++    "xyz.openbmc_project.Software.BMC.Updater";
++static constexpr auto biosUpdatePath = "/xyz/openbmc_project/software/BIOS";
++
+ void register_netfn_app_functions() __attribute__((constructor));
+ 
+ using namespace phosphor::logging;
+@@ -93,6 +99,9 @@ static constexpr uint8_t oemCmdStart = 192;
+ static constexpr uint8_t oemCmdEnd = 255;
+ static constexpr uint8_t invalidParamSelectorStart = 8;
+ static constexpr uint8_t invalidParamSelectorEnd = 191;
++static constexpr uint8_t outOfBandChannel = 1;
++static constexpr uint8_t biosVersionMaxLengthOnEEPROM = 17;
++static constexpr uint16_t biosVersionStartOffset = 0x1970;
+ 
+ /**
+  * @brief Returns the Version info from primary s/w object
+@@ -1303,7 +1312,7 @@ ipmi::RspType<uint8_t,                // Parameter revision
+         return ipmi::responseSuccess(paramRevision, std::nullopt, std::nullopt);
+     }
+ 
+-    if (paramSelector == 0)
++    if (paramSelector == ipmi_app_sysinfo_params::IPMI_SYSINFO_SET_STATE)
+     {
+         return ipmi::responseSuccess(paramRevision, transferStatus,
+                                      std::nullopt);
+@@ -1314,6 +1323,65 @@ ipmi::RspType<uint8_t,                // Parameter revision
+         return ipmi::responseParmNotSupported();
+     }
+ 
++    if (paramSelector ==
++        ipmi_app_sysinfo_params::IPMI_SYSINFO_SYSTEM_FW_VERSION)
++    {
++        if (setSelector != 0)
++        {
++            // BIOS version only support set in selector 0.
++            return ipmi::responseParmNotSupported();
++        }
++
++        std::vector<uint8_t> eepromVersionWithChecksum;
++        // Read BIOS version datas from eeprom.
++        try
++        {
++            eepromVersionWithChecksum = readEeprom(
++                0, biosVersionStartOffset, biosVersionMaxLengthOnEEPROM);
++        }
++        catch (std::exception& e)
++        {
++            std::cerr << e.what() << "\n";
++            return ipmi::responseUnspecifiedError();
++        }
++
++        size_t versionLength = eepromVersionWithChecksum.at(1);
++        if (versionLength > smallChunkSize)
++        {
++            return ipmi::responseResponseError();
++        }
++        uint8_t checksumValue = eepromVersionWithChecksum.at(versionLength + 2);
++
++        // Re-calculate checksum for bios version datas.
++        eepromVersionWithChecksum.resize(versionLength + configDataOverhead);
++        uint8_t biosVersionChecksum =
++            -(std::accumulate(eepromVersionWithChecksum.begin(),
++                              eepromVersionWithChecksum.end(), 0));
++
++        // Compare checksum with which on eeprom.
++        if (biosVersionChecksum == checksumValue)
++        {
++            /* bytes in selector 0
++            byte 0: Encoding value
++            byte 1: Length of BIOS version datas
++            byte 2-n: BIOS version datas (n <= 14)
++            Append zero's to remaining bytes.*/
++            if (eepromVersionWithChecksum.size() < configParameterLength)
++            {
++                std::fill_n(std::back_inserter(eepromVersionWithChecksum),
++                            configParameterLength -
++                                eepromVersionWithChecksum.size(),
++                            0x00);
++            }
++            return ipmi::responseSuccess(paramRevision, setSelector,
++                                         eepromVersionWithChecksum);
++        }
++        else
++        {
++            return ipmi::responseResponseError();
++        }
++    }
++
+     if (sysInfoParamStore == nullptr)
+     {
+         sysInfoParamStore = std::make_unique<SysInfoParamStore>();
+@@ -1363,7 +1431,8 @@ ipmi::RspType<uint8_t,                // Parameter revision
+     return ipmi::responseSuccess(paramRevision, setSelector, configData);
+ }
+ 
+-ipmi::RspType<> ipmiAppSetSystemInfo(uint8_t paramSelector, uint8_t data1,
++ipmi::RspType<> ipmiAppSetSystemInfo(ipmi::Context::ptr ctx,
++                                     uint8_t paramSelector, uint8_t data1,
+                                      std::vector<uint8_t> configData)
+ {
+     if (paramSelector >= invalidParamSelectorStart &&
+@@ -1376,7 +1445,7 @@ ipmi::RspType<> ipmiAppSetSystemInfo(uint8_t paramSelector, uint8_t data1,
+         return ipmi::responseParmNotSupported();
+     }
+ 
+-    if (paramSelector == 0)
++    if (paramSelector == ipmi_app_sysinfo_params::IPMI_SYSINFO_SET_STATE)
+     {
+         // attempt to set the 'set in progress' value (in parameter #0)
+         // when not in the set complete state.
+@@ -1400,6 +1469,14 @@ ipmi::RspType<> ipmiAppSetSystemInfo(uint8_t paramSelector, uint8_t data1,
+     {
+         return ipmi::responseInvalidFieldRequest();
+     }
++    if (paramSelector ==
++        ipmi_app_sysinfo_params::IPMI_SYSINFO_SYSTEM_FW_VERSION)
++    {
++        if (configData.size() < configDataOverhead)
++        {
++            return ipmi::responseReqDataLenInvalid();
++        }
++    }
+ 
+     // Append zero's to remaining bytes
+     if (configData.size() < configParameterLength)
+@@ -1408,6 +1485,82 @@ ipmi::RspType<> ipmiAppSetSystemInfo(uint8_t paramSelector, uint8_t data1,
+                (configParameterLength - configData.size()), 0x00);
+     }
+ 
++    if (paramSelector ==
++        ipmi_app_sysinfo_params::IPMI_SYSINFO_SYSTEM_FW_VERSION)
++    {
++        // Only let BIOS se system firmware version.
++        if (ctx->channel == outOfBandChannel)
++        {
++            return ipmi::responseCommandNotAvailable();
++        }
++
++        if (data1 != 0)
++        {
++            return ipmi::responseParmNotSupported();
++        }
++
++        // Get version length.
++        size_t versionLength = configData.at(1);
++
++        // Get version to calculate checksum.
++        std::vector<uint8_t> setVersionWithChecksum;
++        setVersionWithChecksum.assign(configData.begin(),
++                                      configData.begin() +
++                                          (versionLength + configDataOverhead));
++        uint8_t biosVersionChecksum = std::accumulate(
++            setVersionWithChecksum.begin(), setVersionWithChecksum.end(), 0);
++        setVersionWithChecksum.emplace_back(-biosVersionChecksum);
++
++        // Read "version + checksum" from eeprom to compare with request data.
++        std::vector<uint8_t> eepromVersionWithChecksum;
++        try
++        {
++            eepromVersionWithChecksum =
++                readEeprom(0, biosVersionStartOffset,
++                           versionLength + configDataOverhead + 1);
++        }
++        catch (std::exception& e)
++        {
++            std::cerr << e.what() << "\n";
++            return ipmi::responseUnspecifiedError();
++        }
++
++        if (setVersionWithChecksum != eepromVersionWithChecksum)
++        {
++            try
++            {
++                // Version changed, write new version data into eeprom.
++                writeEeprom(0, biosVersionStartOffset,
++                            setVersionWithChecksum.data(),
++                            setVersionWithChecksum.size());
++            }
++            catch (std::exception& e)
++            {
++                std::cerr << e.what() << "\n";
++                return ipmi::responseUnspecifiedError();
++            }
++
++            try
++            {
++                // Version changed, set property to inform BMC updater.
++                std::vector<char> charVersion;
++                charVersion.assign(configData.begin() + 2,
++                                   configData.begin() + (versionLength + 2));
++                std::string stringVersion(charVersion.begin(),
++                                          charVersion.end());
++
++                sdbusplus::bus::bus bus{ipmid_get_sd_bus_connection()};
++                ipmi::setDbusProperty(bus, biosUpdateService, biosUpdatePath,
++                                      versionIntf, "Version", stringVersion);
++            }
++            catch (std::exception& e)
++            {
++                std::cerr << e.what() << "\n";
++                return ipmi::responseUnspecifiedError();
++            }
++        }
++    }
++
+     if (!sysInfoParamStore)
+     {
+         sysInfoParamStore = std::make_unique<SysInfoParamStore>();
+-- 
+2.32.0
+

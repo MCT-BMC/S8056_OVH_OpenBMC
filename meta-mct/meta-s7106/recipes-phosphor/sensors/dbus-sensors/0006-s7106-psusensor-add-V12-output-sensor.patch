@@ -1,0 +1,21 @@
+From bb3f3f07f7d02e0df639fb935569995cff1ce077 Mon Sep 17 00:00:00 2001
+From: Ray Lue <ray.lue@mic.com.tw>
+Date: Thu, 18 Jul 2019 13:47:57 +0800
+Subject: [PATCH] [s7106]psusensor: add V12 output sensor
+
+---
+ src/PSUSensorMain.cpp | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/PSUSensorMain.cpp b/src/PSUSensorMain.cpp
+index 14917d1..5be0393 100755
+--- a/src/PSUSensorMain.cpp
++++ b/src/PSUSensorMain.cpp
+@@ -412,6 +412,7 @@ void propertyInitialize(void)
+     labelMatch = {{"pin", PSUProperty("Input Power", 3000, 0, 6)},
+                   {"pout1", PSUProperty("Output Power", 3000, 0, 6)},
+                   {"vin", PSUProperty("Input Voltage", 300, 0, 3)},
++                  {"vout1", PSUProperty("Out V12", 15, 0, 3)},
+                   {"iin", PSUProperty("Input Current", 20, 0, 3)},
+                   {"iout1", PSUProperty("Output Current", 255, 0, 3)},
+                   {"temp1", PSUProperty("Temperature", 127, -128, 3)},

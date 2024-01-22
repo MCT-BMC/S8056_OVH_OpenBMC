@@ -1,0 +1,13 @@
+[Unit]
+Description=Register D-bus object for AMD CPU status control
+Wants=mapper-wait@-xyz-openbmc_project-sensors-power.service
+After=mapper-wait@-xyz-openbmc_project-sensors-power.service
+
+[Service]
+Restart=always
+RestartSec=5
+ExecStart=/usr/bin/amd-cpu-status-control
+SyslogIdentifier=amd-cpu-status-control
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,68 @@
+From 2e31fa438356fe0d1de3f2e51c7f133ff5c639b6 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Mon, 1 Jun 2020 22:26:36 +0800
+Subject: [PATCH] Modify the tap state and xfer structures to match with jtag
+ driver
+
+---
+ jtag_handler.c | 4 ++--
+ tests/jtag.h   | 7 +++----
+ 2 files changed, 5 insertions(+), 6 deletions(-)
+
+diff --git a/jtag_handler.c b/jtag_handler.c
+index 0d3bd46..7d176b0 100644
+--- a/jtag_handler.c
++++ b/jtag_handler.c
+@@ -239,7 +239,7 @@ STATUS JTAG_set_tap_state(JTAG_Handler* state, enum jtag_states tap_state)
+     params.to_state = tap_state;
+ #else
+     struct jtag_tap_state tap_state_t;
+-    tap_state_t.from = state->active_chain->tap_state;
++    // tap_state_t.from = state->active_chain->tap_state;
+     tap_state_t.endstate = tap_state;
+     tap_state_t.reset =
+         (tap_state == jtag_tlr) ? JTAG_FORCE_RESET : JTAG_NO_RESET;
+@@ -389,7 +389,7 @@ STATUS perform_shift(JTAG_Handler* state, unsigned int number_of_bits,
+     struct jtag_xfer xfer;
+     unsigned char tdio[MAX_DATA_SIZE];
+ 
+-    xfer.from = current_tap_state;
++    // xfer.from = current_tap_state;
+     xfer.endstate = end_tap_state;
+     xfer.type =
+         (current_tap_state == jtag_shf_ir) ? JTAG_SIR_XFER : JTAG_SDR_XFER;
+diff --git a/tests/jtag.h b/tests/jtag.h
+index 9316d5b..4b5c8b4 100644
+--- a/tests/jtag.h
++++ b/tests/jtag.h
+@@ -76,8 +76,7 @@ enum jtag_tapstate
+     JTAG_STATE_EXIT1IR,
+     JTAG_STATE_PAUSEIR,
+     JTAG_STATE_EXIT2IR,
+-    JTAG_STATE_UPDATEIR,
+-    JTAG_STATE_CURRENT
++    JTAG_STATE_UPDATEIR
+ };
+ 
+ /**
+@@ -132,7 +131,7 @@ enum jtag_xfer_direction
+ struct jtag_tap_state
+ {
+     __u8 reset;
+-    __u8 from;
++    // __u8 from;
+     __u8 endstate;
+     __u8 tck;
+ };
+@@ -152,7 +151,7 @@ struct jtag_xfer
+ {
+     __u8 type;
+     __u8 direction;
+-    __u8 from;
++    // __u8 from;
+     __u8 endstate;
+     __u8 padding;
+     __u32 length;
+-- 
+2.24.1
+

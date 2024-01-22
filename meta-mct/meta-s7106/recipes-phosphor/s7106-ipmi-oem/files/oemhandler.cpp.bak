@@ -1,0 +1,232 @@
+#include "oemhandler.hpp"
+#include <host-ipmid/ipmid-api.h>
+#include <fstream>
+#include <stdio.h>
+#include <string.h>
+#include <systemd/sd-bus.h>
+#include <endian.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <iostream>
+
+#include <linux/types.h>
+#include <sdbusplus/bus.hpp>
+#include <sdbusplus/bus/match.hpp>
+#include <sdbusplus/message.hpp>
+#include <sdbusplus/vtable.hpp>
+#include <sdbusplus/server/interface.hpp>
+
+
+#define SOL_PATTEN_OBJECTPATH_BASE "/xyz/openbmc_project/oem/solpattern"
+#define SOL_PATTERN_SERVICE "xyz.openbmc_project.Settings"
+#define SOL_PATTERN_INTERFACE "xyz.openbmc_project.OEM.SOLPattern"
+#define PROPERTY_INTERFACE "org.freedesktop.DBus.Properties"
+
+
+
+
+void register_netfn_twitter_oem() __attribute__((constructor));
+
+int execmd(char* cmd,char* result) {
+        char buffer[128];
+        FILE* pipe = popen(cmd, "r");
+        if (!pipe)
+                return -1;
+
+        while(!feof(pipe)) {
+                if(fgets(buffer, 128, pipe)){
+                        strcat(result,buffer);
+                }
+        }
+        pclose(pipe);
+        return 0;
+}
+
+#if 1
+static int setPropertyString(sdbusplus::bus::bus& bus, const std::string& path,
+                 const std::string& property, const std::string& value, const std::string service, const std::string interface)
+{
+    auto method = bus.new_method_call(service.c_str(), path.c_str(),
+                                      PROPERTY_INTERFACE, "Set");
+
+    method.append(interface.c_str(), property, sdbusplus::message::variant<std::string>(value));
+    bus.call_noreply(method);
+
+    return 0;
+}
+#endif
+static int getPatternString(sdbusplus::bus::bus& bus, const std::string& path,
+                 const std::string& property, std::string& value, const std::string service, const std::string interface)
+{
+    auto method = bus.new_method_call(service.c_str(), path.c_str(),
+                                      PROPERTY_INTERFACE, "Get");
+    method.append(interface.c_str(),property);
+    auto reply=bus.call(method);
+
+    if (reply.is_method_error())
+    {
+        // Its okay if we do not see a corresponding physical LED.
+        std::printf("Error looking up services, PATH=%s",interface.c_str());
+        return -1;
+    }
+
+    sdbusplus::message::variant<std::string> valuetmp;
+
+    try
+    {
+        reply.read(valuetmp);
+    }
+    catch (const sdbusplus::exception::SdBusError& e)
+    {
+        std::printf("Failed to get pattern string for match process");
+        return -1;
+    }
+
+    value= std::get<std::string>(valuetmp);
+    std::printf("value=%s\n",value.c_str());
+
+    return 0;
+}
+
+
+/*
+    NetFun: 0x30
+    Cmd : 0xB2
+    Request:
+            Byte 1: pattern num (1~4)
+            Byte 2-257: pattern data
+*/
+ipmi_ret_t ipmi_twitter_SetPatternBuffers(ipmi_netfn_t netfn, ipmi_cmd_t cmd,
+                              ipmi_request_t request, ipmi_response_t response,
+                              ipmi_data_len_t data_len, ipmi_context_t context)
+{
+    //int ret=0;
+    //char tmpcmd[400]={0};
+    //char patternString[256]={0}
+    ipmi_ret_t ipmi_rc = IPMI_CC_OK;
+    int ret=0;
+    char objpath[100]={0};
+    char flagcmd[100]={0};
+     
+    std::printf("data len %d",*data_len);
+    //uint8_t *test=static_cast<uint8_t*>(request);
+    
+    if((int)*data_len>=MAXBUFFERLEN+1)
+    {
+        return IPMI_CC_REQ_DATA_LEN_INVALID;
+    }
+
+  
+        //SetPatternBuffersReq* requestData= reinterpret_cast<SetPatternBuffersReq*>(request);
+     //SetPatternBuffersReq* requestData = (SetPatternBuffersReq*)request;   
+        //return IPMI_CC_UNSPECIFIED_ERROR;
+
+    
+
+#if 1
+     SetPatternBuffersReq* requestData = static_cast<SetPatternBuffersReq*>(request);
+
+    if(requestData->patternNum<1 || requestData->patternNum>4) 
+    {
+        return IPMI_CC_INVALID_RESERVATION_ID;    
+    }
+
+    std::printf("sizeof(request)=%d\n",sizeof(request));
+    if(sizeof(request)>=MAXBUFFERLEN+1)
+    {
+        free(requestData);
+        return IPMI_CC_REQ_DATA_LEN_INVALID;
+    }
+    int i=0;
+#if 1   
+    std::printf("size: %x\n",sizeof(requestData->patternString));
+    for(i=0;i<(int)sizeof(requestData->patternString);i++)
+    {
+       std::printf("0x%x ",requestData->patternString[i]);
+       //if(!requestData->patternString[i])
+       //   break;
+    }
+    printf("\n");
+#endif    
+    for(i=0;i< (int)(sizeof(requestData->patternString));i++)
+    {
+       //printf("%c",requestData->patternString[i]);
+       if(requestData->patternString[i]<0x20 || requestData->patternString[i]>0x7E)
+          break;
+    }
+    printf("i=%d\n",i);
+    
+    requestData->patternString[i]='\0';
+ 
+    auto bus = sdbusplus::bus::new_default();
+    memset(objpath,0,sizeof(objpath));
+    snprintf(objpath,sizeof(objpath),"%s%d",SOL_PATTEN_OBJECTPATH_BASE,requestData->patternNum);
+
+    //memset (patternString,0,sizeof(patternString));
+    //snprintf(patternString,sizeof(patternString),"%s",requestData->patternString);
+    std::string patternString = (char*)requestData->patternString;
+    std::printf("object:%s\n",objpath);
+    std::printf("pattern:%s\n",patternString.c_str());
+
+    //ret=setPropertyString(bus,objpath,"PatternString",requestData->patternString,SOL_PATTERN_SERVICE,SOL_PATTERN_INTERFACE);
+    ret=setPropertyString(bus,objpath,"PatternString",patternString,SOL_PATTERN_SERVICE,SOL_PATTERN_INTERFACE);
+    if(ret<0)
+    {
+        free(requestData);
+        return IPMI_CC_UNSPECIFIED_ERROR;
+    }
+    memset(flagcmd,0,sizeof(flagcmd));
+    snprintf(flagcmd,sizeof(flagcmd),"touch /var/tmp/solpattern_modflag%d",requestData->patternNum);
+
+    system(flagcmd);
+#endif   
+    *data_len =0;
+    free(requestData);
+
+    return ipmi_rc;
+}
+
+#if 1
+ipmi_ret_t ipmi_twitter_GetPatternBuffers(ipmi_netfn_t netfn, ipmi_cmd_t cmd,
+                              ipmi_request_t request, ipmi_response_t response,
+                              ipmi_data_len_t data_len, ipmi_context_t context)
+{
+
+    char objpath[100]={0};
+    char responseData[256]={0};
+    std::string patternString;
+    ipmi_ret_t ipmi_rc = IPMI_CC_OK;
+    GetPatternBuffersReq* requestData = static_cast<GetPatternBuffersReq*>(request);
+    //GetPatternBuffersRes* responseData = static_cast<GetPatternBuffersRes*>(response);
+
+    if(requestData->patternNum<1 || requestData->patternNum>4)
+    {
+        return IPMI_CC_INVALID_RESERVATION_ID;
+    }
+
+    memset(objpath,0,sizeof(objpath));
+    snprintf(objpath,sizeof(objpath),"%s%d",SOL_PATTEN_OBJECTPATH_BASE,requestData->patternNum);
+    auto bus = sdbusplus::bus::new_default();
+    //getPatternString(bus,objpath,"PatternString",patternString,SOL_PATTERN_SERVICE,SOL_PATTERN_INTERFACE);
+    getPatternString(bus,objpath,"PatternString",patternString,SOL_PATTERN_SERVICE,SOL_PATTERN_INTERFACE);
+    //GetPatternBuffersRes* responseData = (GetPatternBuffersRes*)response;   
+    strcpy(responseData,patternString.c_str());
+    std::printf("pattern:%s len:%d size:%d\n",patternString.c_str(),patternString.length(),patternString.size());    
+    //*data_len = patternString.size();
+    *data_len=sizeof(responseData);
+    return ipmi_rc;
+
+}
+#endif
+void register_netfn_twitter_oem()
+{
+
+    //    ipmi_register_callback(NETFUN_TWITTER_OEM, IPMI_CMD_SetPatternBuffers, NULL, ipmi_twitter_SetPatternBuffers,
+      //                     SYSTEM_INTERFACE);
+        ipmi_register_callback(NETFUN_TWITTER_OEM, IPMI_CMD_GetPatternBuffers, NULL, ipmi_twitter_GetPatternBuffers,
+                           SYSTEM_INTERFACE);
+}

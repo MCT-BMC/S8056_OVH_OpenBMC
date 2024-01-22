@@ -1,0 +1,54 @@
+From 948f5e5e5dbdef419604c860f44348c2c5c601f8 Mon Sep 17 00:00:00 2001
+From: "wendy.shi" <wendy.shi@mic.com.tw>
+Date: Mon, 28 Oct 2019 10:23:48 +0800
+Subject: [PATCH] s7106 add OCP NIC temperature sensor
+
+---
+ src/HwmonTempMain.cpp   | 11 +++++++----
+ src/HwmonTempSensor.cpp |  8 ++++++++
+ 2 files changed, 15 insertions(+), 4 deletions(-)
+ mode change 100644 => 100755 src/HwmonTempSensor.cpp
+
+diff --git a/src/HwmonTempMain.cpp b/src/HwmonTempMain.cpp
+index 98058b8..e9c399c 100755
+--- a/src/HwmonTempMain.cpp
++++ b/src/HwmonTempMain.cpp
+@@ -195,10 +195,13 @@ void createSensors(
+ 
+ 		std::vector<thresholds::Threshold> t = sensorThresholds; 
+ 		
+-        sensors[sensorName] = std::make_unique<HwmonTempSensor>(
+-            directory.string() + "/temp1_input", sensorType, objectServer,
+-            dbusConnection, io, sensorName, std::move(sensorThresholds),
+-            *interfacePath);
++        if (deviceName != "6-001f")
++        {
++            sensors[sensorName] = std::make_unique<HwmonTempSensor>(
++                    directory.string() + "/temp1_input", sensorType, objectServer,
++                    dbusConnection, io, sensorName, std::move(sensorThresholds),
++                    *interfacePath);
++        }
+         auto findSecondName = baseConfiguration->second.find("Name1");
+         if (findSecondName == baseConfiguration->second.end())
+         {
+diff --git a/src/HwmonTempSensor.cpp b/src/HwmonTempSensor.cpp
+old mode 100644
+new mode 100755
+index 16742ce..b23db7a
+--- a/src/HwmonTempSensor.cpp
++++ b/src/HwmonTempSensor.cpp
+@@ -105,6 +105,14 @@ void HwmonTempSensor::handleResponse(const boost::system::error_code& err)
+             nvalue /= sensorScaleFactor;
+             if (static_cast<double>(nvalue) != value)
+             {
++
++                /* check OCP_NIC_temp reading value */
++                if (name == "OCP_NIC_TEMP" && nvalue < 0)
++                {
++                    nvalue = value;
++                    system("/usr/bin/gpioset gpiochip0 132=0");
++                    system("/usr/bin/gpioset gpiochip0 133=0");
++                }
+                 updateValue(nvalue);
+             }
+             errCount = 0;

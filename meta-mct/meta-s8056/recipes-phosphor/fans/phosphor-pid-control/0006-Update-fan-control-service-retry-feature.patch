@@ -1,0 +1,61 @@
+From d481279e091b05f324682ff05377068b27e5bd37 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Mon, 13 Feb 2023 14:20:34 +0800
+Subject: [PATCH] Update fan control service retry feature
+
+---
+ dbus/dbuspassive.cpp | 9 ++++++++-
+ main.cpp             | 9 +++++----
+ 2 files changed, 13 insertions(+), 5 deletions(-)
+
+diff --git a/dbus/dbuspassive.cpp b/dbus/dbuspassive.cpp
+index eca1c95..086997a 100755
+--- a/dbus/dbuspassive.cpp
++++ b/dbus/dbuspassive.cpp
+@@ -71,7 +71,14 @@ std::unique_ptr<ReadInterface> DbusPassive::createDbusPassive(
+     }
+     catch (const std::exception& e)
+     {
+-        return nullptr;
++        settings.value = 0;
++        settings.scale = 0;
++        settings.min = 0;
++        settings.max = 0;
++        failed = true;
++        available = false;
++        functional = false;
++        // return nullptr;
+     }
+ 
+     /* if these values are zero, they're ignored. */
+diff --git a/main.cpp b/main.cpp
+index 2b4ec3a..328cd2b 100755
+--- a/main.cpp
++++ b/main.cpp
+@@ -182,7 +182,7 @@ void restartControlLoops()
+ void tryRestartControlLoops(bool first)
+ {
+     static int count = 0;
+-    static const auto delayTime = std::chrono::seconds(10);
++    static auto delayTime = std::chrono::seconds(10);
+     static boost::asio::steady_timer timer(io);
+     // try to start a control loop while the loop has been scheduled.
+     if (first && count != 0)
+@@ -202,10 +202,11 @@ void tryRestartControlLoops(bool first)
+         // for the last loop, don't elminate the failure of restartControlLoops.
+         if (count >= 5)
+         {
+-            restartControlLoops();
++            // restartControlLoops();
+             // reset count after succesful restartControlLoops()
+-            count = 0;
+-            return;
++            // count = 0;
++            // return;
++            delayTime = std::chrono::seconds(30);
+         }
+ 
+         // retry when restartControlLoops() has some failure.
+-- 
+2.25.1
+

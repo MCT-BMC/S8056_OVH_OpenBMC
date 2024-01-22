@@ -1,0 +1,12 @@
+[Unit]
+Description=Host Power On
+Requires=host-gpio.service
+After=host-gpio.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env poweron.sh
+SyslogIdentifier=poweron.sh
+
+[Install]
+WantedBy=obmc-host-start@0.target

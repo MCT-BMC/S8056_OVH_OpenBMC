@@ -1,0 +1,12 @@
+[Unit]
+Description=MiTAC node Manager
+Before=xyz.openbmc_project.EntityManager.service
+
+[Service]
+Restart=always
+ExecStart=/usr/bin/env mct-node-manager
+SyslogIdentifier=mct-node-manager
+TimeoutSec=infinity
+
+[Install]
+WantedBy={SYSTEMD_DEFAULT_TARGET}

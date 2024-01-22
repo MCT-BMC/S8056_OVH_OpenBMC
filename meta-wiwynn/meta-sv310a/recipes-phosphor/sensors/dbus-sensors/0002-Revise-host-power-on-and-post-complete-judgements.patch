@@ -1,0 +1,146 @@
+From 4bab543849bbb388decb42fb0cf7260a91caddcc Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Thu, 17 Jun 2021 10:12:27 +0800
+Subject: [PATCH] Revise host power on and post complete judgements
+
+---
+ include/Utils.hpp | 22 +++++++---------------
+ src/Utils.cpp     | 41 ++++++++++++++++++-----------------------
+ 2 files changed, 25 insertions(+), 38 deletions(-)
+
+diff --git a/include/Utils.hpp b/include/Utils.hpp
+index 01d941f..16d1e1b 100644
+--- a/include/Utils.hpp
++++ b/include/Utils.hpp
+@@ -94,22 +94,14 @@ constexpr const char* get = "Get";
+ constexpr const char* set = "Set";
+ } // namespace properties
+ 
+-namespace power
++namespace gpio
+ {
+-const static constexpr char* busname = "xyz.openbmc_project.State.Host";
+-const static constexpr char* interface = "xyz.openbmc_project.State.Host";
+-const static constexpr char* path = "/xyz/openbmc_project/state/host0";
+-const static constexpr char* property = "CurrentHostState";
+-} // namespace power
+-namespace post
+-{
+-const static constexpr char* busname =
+-    "xyz.openbmc_project.State.OperatingSystem";
+-const static constexpr char* interface =
+-    "xyz.openbmc_project.State.OperatingSystem.Status";
+-const static constexpr char* path = "/xyz/openbmc_project/state/os";
+-const static constexpr char* property = "OperatingSystemState";
+-} // namespace post
++const static constexpr char* busname = "xyz.openbmc_project.GpioMonitor";
++const static constexpr char* path = "/xyz/openbmc_project/gpio/status";
++const static constexpr char* interface = "xyz.openbmc_project.GpioStatus";
++const static constexpr char* pgood = "PowerGood";
++const static constexpr char* postComplete = "PostComplete";
++} // namespace gpio
+ 
+ namespace association
+ {
+diff --git a/src/Utils.cpp b/src/Utils.cpp
+index cf0ce9a..3799ee4 100644
+--- a/src/Utils.cpp
++++ b/src/Utils.cpp
+@@ -246,7 +246,7 @@ static void
+ {
+     conn->async_method_call(
+         [conn, retries](boost::system::error_code ec,
+-                        const std::variant<std::string>& state) {
++                        const std::variant<bool>& state) {
+             if (ec)
+             {
+                 if (retries)
+@@ -267,11 +267,10 @@ static void
+                           << "\n";
+                 return;
+             }
+-            powerStatusOn =
+-                boost::ends_with(std::get<std::string>(state), "Running");
++            powerStatusOn = std::get<bool>(state);
+         },
+-        power::busname, power::path, properties::interface, properties::get,
+-        power::interface, power::property);
++        gpio::busname, gpio::path, properties::interface, properties::get,
++        gpio::interface, gpio::pgood);
+ }
+ 
+ static void
+@@ -280,7 +279,7 @@ static void
+ {
+     conn->async_method_call(
+         [conn, retries](boost::system::error_code ec,
+-                        const std::variant<std::string>& state) {
++                        const std::variant<bool>& state) {
+             if (ec)
+             {
+                 if (retries)
+@@ -300,10 +299,10 @@ static void
+                           << "\n";
+                 return;
+             }
+-            biosHasPost = std::get<std::string>(state) != "Inactive";
++            biosHasPost = !std::get<bool>(state);
+         },
+-        post::busname, post::path, properties::interface, properties::get,
+-        post::interface, post::property);
++        gpio::busname, gpio::path, properties::interface, properties::get,
++        gpio::interface, gpio::postComplete);
+ }
+ 
+ void setupPowerMatch(const std::shared_ptr<sdbusplus::asio::connection>& conn)
+@@ -319,18 +318,16 @@ void setupPowerMatch(const std::shared_ptr<sdbusplus::asio::connection>& conn)
+     powerMatch = std::make_unique<sdbusplus::bus::match::match>(
+         static_cast<sdbusplus::bus::bus&>(*conn),
+         "type='signal',interface='" + std::string(properties::interface) +
+-            "',path='" + std::string(power::path) + "',arg0='" +
+-            std::string(power::interface) + "'",
++            "',path='" + std::string(gpio::path) + "',arg0='" +
++            std::string(gpio::interface) + "'",
+         [](sdbusplus::message::message& message) {
+             std::string objectName;
+-            boost::container::flat_map<std::string, std::variant<std::string>>
+-                values;
++            boost::container::flat_map<std::string, std::variant<bool>> values;
+             message.read(objectName, values);
+-            auto findState = values.find(power::property);
++            auto findState = values.find(gpio::pgood);
+             if (findState != values.end())
+             {
+-                bool on = boost::ends_with(
+-                    std::get<std::string>(findState->second), "Running");
++                bool on = std::get<bool>(findState->second);
+                 if (!on)
+                 {
+                     timer.cancel();
+@@ -357,18 +354,16 @@ void setupPowerMatch(const std::shared_ptr<sdbusplus::asio::connection>& conn)
+     postMatch = std::make_unique<sdbusplus::bus::match::match>(
+         static_cast<sdbusplus::bus::bus&>(*conn),
+         "type='signal',interface='" + std::string(properties::interface) +
+-            "',path='" + std::string(post::path) + "',arg0='" +
+-            std::string(post::interface) + "'",
++            "',path='" + std::string(gpio::path) + "',arg0='" +
++            std::string(gpio::interface) + "'",
+         [](sdbusplus::message::message& message) {
+             std::string objectName;
+-            boost::container::flat_map<std::string, std::variant<std::string>>
+-                values;
++            boost::container::flat_map<std::string, std::variant<bool>> values;
+             message.read(objectName, values);
+-            auto findState = values.find(post::property);
++            auto findState = values.find(gpio::postComplete);
+             if (findState != values.end())
+             {
+-                biosHasPost =
+-                    std::get<std::string>(findState->second) != "Inactive";
++                biosHasPost = !std::get<bool>(findState->second);
+             }
+         });
+ 
+-- 
+2.28.0
+

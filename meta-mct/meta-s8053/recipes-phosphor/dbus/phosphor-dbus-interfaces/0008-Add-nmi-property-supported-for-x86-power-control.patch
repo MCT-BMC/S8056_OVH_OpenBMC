@@ -1,0 +1,51 @@
+From 5c6b71ebf1d30a5d9227f4a65bbfdcbbebcab801 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Thu, 13 May 2021 14:09:12 +0800
+Subject: [PATCH] Add nmi property supported for x86-power-control
+
+---
+ .../Chassis/Control/NMISource.interface.yaml              | 15 ++++++++-------
+ 1 file changed, 8 insertions(+), 7 deletions(-)
+ mode change 100644 => 100755 xyz/openbmc_project/Chassis/Control/NMISource.interface.yaml
+
+diff --git a/yaml/xyz/openbmc_project/Chassis/Control/NMISource.interface.yaml b/yaml/xyz/openbmc_project/Chassis/Control/NMISource.interface.yaml
+old mode 100644
+new mode 100755
+index a04bd10..0c2d4d8
+--- a/yaml/xyz/openbmc_project/Chassis/Control/NMISource.interface.yaml
++++ b/yaml/xyz/openbmc_project/Chassis/Control/NMISource.interface.yaml
+@@ -1,12 +1,5 @@
+ description: >
+     An interface for NMI signal source.
+-methods:
+-    - name: nmiEnable
+-      description: >
+-          Enables the BMC NMI out event.
+-      errors:
+-       - xyz.openbmc_project.Chassis.Common.Error.UnsupportedCommand
+-       - xyz.openbmc_project.Chassis.Common.Error.IOError
+ 
+ properties:
+     - name: BMCSource
+@@ -14,6 +7,11 @@ properties:
+       description: >
+           Keeps track of NMI signal source in BMC.
+       default: 'None'
++    - name: Enabled
++      type: boolean
++      description: >
++          whether the BMC enables NMI event.
++      default: false
+ 
+ enumerations:
+    - name: BMCSourceSignal
+@@ -44,3 +42,6 @@ enumerations:
+        - name: Chipset
+          description: >
+            Via chipset NMI.
++       - name: FpBtn
++         description: >
++           Via front panel button NMI.
+-- 
+2.7.4
+

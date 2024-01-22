@@ -1,0 +1,38 @@
+From 2ff9a435faba8b71f0602f440b3cf4c10817394e Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Fri, 10 Feb 2023 14:52:46 +0800
+Subject: [PATCH] Add post complete file supported
+
+---
+ src/power_control.cpp | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/src/power_control.cpp b/src/power_control.cpp
+index 5ea25b0..cfbf461 100755
+--- a/src/power_control.cpp
++++ b/src/power_control.cpp
+@@ -945,6 +945,13 @@ static void sendPostCompleteSignal()
+     msg.signal_send();
+ }
+ 
++static void createPostCompleteFile()
++{
++    static const std::string postCompleteFilePath = "/run/end-of-post";
++    std::ofstream postCompleteFileOutput(postCompleteFilePath.c_str());
++    postCompleteFileOutput.close();
++}
++
+ static void systemPowerGoodFailedLog()
+ {
+     sd_journal_send(
+@@ -2647,6 +2654,7 @@ static void postCompleteHandler(bool state)
+                 logSELEvent("Post Complete SEL Entry","/xyz/openbmc_project/sensors/system_event/END_OF_POST",0x01,0xFF,0xFF);
+                 setDimmStatus(1);
+                 sendPostCompleteSignal();
++                createPostCompleteFile();
+             }
+         });
+     }
+-- 
+2.25.1
+

@@ -1,0 +1,29 @@
+From 8bcceaa0bca4694ddde37d4a95eee894de68aacd Mon Sep 17 00:00:00 2001
+From: Ren_Chen <Ren_Chen@wiwynn.com>
+Date: Tue, 27 Jul 2021 14:57:09 +0800
+Subject: [PATCH] Add host soft off and unknown transition
+
+---
+ yaml/xyz/openbmc_project/State/Host.interface.yaml | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/yaml/xyz/openbmc_project/State/Host.interface.yaml b/yaml/xyz/openbmc_project/State/Host.interface.yaml
+index 1ef3cfb..8bbfe6b 100644
+--- a/yaml/xyz/openbmc_project/State/Host.interface.yaml
++++ b/yaml/xyz/openbmc_project/State/Host.interface.yaml
+@@ -53,6 +53,12 @@ enumerations:
+           description: >
+             Host firmware will be rebooted without notification and chassis
+             power will remain on throughout the reboot
++        - name: 'SoftOff'
++          description: >
++            Host firmware should be soft off
++        - name: 'Unknown'
++          description: >
++            Host firmware transition requested by unknown.
+ 
+     - name: HostState
+       description: >
+-- 
+2.32.0
+

@@ -1,0 +1,25 @@
+From f90294dd737af438a77cc4bb619faa1f46b8f106 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Tue, 14 Dec 2021 14:56:18 +0800
+Subject: [PATCH] Power on host after fan control is ready
+
+---
+ service_files/phosphor-discover-system-state@.service | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/service_files/phosphor-discover-system-state@.service b/service_files/phosphor-discover-system-state@.service
+index ee01b9a..8155f27 100644
+--- a/service_files/phosphor-discover-system-state@.service
++++ b/service_files/phosphor-discover-system-state@.service
+@@ -6,6 +6,8 @@ Wants=mapper-wait@-xyz-openbmc_project-state-host%i.service
+ After=mapper-wait@-xyz-openbmc_project-state-host%i.service
+ Wants=mapper-wait@-xyz-openbmc_project-state-chassis%i.service
+ After=mapper-wait@-xyz-openbmc_project-state-chassis%i.service
++Wants=mapper-wait@-xyz-openbmc_project-settings-fanctrl.service
++After=mapper-wait@-xyz-openbmc_project-settings-fanctrl.service
+ After=op-reset-chassis-on@%i.service
+ After=multi-user.target
+ ConditionPathExists=!/run/openbmc/chassis@%i-on
+-- 
+2.32.0
+

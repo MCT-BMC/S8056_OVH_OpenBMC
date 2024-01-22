@@ -1,0 +1,107 @@
+From 9287381e9bb40ee4764068c2d2794a8c138e2f58 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Fri, 14 May 2021 16:39:07 +0800
+Subject: [PATCH 7/7] Remove debug messages during initilizing
+
+---
+ main.cpp            |  2 --
+ pid/builder.cpp     | 10 ----------
+ sensors/builder.cpp |  4 ----
+ sensors/host.cpp    |  7 +++++++
+ 4 files changed, 7 insertions(+), 16 deletions(-)
+
+diff --git a/main.cpp b/main.cpp
+index db15b8d..e2491dc 100644
+--- a/main.cpp
++++ b/main.cpp
+@@ -143,7 +143,6 @@ void restartControlLoops()
+     {
+         std::shared_ptr<boost::asio::steady_timer> timer = timers.emplace_back(
+             std::make_shared<boost::asio::steady_timer>(io));
+-        std::cerr << "pushing zone " << i.first << "\n";
+         pidControlLoop(i.second, timer, &isCanceling);
+     }
+ }
+@@ -282,7 +281,6 @@ int main(int argc, char* argv[])
+     // Create a manager for the ModeBus because we own it.
+     sdbusplus::server::manager::manager(
+         static_cast<sdbusplus::bus::bus&>(modeControlBus), modeRoot);
+-    hostBus.request_name("xyz.openbmc_project.Hwmon.external");
+     modeControlBus.request_name("xyz.openbmc_project.State.FanCtrl");
+     sdbusplus::server::manager::manager objManager(modeControlBus, modeRoot);
+ 
+diff --git a/pid/builder.cpp b/pid/builder.cpp
+index f57483c..6dd9df6 100644
+--- a/pid/builder.cpp
++++ b/pid/builder.cpp
+@@ -73,13 +73,10 @@ std::unordered_map<int64_t, std::shared_ptr<ZoneInterface>>
+             zoneConf->second.keepManualAfterReset, mgr, modeControlBus,
+             getControlPath(zoneId).c_str(), deferSignals);
+ 
+-        std::cerr << "Zone Id: " << zone->getZoneID() << "\n";
+-
+         // For each PID create a Controller and a Sensor.
+         for (const auto& [name, info] : pidConfig)
+         {
+             std::vector<std::string> inputs;
+-            std::cerr << "PID name: " << name << "\n";
+ 
+             // If tjMax is defined, adjust setpoint and stepwise reading points.
+             for (const auto& i : info.inputs)
+@@ -151,13 +148,6 @@ std::unordered_map<int64_t, std::shared_ptr<ZoneInterface>>
+                     info.tjMaxAdjusted);
+                 zone->addThermalPID(std::move(stepwise));
+             }
+-
+-            std::cerr << "inputs: ";
+-            for (const auto& i : inputs)
+-            {
+-                std::cerr << i << ", ";
+-            }
+-            std::cerr << "\n";
+         }
+ 
+         zone->emit_object_added();
+diff --git a/sensors/builder.cpp b/sensors/builder.cpp
+index 7efca84..0ba70b8 100644
+--- a/sensors/builder.cpp
++++ b/sensors/builder.cpp
+@@ -58,9 +58,6 @@ SensorManager
+         std::string name = it.first;
+         const conf::SensorConfig* info = &it.second;
+ 
+-        std::cerr << "Sensor: " << name << " " << info->type << " ";
+-        std::cerr << info->readPath << " " << info->writePath << "\n";
+-
+         IOInterfaceType rtype = getReadInterfaceType(info->readPath);
+         IOInterfaceType wtype = getWriteInterfaceType(info->writePath);
+ 
+@@ -161,7 +158,6 @@ SensorManager
+         {
+             // These sensors are read-only, but only for this application
+             // which only writes to fan sensors.
+-            std::cerr << info->type << " readPath: " << info->readPath << "\n";
+ 
+             if (IOInterfaceType::EXTERNAL == rtype)
+             {
+diff --git a/sensors/host.cpp b/sensors/host.cpp
+index d1a0d2b..7370e77 100644
+--- a/sensors/host.cpp
++++ b/sensors/host.cpp
+@@ -38,6 +38,13 @@ std::unique_ptr<Sensor> HostSensor::createTemp(const std::string& name,
+                                                sdbusplus::bus::bus& bus,
+                                                bool defer)
+ {
++    static bool hasHostSensor = false;
++    if (!hasHostSensor)
++    {
++        bus.request_name("xyz.openbmc_project.Hwmon.external");
++        hasHostSensor = true;
++    }
++
+     auto sensor = std::make_unique<HostSensor>(name, info, bus, defer);
+     sensor->value(0);
+ 
+-- 
+2.28.0
+

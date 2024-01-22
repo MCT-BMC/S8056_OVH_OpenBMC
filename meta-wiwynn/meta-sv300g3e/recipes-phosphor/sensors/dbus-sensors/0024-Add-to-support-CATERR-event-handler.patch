@@ -1,0 +1,214 @@
+From 3aac1bf9743f4eb4c064dde8b1b4b3cdf86c10f5 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Mon, 23 Mar 2020 12:28:04 +0800
+Subject: [PATCH] Add to support CATERR event handler
+
+---
+ include/EventSensor.hpp |  15 ++++-
+ src/EventSensor.cpp     | 139 ++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 153 insertions(+), 1 deletion(-)
+
+diff --git a/include/EventSensor.hpp b/include/EventSensor.hpp
+index 2111dea..22aec43 100644
+--- a/include/EventSensor.hpp
++++ b/include/EventSensor.hpp
+@@ -29,6 +29,16 @@ static const std::string ipmiSelAddMessage = "SEL Entry";
+ 
+ static const std::string sensorPathPrefix = "/xyz/openbmc_project/sensors/";
+ 
++static constexpr char const *crashdumpService = "com.intel.crashdump";
++static constexpr char const *crashdumpPath = "/com/intel/crashdump";
++static constexpr char const *crashdumpIntf = "com.intel.crashdump.Stored";
++static constexpr char const *crashdumpRawPeciCmdIntf = "com.intel.crashdump.SendRawPeci";
++static const uint8_t peciCmdCCPass = 0x40;
++static const uint32_t maskIerr = 0x48000000;
++static const uint32_t maskMsmiIerr = 0x00480000;
++static const uint32_t maskMcerr = 0x24000000;
++static const uint32_t maskMsmiMcerr = 0x00240000;
++
+ struct sensorTypeMap
+ {
+     std::string sensorName;
+@@ -43,7 +53,8 @@ static const std::vector<struct sensorTypeMap> sensorList = {
+     {.sensorName = "CPU0_State", .sensorType = "processor/"},
+     {.sensorName = "CPU1_State", .sensorType = "processor/"},
+     {.sensorName = "BMC_Health", .sensorType = "mgmtsystemhealth/"},
+-    {.sensorName = "Power_Unit", .sensorType = "powerunit/"}
++    {.sensorName = "Power_Unit", .sensorType = "powerunit/"},
++    {.sensorName = "Processor_fail", .sensorType = "processor/"}
+ };
+ 
+ enum class sensorListIdx : uint8_t
+@@ -56,6 +67,7 @@ enum class sensorListIdx : uint8_t
+     CPU1_State = 5,
+     BMC_Health = 6,
+     Power_Unit = 7,
++    Processor_fail = 8,
+ };
+ 
+ class EventOnlySensor
+@@ -75,6 +87,7 @@ class EventOnlySensor
+ 
+         void bmcRebootEventLog(std::shared_ptr<sdbusplus::asio::connection>& conn);
+         void sysAClostEventLog(std::shared_ptr<sdbusplus::asio::connection>& conn);
++        void cpuCaterrEventLog(std::shared_ptr<sdbusplus::asio::connection>& conn);
+ };
+ 
+ bool isAcpiPowerOn(void);
+diff --git a/src/EventSensor.cpp b/src/EventSensor.cpp
+index 6ee846d..cedebb0 100644
+--- a/src/EventSensor.cpp
++++ b/src/EventSensor.cpp
+@@ -56,6 +56,10 @@ EventOnlySensor::EventOnlySensor(
+     {
+         sysAClostEventLog(conn);
+     }
++    else if (0 == sensorName.compare("Processor_fail"))
++    {
++        cpuCaterrEventLog(conn);
++    }
+ }
+ 
+ EventOnlySensor::~EventOnlySensor()
+@@ -168,3 +172,138 @@ void EventOnlySensor::sysAClostEventLog(
+         }
+     }
+ }
++
++/* CPU CATREE SEL Record (Method) */
++void EventOnlySensor::cpuCaterrEventLog(
++    std::shared_ptr<sdbusplus::asio::connection>& conn)
++{
++    senMethodInterface = objServer.add_interface(
++        dbusPath, "xyz.openbmc_project.CATERR.Log");
++
++    senMethodInterface->register_method(
++        "CaterrEvent", [&]() {
++
++            // Check power status
++            if(!isAcpiPowerOn())
++            {
++                // std::cerr<<"Not a real CATERR event\n";
++                return false;
++            }
++
++            // CATErr SEL Log
++            std::future<void> CaterrEvent;
++            CaterrEvent = std::async(std::launch::async, [&]() {
++                // PECI raw command to get caterr error type
++                std::vector<uint8_t> peciErrSrcCmd = {0x30, 0x5, 0x5, 0xa1, 0x0, 0x0, 0x5, 0x0};
++                std::vector<std::vector<uint8_t>> peciCmds;
++                std::vector<std::vector<uint8_t>> peciCmdResponses;
++                peciCmds.push_back(peciErrSrcCmd);
++
++                sdbusplus::message::message peciRawCmd = conn->new_method_call(
++                    crashdumpService, crashdumpPath, crashdumpRawPeciCmdIntf, "SendRawPeci");
++                peciRawCmd.append(peciCmds);
++
++                try
++                {
++                    sdbusplus::message::message reply = conn->call(peciRawCmd);
++                    reply.read(peciCmdResponses);
++                }
++                catch (sdbusplus::exception_t& e)
++                {
++                    std::cerr<<"failed to get caterr error type\n";
++                    return;
++                }
++
++                if (5 != (peciCmdResponses.at(0)).size() ||
++                    peciCmdCCPass !=  (peciCmdResponses.at(0)).at(0))
++                {
++                    std::cerr<<"invalid peci cmd response\n";
++                    return;
++                }
++
++                uint32_t MCAErrSrcLog = ((peciCmdResponses.at(0)).at(4)<<24) |
++                                        ((peciCmdResponses.at(0)).at(3)<<16) |
++                                        ((peciCmdResponses.at(0)).at(2)<<8) |
++                                        ((peciCmdResponses.at(0)).at(1));
++                sd_journal_print(LOG_ERR, "MCAErrSrcLog = 0x%x\n", MCAErrSrcLog);
++
++                if (0 == MCAErrSrcLog)
++	            {
++                    // std::cerr<<"it is a false caterr alert\n";
++                    return;
++                }
++
++                // SEL Add
++                uint16_t genId = 0x20;
++                std::vector<uint8_t> eventData(3, 0xFF);
++                bool assert = true;
++                std::string errorType("IERR");
++
++                /* Sensor type: Processor (0x07)
++                   Sensor specific offset: 00h - IERR
++                                           0Ch - MCErr
++                */
++
++                // IERR
++                if ((MCAErrSrcLog & maskIerr) ||
++		            (MCAErrSrcLog & maskMsmiIerr))
++                {
++                    eventData[0] = 0x0;
++                    errorType = "IERR";
++
++                    sdbusplus::message::message writeIerrSel = conn->new_method_call(
++                    ipmiSelService, ipmiSelPath, ipmiSelAddInterface, "IpmiSelAdd");
++                    writeIerrSel.append(ipmiSelAddMessage, dbusPath, eventData, assert, genId);
++                    try
++                    {
++                        conn->call_noreply(writeIerrSel);
++                    }
++                    catch (sdbusplus::exception_t& e)
++                    {
++                        std::cerr<<"failed to log IERR CATErr SEL\n";
++                    }
++                }
++
++                // MCERR
++                if ((MCAErrSrcLog & maskMcerr) ||
++		            (MCAErrSrcLog & maskMsmiMcerr))
++                {
++                    eventData[0] = 0xc;
++                    errorType = "MCERR";
++
++                    sdbusplus::message::message writeMcerrSel = conn->new_method_call(
++                    ipmiSelService, ipmiSelPath, ipmiSelAddInterface, "IpmiSelAdd");
++                    writeMcerrSel.append(ipmiSelAddMessage, dbusPath, eventData, assert, genId);
++                    try
++                    {
++                        conn->call_noreply(writeMcerrSel);
++                    }
++                    catch (sdbusplus::exception_t& e)
++                    {
++                        std::cerr<<"failed to log MCERR CATErr SEL\n";
++                    }
++                }
++
++                // Crashdump
++                sdbusplus::message::message crashdump = conn->new_method_call(
++                    crashdumpService, crashdumpPath, crashdumpIntf, "GenerateStoredLog");
++                crashdump.append(errorType);
++
++                try
++                {
++                    conn->call_noreply(crashdump);
++                }
++                catch (sdbusplus::exception_t& e)
++                {
++                    std::cerr<<"failed to dump error log\n";
++                }
++            });
++
++            return true;
++    });
++
++    if (!senMethodInterface->initialize())
++    {
++        std::cerr << "error initializing CATERR method\n";
++    }
++}
+-- 
+2.24.1
+

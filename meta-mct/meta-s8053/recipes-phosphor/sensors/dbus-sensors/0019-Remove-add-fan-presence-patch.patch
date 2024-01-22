@@ -1,0 +1,53 @@
+diff --git a/meson_options.txt b/meson_options.txt
+index 794d6e1c..627d6462 100755
+--- a/meson_options.txt
++++ b/meson_options.txt
+@@ -12,7 +12,6 @@ option('psu', type: 'feature', value: 'enabled', description: 'Enable PSU sensor
+ option('external', type: 'feature', value: 'enabled', description: 'Enable External sensor.',)
+ option('event', type: 'feature', value: 'enabled', description: 'Enable Event-only sensor.',)
+ option('vr-temp', type: 'feature', value: 'enabled', description: 'Enable VR temperature sensor.',)
+-option('fan-presence', type: 'feature', value: 'enabled', description: 'Enable FAN presence sensor.',)
+ option('dimm-temp', type: 'feature', value: 'enabled', description: 'Enable DIMM temperature sensor.',)
+ option('nic', type: 'feature', value: 'enabled', description: 'Enable NIC over MCTP sensor.',)
+ option('sol-pattern', type: 'feature', value: 'enabled', description: 'Enable SOL pattern sensor.',)
+diff --git a/service_files/meson.build b/service_files/meson.build
+index beb1ff14..c32806b8 100755
+--- a/service_files/meson.build
++++ b/service_files/meson.build
+@@ -12,7 +12,6 @@ unit_files = [
+     ['external', 'xyz.openbmc_project.externalsensor.service'],
+     ['event', 'xyz.openbmc_project.eventsensor.service'],
+     ['vr-temp', 'xyz.openbmc_project.vrtempsensor.service'],
+-    ['fan-presence', 'xyz.openbmc_project.fanpresencesensor.service'],
+     ['dimm-temp', 'xyz.openbmc_project.dimmtempsensor.service'],
+     ['nic', 'xyz.openbmc_project.nicsensor.service'],
+     ['sol-pattern', 'xyz.openbmc_project.solpatternsensor.service'],
+diff --git a/src/meson.build b/src/meson.build
+index da262220..f8022aef 100755
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -229,24 +229,6 @@ if get_option('vr-temp').enabled()
+     )
+ endif
+ 
+-if get_option('fan-presence').enabled()
+-    executable(
+-        'fanpresencesensor',
+-        'FanPresenceSensor.cpp',
+-        dependencies: [
+-            gpiodcxx,
+-            sdbusplus,
+-        ],
+-        implicit_include_directories: false,
+-        include_directories: '../include',
+-        install: true,
+-        link_with: [
+-            thresholds_a,
+-            utils_a,
+-        ],
+-    )
+-endif
+-
+ if get_option('dimm-temp').enabled()
+     executable(
+         'dimmtempsensor',

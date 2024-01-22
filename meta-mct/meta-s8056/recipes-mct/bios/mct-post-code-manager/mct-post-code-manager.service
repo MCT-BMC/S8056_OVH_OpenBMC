@@ -1,0 +1,12 @@
+[Unit]
+Description=MiTAC BIOS POST code manager
+After=xyz.openbmc_project.State.Boot.PostCode.service
+
+[Service]
+Restart=always
+RestartSec=5
+ExecStart=/usr/bin/env mct-post-code-manager
+SyslogIdentifier=mct-post-code-manager
+
+[Install]
+WantedBy=multi-user.target

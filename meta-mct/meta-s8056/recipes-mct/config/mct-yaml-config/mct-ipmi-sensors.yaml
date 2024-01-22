@@ -1,0 +1,84 @@
+
+0x80: &fan_present
+  entityID: 0x07
+  entityInstance: 1
+  interfaces:
+    xyz.openbmc_project.Sensor.Value:
+      Value:
+        Offsets:
+          0x00:
+            assert: 0x00
+            type: double
+          0x01:
+            assert: 0x01
+            type: double
+  mutability: Mutability::Read
+  path: /xyz/openbmc_project/sensors/fan_present/FAN1_PRESENCE
+  readingType: readingAssertion
+  sensorName: FAN1 PRESENCE
+  sensorReadingType: 0x08
+  sensorType: 0x04
+  serviceInterface: org.freedesktop.DBus.Properties
+
+0x81:
+  <<: *fan_present
+  entityInstance: 1
+  path: /xyz/openbmc_project/sensors/fan_present/FAN2_PRESENCE
+  sensorName: FAN2 PRESENCE
+
+0x82:
+  <<: *fan_present
+  entityInstance: 1
+  path: /xyz/openbmc_project/sensors/fan_present/FAN3_PRESENCE
+  sensorName: FAN3 PRESENCE
+
+0x83:
+  <<: *fan_present
+  entityInstance: 1
+  path: /xyz/openbmc_project/sensors/fan_present/FAN4_PRESENCE
+  sensorName: FAN4 PRESENCE
+
+0x84:
+  <<: *fan_present
+  entityInstance: 1
+  path: /xyz/openbmc_project/sensors/fan_present/FAN5_PRESENCE
+  sensorName: FAN5 PRESENCE
+
+0x85:
+  <<: *fan_present
+  entityInstance: 1
+  path: /xyz/openbmc_project/sensors/fan_present/FAN6_PRESENCE
+  sensorName: FAN6 PRESENCE
+
+0xB5: &power_supply_event
+  entityID: 0x07
+  entityInstance: 0x01
+  interfaces:
+    xyz.openbmc_project.Sensor.Value:
+      Value:
+        Offsets:
+          0x00:
+            assert: 0x00
+            type: double
+          0x01:
+            assert: 0x01
+            type: double
+          0x02:
+            assert: 0x02
+            type: double
+          0x03:
+            assert: 0x03
+            type: double
+  mutability: Mutability::Read
+  path: /xyz/openbmc_project/sensors/power_supply/PDB_STATUS
+  readingType: readingAssertion
+  sensorName: PDB_STATUS
+  sensorReadingType: 0x6F
+  sensorType: 0x08
+  serviceInterface: org.freedesktop.DBus.Properties
+
+0xB6:
+  <<: *power_supply_event
+  entityInstance: 0x01
+  path: /xyz/openbmc_project/sensors/power_supply/HSC_STATUS
+  sensorName: HSC_STATUS

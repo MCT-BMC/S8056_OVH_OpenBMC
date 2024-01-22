@@ -1,0 +1,42 @@
+From 66b1be2060fef7dbd518bc5621fb1e5d080edd31 Mon Sep 17 00:00:00 2001
+From: Jason Chang <jason_yx_chang@wiwynn.com>
+Date: Tue, 26 May 2020 00:08:51 +0800
+Subject: [PATCH] Fix for PWM accumulation
+
+---
+ pid/zone.cpp | 17 ++++++++---------
+ 1 file changed, 8 insertions(+), 9 deletions(-)
+
+diff --git a/pid/zone.cpp b/pid/zone.cpp
+index 22f9985..d6fbd44 100644
+--- a/pid/zone.cpp
++++ b/pid/zone.cpp
+@@ -433,17 +433,16 @@ void PIDZone::updateSensors(void)
+         {
+             sd_journal_print(LOG_INFO, "%s temperature sensor reading: %lg",
+                              t.c_str(), r.value);
++        }
++        if ((0 == t.compare(strPos, cpuStrLen, cpuStr)) || (0 == t.compare(strPos, mezzStrLen, mezzStr)) || (0 == t.compare(strPos, nvmeStrLen, nvmeStr)) || (0 == t.compare(strPos, dimmStrLen, dimmStr)))
++        {
++            std::pair<std::map<std::string, double>::iterator, bool> ret;
+ 
+-            if ((0 == t.compare(strPos, cpuStrLen, cpuStr)) || (0 == t.compare(strPos, mezzStrLen, mezzStr)) || (0 == t.compare(strPos, nvmeStrLen, nvmeStr)) || (0 == t.compare(strPos, dimmStrLen, dimmStr)))
++            ret = sensorTempBuf.insert(std::pair<std::string, double>(t, r.value));
++            if (false == ret.second)
+             {
+-                std::pair<std::map<std::string, double>::iterator, bool> ret;
+-
+-                ret = sensorTempBuf.insert(std::pair<std::string, double>(t, r.value));
+-                if (false == ret.second)
+-                {
+-                    // The key has already existed
+-                    sensorTempBuf[t] = r.value;
+-                }
++                // The key has already existed
++                sensorTempBuf[t] = r.value;
+             }
+         }
+ 
+-- 
+2.24.1
+

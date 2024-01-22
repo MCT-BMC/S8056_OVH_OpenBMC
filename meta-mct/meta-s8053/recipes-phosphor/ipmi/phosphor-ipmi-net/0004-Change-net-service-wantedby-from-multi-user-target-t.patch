@@ -1,0 +1,23 @@
+From eb6351a43b6a29eeac15408b0562d8702191bb49 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Tue, 16 Nov 2021 15:17:44 +0800
+Subject: [PATCH] Change net service wantedby from multi-user target to IPMI
+
+---
+ phosphor-ipmi-net@.service | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/phosphor-ipmi-net@.service b/phosphor-ipmi-net@.service
+index 77a800f..c54e902 100644
+--- a/phosphor-ipmi-net@.service
++++ b/phosphor-ipmi-net@.service
+@@ -13,5 +13,5 @@ StateDirectory = ipmi
+ 
+ [Install]
+ DefaultInstance=eth0
+-WantedBy=multi-user.target
++WantedBy=phosphor-ipmi-host.service
+ RequiredBy=
+-- 
+2.7.4
+

@@ -1,0 +1,241 @@
+From d6e127d8a50065ecdb390e9a391382963b4058a9 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Thu, 8 Dec 2022 11:02:11 +0800
+Subject: [PATCH] Add sensor value offset feature for system air inlet snesor
+
+---
+ include/SensorValueOffset.hpp | 199 ++++++++++++++++++++++++++++++++++
+ src/HwmonTempSensor.cpp       |   3 +
+ 2 files changed, 202 insertions(+)
+ create mode 100644 include/SensorValueOffset.hpp
+
+diff --git a/include/SensorValueOffset.hpp b/include/SensorValueOffset.hpp
+new file mode 100644
+index 0000000..b28d5b3
+--- /dev/null
++++ b/include/SensorValueOffset.hpp
+@@ -0,0 +1,199 @@
++#include <iostream>
++#include <fstream>
++#include <filesystem>
++#include <regex>
++
++#include <sdbusplus/bus.hpp>
++#include <sdbusplus/exception.hpp>
++
++constexpr const char* PROPERTIES_INTERFACE = "org.freedesktop.DBus.Properties";
++
++namespace node
++{
++    static constexpr const char* busName = "xyz.openbmc_project.mct.node";
++    static constexpr const char* path = "/xyz/openbmc_project/mct/node";
++    static constexpr const char* interface = "xyz.openbmc_project.mct.node";
++    static constexpr const char* requestNodeID = "CurrentNodeID";
++} // namespace node
++
++bool findFiles(const std::filesystem::path dirPath, const std::string& matchString,
++               std::vector<std::filesystem::path>& foundPaths, unsigned int symlinkDepth)
++{
++    if (!std::filesystem::exists(dirPath))
++        return false;
++
++    std::regex search(matchString);
++    std::smatch match;
++    for (auto& p : std::filesystem::recursive_directory_iterator(dirPath))
++    {
++        std::string path = p.path().string();
++        if (!is_directory(p))
++        {
++            if (std::regex_search(path, match, search))
++                foundPaths.emplace_back(p.path());
++        }
++        else if (is_symlink(p) && symlinkDepth)
++        {
++            findFiles(p.path(), matchString, foundPaths, symlinkDepth - 1);
++        }
++    }
++    return true;
++}
++
++int getCurrentNode(uint8_t& nodeId)
++{
++    auto bus = sdbusplus::bus::new_default();
++    auto method = bus.new_method_call(node::busName, node::path, PROPERTIES_INTERFACE, "Get");
++    method.append(node::interface, node::requestNodeID);
++    std::variant<uint8_t> result;
++
++    try
++    {
++        auto reply = bus.call(method);
++        reply.read(result);
++    }
++    catch (const sdbusplus::exception::SdBusError& e)
++    {
++        return -1;
++    }
++
++    nodeId = std::get<uint8_t>(result);
++    return 0;
++}
++
++bool isGpuSku()
++{
++    std::string riserFruPath = "/sys/bus/i2c/devices/34-0056/eeprom";
++    if(std::filesystem::exists(riserFruPath))
++    {
++        return true;
++    }
++    return false;
++}
++
++void valueOffset(std::string sensor, double& input, bool debugModeEnabled)
++{
++    static bool init = false;
++    static std::string powerPath;
++    static double output[11];
++    static double offset[11];
++
++    if(sensor == "SYS_Air_onlet")
++    {
++        // Input value overwrite with fan PWM for non GPU SKU
++        double outputNonGpu[] = {0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100};
++        double offsetNonGpu[] = {5,  5,  4,  4,  3,  3,  3,  3,  2,  2,   2};
++        // Input value overwrite with fan PWM for GPU SKU
++        double outputGpu[] = {0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100};
++        double offsetGpu[] = {7,  7,  6,  5,  4,  3,  3,  2,  2,  2,   2};
++
++        std::string nodeFanPath;
++
++        if (debugModeEnabled)
++        {
++            std::cerr << "Sensor: " << sensor << ", input: " << std::to_string(input);
++        }
++
++        if (std::isnan(input))
++        {
++            std::cerr << std::endl;
++            return;
++        }
++
++        if(!init)
++        {
++            uint8_t nodeId = 0;
++            std::string nodeFanPath;
++
++            getCurrentNode(nodeId);
++
++            if(nodeId == 1)
++            {
++                nodeFanPath = "/sys/bus/i2c/drivers/nct7362/16-0022/hwmon/";
++            }
++            else if(nodeId == 2)
++            {
++                nodeFanPath = "/sys/bus/i2c/drivers/nct7362/16-0023/hwmon/";
++            }
++            else
++            {
++                std::cerr << std::endl;
++                return;
++            }
++
++            std::vector<std::filesystem::path> pmbusPaths;
++            findFiles(std::filesystem::path(nodeFanPath), "pwm1", pmbusPaths, 1);
++            powerPath = pmbusPaths[0];
++
++            if(isGpuSku())
++            {
++                std::copy(std::begin(outputGpu), std::end(outputGpu), std::begin(output));
++                std::copy(std::begin(offsetGpu), std::end(offsetGpu), std::begin(offset));
++            }
++            else
++            {
++                std::copy(std::begin(outputNonGpu), std::end(outputNonGpu), std::begin(output));
++                std::copy(std::begin(offsetNonGpu), std::end(offsetNonGpu), std::begin(offset));
++            }
++
++            if (debugModeEnabled)
++            {
++                std::cerr << ", Init powerPath: " << powerPath;
++            }
++            init = true;
++        }
++
++        std::ifstream nodeFile(powerPath);
++
++        if(!nodeFile.good())
++        {
++            if (debugModeEnabled)
++            {
++                std::cerr << ", powerPath: " << powerPath;
++                std::cerr << std::endl;
++            }
++            return;
++        }
++
++        std::string pwm;
++        std::getline(nodeFile,pwm);
++        nodeFile.close();
++        double pwmValue = stod(pwm) / 255 * 100;
++        if (debugModeEnabled)
++        {
++            std::cerr << ", pwm: " << std::to_string(pwmValue);
++        }
++
++        for (unsigned int i = 0; i < sizeof(output); i++)
++        {
++            if(output[i] >= pwmValue)
++            {
++                if(output[i] == pwmValue)
++                {
++                    input = input - offset[i];
++                    if (debugModeEnabled)
++                    {
++                        std::cerr << ", offset: " << std::to_string(offset[i]);
++                    }
++                }
++                else
++                {
++                    input = input - offset[i-1];
++                    if (debugModeEnabled)
++                    {
++                        std::cerr << ", offset: " << std::to_string(offset[i-1]);
++                    }
++                }
++                if (debugModeEnabled)
++                {
++                    std::cerr << ", result: " << std::to_string(input);
++                }
++                break;
++            }
++        }
++        if (debugModeEnabled)
++        {
++            std::cerr << std::endl;
++        }
++    }
++}
+\ No newline at end of file
+diff --git a/src/HwmonTempSensor.cpp b/src/HwmonTempSensor.cpp
+index d2c3242..35887bf 100755
+--- a/src/HwmonTempSensor.cpp
++++ b/src/HwmonTempSensor.cpp
+@@ -30,6 +30,8 @@
+ #include <string>
+ #include <vector>
+ 
++#include <SensorValueOffset.hpp>
++
+ // Temperatures are read in milli degrees Celsius, we need degrees Celsius.
+ // Pressures are read in kilopascal, we need Pascals.  On D-Bus for Open BMC
+ // we use the International System of Units without prefixes.
+@@ -161,6 +163,7 @@ void HwmonTempSensor::handleResponse(const boost::system::error_code& err)
+         {
+             rawValue = std::stod(response);
+             double nvalue = (rawValue + offsetValue) * scaleValue;
++            valueOffset(name, nvalue, false);
+             updateValue(nvalue);
+         }
+         catch (const std::invalid_argument&)
+-- 
+2.25.1
+

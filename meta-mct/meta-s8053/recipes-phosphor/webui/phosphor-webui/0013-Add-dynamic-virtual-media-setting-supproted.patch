@@ -1,0 +1,70 @@
+From 340ca614460b1af33cc7a1e31b210237e89b1017 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Thu, 20 May 2021 14:53:36 +0800
+Subject: [PATCH] Add dynamic virtual media setting supproted
+
+---
+ .../controllers/virtual-media-controller.html           |  9 ++++++---
+ .../controllers/virtual-media-controller.js             | 17 +++++++++++++++--
+ 2 files changed, 21 insertions(+), 5 deletions(-)
+ mode change 100644 => 100755 app/server-control/controllers/virtual-media-controller.html
+ mode change 100644 => 100755 app/server-control/controllers/virtual-media-controller.js
+
+diff --git a/app/server-control/controllers/virtual-media-controller.html b/app/server-control/controllers/virtual-media-controller.html
+old mode 100644
+new mode 100755
+index e756986..2e3559f
+--- a/app/server-control/controllers/virtual-media-controller.html
++++ b/app/server-control/controllers/virtual-media-controller.html
+@@ -1,10 +1,13 @@
+ <primary>
+   <h1>Virtual media</h1>
+-  <p class="vm__page-description"  ng-if="devices.length >= 1">Specify image file location to start session.</p>
+-  <p ng-if="devices.length < 1">
++  <p class="vm__page-description"  ng-if="devices.length >= 1 && isEnable">
++    Specify image file location to start session.
++  </p>
++  <p ng-if="devices.length < 1 || !isEnable">
+     There are no Virtual Media devices available.
++  </p>
+   </primary>
+-  <div ng-repeat="device in devices track by $index" class="vm__upload">
++  <div ng-repeat="device in devices track by $index" class="vm__upload" ng-if="isEnable">
+     <h2 class="h3">{{device.deviceName}}</h2>
+     <div class="vm__upload-chooser">
+       <!-- name and error message -->
+diff --git a/app/server-control/controllers/virtual-media-controller.js b/app/server-control/controllers/virtual-media-controller.js
+old mode 100644
+new mode 100755
+index 60ef92b..82585c1
+--- a/app/server-control/controllers/virtual-media-controller.js
++++ b/app/server-control/controllers/virtual-media-controller.js
+@@ -11,10 +11,23 @@ window.angular && (function(angular) {
+ 
+   angular.module('app.serverControl').controller('virtualMediaController', [
+     '$scope', '$cookies', 'APIUtils', 'toastService', 'dataService',
+-    'nbdServerService',
++    'nbdServerService','$rootScope',
+     function(
+         $scope, $cookies, APIUtils, toastService, dataService,
+-        nbdServerService) {
++        nbdServerService,$rootScope) {
++      $scope.isEnable = false;
++
++      APIUtils.getServiceStatus().then(
++        function(data) {
++          $rootScope.isVmEnable = data.data.VmService
++          if($rootScope.isVmEnable){
++            $scope.isEnable = true;
++          }
++        },
++        function(error) {
++          console.log(JSON.stringify(error));
++        }
++      );
+       $scope.devices = [];
+ 
+       // Only one Virtual Media WebSocket device is currently available.
+-- 
+2.7.4
+

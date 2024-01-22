@@ -1,0 +1,239 @@
+From 041a82fb5b32aeede1a01892d5ec5d8fc1940d94 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Thu, 14 Oct 2021 11:29:35 +0800
+Subject: [PATCH] Support PATCH command to set sensor thresholds
+
+---
+ redfish-core/lib/sensors.hpp | 194 +++++++++++++++++++++++++++++++++--
+ 1 file changed, 188 insertions(+), 6 deletions(-)
+
+diff --git a/redfish-core/lib/sensors.hpp b/redfish-core/lib/sensors.hpp
+index 568d272..b9e8990 100644
+--- a/redfish-core/lib/sensors.hpp
++++ b/redfish-core/lib/sensors.hpp
+@@ -190,13 +190,11 @@ class SensorsAsyncResp
+ 
+     ~SensorsAsyncResp()
+     {
+-        if (asyncResp->res.result() ==
+-            boost::beast::http::status::internal_server_error)
++        // Response success if all actions are ok through PATCH command.
++        if (asyncResp->res.jsonValue.empty())
+         {
+-            // Reset the json object to clear out any data that made it in
+-            // before the error happened todo(ed) handle error condition with
+-            // proper code
+-            asyncResp->res.jsonValue = nlohmann::json::object();
++            messages::success(asyncResp->res);
++            return;
+         }
+ 
+         if (dataComplete && metadata)
+@@ -349,6 +347,16 @@ void getObjectsWithConnection(
+         {
+             if (sensorNames->find(object.first) != sensorNames->end())
+             {
++                if (object.second.size() > 1)
++                {
++                    std::string bridgeService =
++                        "xyz.openbmc_project.Sensor.Bridged";
++                    connections.insert(bridgeService);
++                    objectsWithConnection.insert(
++                        std::make_pair(object.first, bridgeService));
++                    continue;
++                }
++
+                 for (const std::pair<std::string, std::vector<std::string>>&
+                          objData : object.second)
+                 {
+@@ -3028,6 +3036,152 @@ inline void requestRoutesSensorCollection(App& app)
+         });
+ }
+ 
++inline void setDbusThreshold(const std::shared_ptr<SensorsAsyncResp>& asyncResp,
++                             const std::string& service,
++                             const std::string& path,
++                             const std::string& interface,
++                             const std::string& property,
++                             nlohmann::json& reading, const std::string& level)
++{
++    double value;
++    if (!json_util::readJson(reading, asyncResp->asyncResp->res, "Reading",
++                             value))
++    {
++        return;
++    }
++
++    crow::connections::systemBus->async_method_call(
++        [asyncResp, path, level](const boost::system::error_code ec) {
++            if (ec)
++            {
++                BMCWEB_LOG_ERROR << "Failed to set " << level << " in " << path
++                                 << ec;
++                messages::internalError(asyncResp->asyncResp->res);
++                asyncResp->asyncResp->res
++                    .jsonValue["error"][messages::messageAnnotation]
++                    .back()["MessageArgs"]
++                    .emplace_back(level);
++                asyncResp->asyncResp->res
++                    .jsonValue["error"][messages::messageAnnotation]
++                    .back()["MessageArgs"]
++                    .emplace_back(ec.message());
++            }
++        },
++        service, path, "org.freedesktop.DBus.Properties", "Set", interface,
++        property, std::variant<double>{value});
++}
++
++inline void setThresholds(const std::shared_ptr<SensorsAsyncResp>& asyncResp,
++                          const std::string& sensorName,
++                          nlohmann::json& thresholds)
++{
++    crow::connections::systemBus->async_method_call(
++        [asyncResp, sensorName,
++         thresholds](const boost::system::error_code ec,
++                     const GetSubTreeType& subtree) mutable {
++            if (ec)
++            {
++                messages::internalError(asyncResp->asyncResp->res);
++                BMCWEB_LOG_ERROR << "Failed to get " << sensorName
++                                 << " subtree. " << ec;
++                return;
++            }
++
++            GetSubTreeType::const_iterator it = std::find_if(
++                subtree.begin(), subtree.end(),
++                [sensorName](
++                    const std::pair<
++                        std::string,
++                        std::vector<std::pair<
++                            std::string, std::vector<std::string>>>>& object) {
++                    sdbusplus::message::object_path path(object.first);
++                    std::string name = path.filename();
++                    if (name.empty())
++                    {
++                        BMCWEB_LOG_ERROR << "Invalid sensor path: "
++                                         << object.first;
++                        return false;
++                    }
++
++                    return name == sensorName;
++                });
++
++            if (it == subtree.end())
++            {
++                BMCWEB_LOG_ERROR << "Could not find path for sensor: "
++                                 << sensorName;
++                messages::resourceNotFound(asyncResp->asyncResp->res, "Sensor",
++                                           sensorName);
++                return;
++            }
++
++            std::string service;
++            if (it->second.size() > 1)
++            {
++                for (const auto& [serv, objects] : it->second)
++                {
++                    if (serv == "xyz.openbmc_project.Sensor.Bridged")
++                    {
++                        continue;
++                    }
++
++                    service = serv;
++                    break;
++                }
++            }
++            else
++            {
++                service = it->second[0].first;
++            }
++
++            const std::string& path = it->first;
++
++            std::optional<nlohmann::json> upperCritical;
++            std::optional<nlohmann::json> upperCaution;
++            std::optional<nlohmann::json> lowerCaution;
++            std::optional<nlohmann::json> lowerCritical;
++            if (!json_util::readJson(
++                    thresholds, asyncResp->asyncResp->res, "UpperCritical",
++                    upperCritical, "UpperCaution", upperCaution, "LowerCaution",
++                    lowerCaution, "LowerCritical", lowerCritical))
++            {
++                return;
++            }
++
++            if (upperCritical)
++            {
++                setDbusThreshold(
++                    asyncResp, service, path,
++                    "xyz.openbmc_project.Sensor.Threshold.Critical",
++                    "CriticalHigh", *upperCritical, "UpperCritical");
++            }
++            if (upperCaution)
++            {
++                setDbusThreshold(asyncResp, service, path,
++                                 "xyz.openbmc_project.Sensor.Threshold.Warning",
++                                 "WarningHigh", *upperCaution, "UpperCaution");
++            }
++            if (lowerCaution)
++            {
++                setDbusThreshold(asyncResp, service, path,
++                                 "xyz.openbmc_project.Sensor.Threshold.Warning",
++                                 "WarningLow", *lowerCaution, "LowerCaution");
++            }
++            if (lowerCritical)
++            {
++                setDbusThreshold(
++                    asyncResp, service, path,
++                    "xyz.openbmc_project.Sensor.Threshold.Critical",
++                    "CriticalLow", *lowerCritical, "LowerCritical");
++            }
++        },
++        "xyz.openbmc_project.ObjectMapper",
++        "/xyz/openbmc_project/object_mapper",
++        "xyz.openbmc_project.ObjectMapper", "GetSubTree",
++        "/xyz/openbmc_project/sensors", 2,
++        std::array<const char*, 1>{"xyz.openbmc_project.Sensor.Value"});
++}
++
+ inline void requestRoutesSensor(App& app)
+ {
+     BMCWEB_ROUTE(app, "/redfish/v1/Chassis/<str>/Sensors/<str>/")
+@@ -3108,6 +3262,34 @@ inline void requestRoutesSensor(App& app)
+                 "xyz.openbmc_project.ObjectMapper", "GetSubTree",
+                 "/xyz/openbmc_project/sensors", 2, interfaces);
+         });
++
++    BMCWEB_ROUTE(app, "/redfish/v1/Chassis/<str>/Sensors/<str>/")
++        .privileges({"ConfigureManager"})
++        .methods(boost::beast::http::verb::patch)(
++            [](const crow::Request& req,
++               const std::shared_ptr<bmcweb::AsyncResp>& aResp,
++               const std::string& chassisName, const std::string& sensorName) {
++                std::shared_ptr<SensorsAsyncResp> asyncResp =
++                    std::make_shared<SensorsAsyncResp>(
++                        aResp, chassisName, std::vector<const char*>(),
++                        sensors::node::sensors);
++
++                std::optional<nlohmann::json> thresholds;
++                if (!json_util::readJson(req, asyncResp->asyncResp->res,
++                                         "Thresholds", thresholds))
++                {
++                    return;
++                }
++
++                if (thresholds)
++                {
++                    setThresholds(asyncResp, sensorName, *thresholds);
++                }
++                else
++                {
++                    return;
++                }
++            });
+ }
+ 
+ } // namespace redfish
+-- 
+2.32.0
+

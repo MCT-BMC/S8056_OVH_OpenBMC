@@ -1,0 +1,187 @@
+From 09ae9d72f1552f60ee05e9f669f83f66987ee2a6 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Wed, 16 Mar 2022 10:20:06 +0800
+Subject: [PATCH 5/5] logging: switch to lg2.hpp
+
+---
+ healthMonitor.cpp | 39 ++++++++++++++++++++-------------------
+ 1 file changed, 20 insertions(+), 19 deletions(-)
+
+diff --git a/healthMonitor.cpp b/healthMonitor.cpp
+index 5e4c29b..53d89c6 100755
+--- a/healthMonitor.cpp
++++ b/healthMonitor.cpp
+@@ -11,6 +11,7 @@
+ #include <sdbusplus/bus/match.hpp>
+ #include <sdbusplus/server/manager.hpp>
+ #include <sdeventplus/event.hpp>
++#include <phosphor-logging/lg2.hpp>
+ 
+ #include <fstream>
+ #include <iostream>
+@@ -79,7 +80,7 @@ double readCPUUtilization([[maybe_unused]] std::string path)
+     std::ifstream fileStat(proc_stat);
+     if (!fileStat.is_open())
+     {
+-        error("cpu file not available: {PATH}", "PATH", proc_stat);
++        lg2::error("cpu file not available: {PATH}", "PATH", proc_stat);
+         return -1;
+     }
+ 
+@@ -95,7 +96,7 @@ double readCPUUtilization([[maybe_unused]] std::string path)
+ 
+     if (labelName.compare("cpu"))
+     {
+-        error("CPU data not available");
++        lg2::error("CPU data not available");
+         return -1;
+     }
+ 
+@@ -108,7 +109,7 @@ double readCPUUtilization([[maybe_unused]] std::string path)
+ 
+     if (i != NUM_CPU_STATES_TIME)
+     {
+-        error("CPU data not correct");
++        lg2::error("CPU data not correct");
+         return -1;
+     }
+ 
+@@ -255,7 +256,7 @@ void HealthSensor::setSensorValueToDbus(const double value)
+ 
+ void HealthSensor::initHealthSensor(const std::vector<std::string>& chassisIds)
+ {
+-    info("{SENSOR} Health Sensor initialized", "SENSOR", sensorConfig.name);
++    lg2::info("{SENSOR} Health Sensor initialized", "SENSOR", sensorConfig.name);
+ 
+     /* Look for sensor read functions and Read Sensor values */
+     double value;
+@@ -273,7 +274,7 @@ void HealthSensor::initHealthSensor(const std::vector<std::string>& chassisIds)
+     }
+     else if (it == readSensors.end())
+     {
+-        error("Sensor read function not available");
++        lg2::error("Sensor read function not available");
+         return;
+     }
+ 
+@@ -281,7 +282,7 @@ void HealthSensor::initHealthSensor(const std::vector<std::string>& chassisIds)
+ 
+     if (value < 0)
+     {
+-        error("Reading Sensor Utilization failed: {SENSOR}", "SENSOR",
++        lg2::error("Reading Sensor Utilization failed: {SENSOR}", "SENSOR",
+               sensorConfig.name);
+         return;
+     }
+@@ -326,7 +327,7 @@ void HealthSensor::checkSensorThreshold(const double value)
+             //signal SEL service
+             CriticalInterface::criticalHighAlarmAsserted(value);
+             if (sensorConfig.criticalLog)
+-                error(
++                lg2::error(
+                     "ASSERT: sensor {SENSOR} is above the upper threshold critical high",
+                     "SENSOR", sensorConfig.name);
+         }
+@@ -338,7 +339,7 @@ void HealthSensor::checkSensorThreshold(const double value)
+         CriticalInterface::criticalAlarmHigh(false);
+         CriticalInterface::criticalHighAlarmDeasserted(value);
+         if (sensorConfig.criticalLog)
+-            info(
++            lg2::info(
+                 "DEASSERT: sensor {SENSOR} is under the upper threshold critical high",
+                 "SENSOR", sensorConfig.name);
+     }
+@@ -351,7 +352,7 @@ void HealthSensor::checkSensorThreshold(const double value)
+             WarningInterface::warningAlarmHigh(true);
+             WarningInterface::warningHighAlarmAsserted(value);
+             if (sensorConfig.warningLog)
+-                error(
++                lg2::error(
+                     "ASSERT: sensor {SENSOR} is above the upper threshold warning high",
+                     "SENSOR", sensorConfig.name);
+         }
+@@ -363,7 +364,7 @@ void HealthSensor::checkSensorThreshold(const double value)
+         WarningInterface::warningAlarmHigh(false);
+         WarningInterface::warningHighAlarmDeasserted(value);
+         if (sensorConfig.warningLog)
+-            info(
++            lg2::info(
+                 "DEASSERT: sensor {SENSOR} is under the upper threshold warning high",
+                 "SENSOR", sensorConfig.name);
+     }
+@@ -389,7 +390,7 @@ void HealthSensor::readHealthSensor()
+ 
+     if (value < 0)
+     {
+-        error("Reading Sensor Utilization failed: {SENSOR}", "SENSOR",
++        lg2::error("Reading Sensor Utilization failed: {SENSOR}", "SENSOR",
+               sensorConfig.name);
+         return;
+     }
+@@ -443,17 +444,17 @@ void HealthMon::recreateSensors()
+ 
+             sdbusplus::message::message reply = bus.call(msg, 0);
+             reply.read(bmcIds);
+-            info("BMC inventory found");
++            lg2::info("BMC inventory found");
+         }
+         catch (std::exception& e)
+         {
+-            error("Exception occurred while calling {PATH}: {ERROR}", "PATH",
++            lg2::error("Exception occurred while calling {PATH}: {ERROR}", "PATH",
+                   InventoryPath, "ERROR", e);
+         }
+     }
+     else
+     {
+-        error("Path {PATH} does not exist in ObjectMapper, cannot "
++        lg2::error("Path {PATH} does not exist in ObjectMapper, cannot "
+               "create association",
+               "PATH", InventoryPath);
+     }
+@@ -485,7 +486,7 @@ void HealthMon::createHealthSensors(const std::vector<std::string>& chassisIds)
+                                                            cfg, chassisIds);
+         healthSensors.emplace(cfg.name, healthSensor);
+ 
+-        info("{SENSOR} Health Sensor created", "SENSOR", cfg.name);
++        lg2::info("{SENSOR} Health Sensor created", "SENSOR", cfg.name);
+ 
+         /* Set configured values of crtical and warning high to dbus */
+         healthSensor->setSensorThreshold(cfg.criticalHigh, cfg.warningHigh);
+@@ -498,13 +499,13 @@ Json HealthMon::parseConfigFile(std::string configFile)
+     std::ifstream jsonFile(configFile);
+     if (!jsonFile.is_open())
+     {
+-        error("config JSON file not found: {PATH}", "PATH", configFile);
++        lg2::error("config JSON file not found: {PATH}", "PATH", configFile);
+     }
+ 
+     auto data = Json::parse(jsonFile, nullptr, false);
+     if (data.is_discarded())
+     {
+-        error("config readings JSON parser failure: {PATH}", "PATH",
++        lg2::error("config readings JSON parser failure: {PATH}", "PATH",
+               configFile);
+     }
+ 
+@@ -590,7 +591,7 @@ std::vector<HealthConfig> HealthMon::getHealthConfig()
+         }
+         else
+         {
+-            error("{SENSOR} Health Sensor not supported", "SENSOR", key);
++            lg2::error("{SENSOR} Health Sensor not supported", "SENSOR", key);
+         }
+     }
+     return cfgs;
+@@ -636,7 +637,7 @@ int main()
+                 msg.read(o);
+                 if (o.str == phosphor::health::BMCActivationPath)
+                 {
+-                    info("should recreate sensors now");
++                    lg2::info("should recreate sensors now");
+                     needUpdate = true;
+                 }
+             });
+-- 
+2.7.4
+

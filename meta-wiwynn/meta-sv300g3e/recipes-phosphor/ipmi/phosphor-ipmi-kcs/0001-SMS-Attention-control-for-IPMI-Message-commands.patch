@@ -1,0 +1,56 @@
+From cb5bac8996144ece07278fff04cdccd3e9674533 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Mon, 2 Mar 2020 23:46:40 +0800
+Subject: [PATCH] SMS Attention control for IPMI Message commands
+
+---
+ kcsbridged.cpp | 19 +++++++++++++++++++
+ 1 file changed, 19 insertions(+)
+
+diff --git a/kcsbridged.cpp b/kcsbridged.cpp
+index a37cf5f..3d8bea1 100644
+--- a/kcsbridged.cpp
++++ b/kcsbridged.cpp
+@@ -81,6 +81,10 @@ class SmsChannel
+     static constexpr size_t kcsMessageSize = 256;
+     static constexpr uint8_t netFnShift = 2;
+     static constexpr uint8_t lunMask = (1 << netFnShift) - 1;
++    static constexpr uint8_t netFnAppRes = 0x7;
++    static constexpr uint8_t cmdGetMsg = 0x33;
++    static constexpr uint8_t cmdSendMsg = 0x34;
++    static constexpr uint8_t ipmiCcOk = 0x0;
+ 
+     SmsChannel(std::shared_ptr<boost::asio::io_context>& io,
+                std::shared_ptr<sdbusplus::asio::connection>& bus,
+@@ -224,6 +228,14 @@ class SmsChannel
+                         entry("LUN=0x%02x", lun), entry("CMD=0x%02x", cmd),
+                         entry("CC=0x%02x", cc));
+                 }
++
++                // Clear SMS Attention after Get Message command
++                if (netfn == netFnAppRes &&
++                    cmd == cmdGetMsg && cc == ipmiCcOk)
++                {
++                    clearAttention();
++                }
++
+                 boost::system::error_code ecWr;
+                 size_t wlen =
+                     boost::asio::write(*dev, boost::asio::buffer(rsp), ecWr);
+@@ -236,6 +248,13 @@ class SmsChannel
+                         entry("NETFN=0x%02x", netfn), entry("LUN=0x%02x", lun),
+                         entry("CMD=0x%02x", cmd), entry("CC=0x%02x", cc));
+                 }
++
++                // Set SMS Attention after Sent Message command
++                if (netfn ==  netFnAppRes && cmd == cmdSendMsg &&
++                    cc == ipmiCcOk && payload.size() == 0)
++                {
++                    setAttention();
++                }
+             },
+             ipmiQueueService, ipmiQueuePath, ipmiQueueIntf, ipmiQueueMethod,
+             netfn, lun, cmd, data, options);
+-- 
+2.24.1
+

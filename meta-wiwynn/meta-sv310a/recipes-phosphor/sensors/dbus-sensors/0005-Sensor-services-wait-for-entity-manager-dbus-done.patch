@@ -1,0 +1,186 @@
+From b34a5e9c18a29bc22701afa8ad0101c4e663149b Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Tue, 3 Nov 2020 11:41:43 +0800
+Subject: [PATCH] Sensor services wait for entity-manager dbus done
+
+---
+ service_files/xyz.openbmc_project.adcsensor.service       | 3 ++-
+ service_files/xyz.openbmc_project.cpusensor.service       | 3 ++-
+ service_files/xyz.openbmc_project.exitairsensor.service   | 3 ++-
+ service_files/xyz.openbmc_project.externalsensor.service  | 3 ++-
+ service_files/xyz.openbmc_project.fansensor.service       | 3 ++-
+ service_files/xyz.openbmc_project.hwmontempsensor.service | 3 ++-
+ service_files/xyz.openbmc_project.intrusionsensor.service | 3 ++-
+ service_files/xyz.openbmc_project.ipmbsensor.service      | 3 ++-
+ service_files/xyz.openbmc_project.mcutempsensor.service   | 3 ++-
+ service_files/xyz.openbmc_project.nvmesensor.service      | 3 +++
+ service_files/xyz.openbmc_project.psusensor.service       | 3 ++-
+ 11 files changed, 23 insertions(+), 10 deletions(-)
+
+diff --git a/service_files/xyz.openbmc_project.adcsensor.service b/service_files/xyz.openbmc_project.adcsensor.service
+index 6ca7049..0c311d0 100644
+--- a/service_files/xyz.openbmc_project.adcsensor.service
++++ b/service_files/xyz.openbmc_project.adcsensor.service
+@@ -2,8 +2,9 @@
+ Description=Adc Sensor
+ StopWhenUnneeded=false
+ Before=xyz.openbmc_project.cpusensor.service
+-Requires=xyz.openbmc_project.EntityManager.service
+ After=xyz.openbmc_project.EntityManager.service
++Wants=mapper-wait@-xyz-openbmc_project-inventory-done.service
++After=mapper-wait@-xyz-openbmc_project-inventory-done.service
+ 
+ [Service]
+ Restart=always
+diff --git a/service_files/xyz.openbmc_project.cpusensor.service b/service_files/xyz.openbmc_project.cpusensor.service
+index 31b7bbd..eddf146 100644
+--- a/service_files/xyz.openbmc_project.cpusensor.service
++++ b/service_files/xyz.openbmc_project.cpusensor.service
+@@ -1,8 +1,9 @@
+ [Unit]
+ Description=CPU Sensor
+ StopWhenUnneeded=false
+-Requires=xyz.openbmc_project.EntityManager.service
+ After=xyz.openbmc_project.EntityManager.service
++Wants=mapper-wait@-xyz-openbmc_project-inventory-done.service
++After=mapper-wait@-xyz-openbmc_project-inventory-done.service
+ 
+ [Service]
+ Restart=always
+diff --git a/service_files/xyz.openbmc_project.exitairsensor.service b/service_files/xyz.openbmc_project.exitairsensor.service
+index a799c5b..74d8213 100644
+--- a/service_files/xyz.openbmc_project.exitairsensor.service
++++ b/service_files/xyz.openbmc_project.exitairsensor.service
+@@ -3,8 +3,9 @@ Description=Exit Air Temp Sensor
+ StopWhenUnneeded=false
+ Requires=xyz.openbmc_project.Settings.service
+ After=xyz.openbmc_project.Settings.service
+-Requires=xyz.openbmc_project.EntityManager.service
+ After=xyz.openbmc_project.EntityManager.service
++Wants=mapper-wait@-xyz-openbmc_project-inventory-done.service
++After=mapper-wait@-xyz-openbmc_project-inventory-done.service
+ 
+ [Service]
+ Restart=always
+diff --git a/service_files/xyz.openbmc_project.externalsensor.service b/service_files/xyz.openbmc_project.externalsensor.service
+index 9df1b6d..ff31b7c 100644
+--- a/service_files/xyz.openbmc_project.externalsensor.service
++++ b/service_files/xyz.openbmc_project.externalsensor.service
+@@ -1,8 +1,9 @@
+ [Unit]
+ Description=External Sensor
+ StopWhenUnneeded=false
+-Requires=xyz.openbmc_project.EntityManager.service
+ After=xyz.openbmc_project.EntityManager.service
++Wants=mapper-wait@-xyz-openbmc_project-inventory-done.service
++After=mapper-wait@-xyz-openbmc_project-inventory-done.service
+ 
+ [Service]
+ Restart=always
+diff --git a/service_files/xyz.openbmc_project.fansensor.service b/service_files/xyz.openbmc_project.fansensor.service
+index f452ebf..b3f04bf 100644
+--- a/service_files/xyz.openbmc_project.fansensor.service
++++ b/service_files/xyz.openbmc_project.fansensor.service
+@@ -1,8 +1,9 @@
+ [Unit]
+ Description=Fan Sensor
+ StopWhenUnneeded=false
+-Requires=xyz.openbmc_project.EntityManager.service
+ After=xyz.openbmc_project.EntityManager.service
++Wants=mapper-wait@-xyz-openbmc_project-inventory-done.service
++After=mapper-wait@-xyz-openbmc_project-inventory-done.service
+ 
+ [Service]
+ Restart=always
+diff --git a/service_files/xyz.openbmc_project.hwmontempsensor.service b/service_files/xyz.openbmc_project.hwmontempsensor.service
+index 9513ac3..b3fff2e 100644
+--- a/service_files/xyz.openbmc_project.hwmontempsensor.service
++++ b/service_files/xyz.openbmc_project.hwmontempsensor.service
+@@ -1,8 +1,9 @@
+ [Unit]
+ Description=Hwmon Temp Sensor
+ StopWhenUnneeded=false
+-Requires=xyz.openbmc_project.EntityManager.service
+ After=xyz.openbmc_project.EntityManager.service
++Wants=mapper-wait@-xyz-openbmc_project-inventory-done.service
++After=mapper-wait@-xyz-openbmc_project-inventory-done.service
+ 
+ [Service]
+ Restart=always
+diff --git a/service_files/xyz.openbmc_project.intrusionsensor.service b/service_files/xyz.openbmc_project.intrusionsensor.service
+index 1730b07..78feac1 100644
+--- a/service_files/xyz.openbmc_project.intrusionsensor.service
++++ b/service_files/xyz.openbmc_project.intrusionsensor.service
+@@ -1,8 +1,9 @@
+ [Unit]
+ Description=Intrusion Sensor
+ StopWhenUnneeded=false
+-Requires=xyz.openbmc_project.EntityManager.service
+ After=xyz.openbmc_project.EntityManager.service
++Wants=mapper-wait@-xyz-openbmc_project-inventory-done.service
++After=mapper-wait@-xyz-openbmc_project-inventory-done.service
+ 
+ [Service]
+ Restart=always
+diff --git a/service_files/xyz.openbmc_project.ipmbsensor.service b/service_files/xyz.openbmc_project.ipmbsensor.service
+index 9f6805d..46004ca 100644
+--- a/service_files/xyz.openbmc_project.ipmbsensor.service
++++ b/service_files/xyz.openbmc_project.ipmbsensor.service
+@@ -1,8 +1,9 @@
+ [Unit]
+ Description=IPMB Sensor
+ StopWhenUnneeded=false
+-Requires=xyz.openbmc_project.EntityManager.service
+ After=xyz.openbmc_project.EntityManager.service
++Wants=mapper-wait@-xyz-openbmc_project-inventory-done.service
++After=mapper-wait@-xyz-openbmc_project-inventory-done.service
+ 
+ [Service]
+ Restart=always
+diff --git a/service_files/xyz.openbmc_project.mcutempsensor.service b/service_files/xyz.openbmc_project.mcutempsensor.service
+index d4d16e4..708148f 100644
+--- a/service_files/xyz.openbmc_project.mcutempsensor.service
++++ b/service_files/xyz.openbmc_project.mcutempsensor.service
+@@ -1,8 +1,9 @@
+ [Unit]
+ Description=MCU Temp Sensor
+ StopWhenUnneeded=false
+-Requires=xyz.openbmc_project.EntityManager.service
+ After=xyz.openbmc_project.EntityManager.service
++Wants=mapper-wait@-xyz-openbmc_project-inventory-done.service
++After=mapper-wait@-xyz-openbmc_project-inventory-done.service
+ 
+ [Service]
+ Restart=always
+diff --git a/service_files/xyz.openbmc_project.nvmesensor.service b/service_files/xyz.openbmc_project.nvmesensor.service
+index a5c8725..972ca1c 100644
+--- a/service_files/xyz.openbmc_project.nvmesensor.service
++++ b/service_files/xyz.openbmc_project.nvmesensor.service
+@@ -2,6 +2,9 @@
+ Description=NVMe Sensor
+ StopWhenUnneeded=false
+ After=xyz.openbmc_project.FruDevice.service
++After=xyz.openbmc_project.EntityManager.service
++Wants=mapper-wait@-xyz-openbmc_project-inventory-done.service
++After=mapper-wait@-xyz-openbmc_project-inventory-done.service
+ 
+ [Service]
+ Restart=always
+diff --git a/service_files/xyz.openbmc_project.psusensor.service b/service_files/xyz.openbmc_project.psusensor.service
+index 4b22e8c..5c5ed61 100644
+--- a/service_files/xyz.openbmc_project.psusensor.service
++++ b/service_files/xyz.openbmc_project.psusensor.service
+@@ -1,8 +1,9 @@
+ [Unit]
+ Description=PSU Sensor
+ StopWhenUnneeded=false
+-Requires=xyz.openbmc_project.EntityManager.service
+ After=xyz.openbmc_project.EntityManager.service
++Wants=mapper-wait@-xyz-openbmc_project-inventory-done.service
++After=mapper-wait@-xyz-openbmc_project-inventory-done.service
+ 
+ [Service]
+ Restart=always
+-- 
+2.28.0
+

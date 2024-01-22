@@ -1,0 +1,4 @@
+[Unit]
+Description=Host (Power On)
+RefuseManualStart=no
+RefuseManualStop=yes

@@ -1,0 +1,16 @@
+[Unit]
+Description=Re-check BMC state after multi-user is reached
+After=multi-user.target
+StartLimitBurst=5
+StartLimitIntervalSec=500
+
+[Service]
+RemainAfterExit=no
+Restart=on-failure
+RestartSec=20s
+
+ExecStart=/usr/bin/env stateRecheck.sh
+SyslogIdentifier=stateRecheck.sh
+
+[Install]
+WantedBy=basic.target

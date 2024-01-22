@@ -1,0 +1,757 @@
+{
+    "Exposes": [
+        {
+            "Address": "0x4c",
+            "Bus": 2,
+            "Name": "CPU_Temp",
+            "PowerState": "On",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Label": "CPU_Temp",
+                    "Hysteresis": 3,
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 95,
+                    "Index": 1
+                }
+            ],
+            "Type": "SBTSI"
+        },
+        {
+            "Address": "0x3c",
+            "Bus": 2,
+            "Name": "P0_UMC3_CH_A0",
+            "Name1": "P0_UMC4_CH_B0",
+            "Name2": "P0_UMC0_CH_C0",
+            "Name3": "P0_UMC5_CH_D0",
+            "Name4": "P0_UMC1_CH_E0",
+            "Name5": "P0_UMC2_CH_F0",
+            "Name6": "P0_UMC9_CH_G0",
+            "Name7": "P0_UMC10_CH_H0",
+            "Name8": "P0_UMC6_CH_I0",
+            "Name9": "P0_UMC11_CH_J0",
+            "Name10": "P0_UMC7_CH_K0",
+            "Name11": "P0_UMC8_CH_L0",
+            "Name12": "P0_UMC3_CH_A1",
+            "Name13": "P0_UMC4_CH_B1",
+            "Name14": "P0_UMC0_CH_C1",
+            "Name15": "P0_UMC5_CH_D1",
+            "Name16": "P0_UMC1_CH_E1",
+            "Name17": "P0_UMC2_CH_F1",
+            "Name18": "P0_UMC9_CH_G1",
+            "Name19": "P0_UMC10_CH_H1",
+            "Name20": "P0_UMC6_CH_I1",
+            "Name21": "P0_UMC11_CH_J1",
+            "Name22": "P0_UMC7_CH_K1",
+            "Name23": "P0_UMC8_CH_L1",
+            "PowerState": "On",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Label": "P0_UMC3_CH_A0",
+                    "Name": "upper critical",
+                    "Hysteresis": 3,
+                    "Severity": 1,
+                    "Value": 85,
+                    "Index": 1
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "P0_UMC4_CH_B0",
+                    "Name": "upper critical",
+                    "Hysteresis": 3,
+                    "Severity": 1,
+                    "Value": 85,
+                    "Index": 2
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "P0_UMC0_CH_C0",
+                    "Name": "upper critical",
+                    "Hysteresis": 3,
+                    "Severity": 1,
+                    "Value": 85,
+                    "Index": 3
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "P0_UMC5_CH_D0",
+                    "Name": "upper critical",
+                    "Hysteresis": 3,
+                    "Severity": 1,
+                    "Value": 85,
+                    "Index": 4
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "P0_UMC1_CH_E0",
+                    "Name": "upper critical",
+                    "Hysteresis": 3,
+                    "Severity": 1,
+                    "Value": 85,
+                    "Index": 5
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "P0_UMC2_CH_F0",
+                    "Name": "upper critical",
+                    "Hysteresis": 3,
+                    "Severity": 1,
+                    "Value": 85,
+                    "Index": 6
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "P0_UMC9_CH_G0",
+                    "Name": "upper critical",
+                    "Hysteresis": 3,
+                    "Severity": 1,
+                    "Value": 85,
+                    "Index": 7
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "P0_UMC10_CH_H0",
+                    "Name": "upper critical",
+                    "Hysteresis": 3,
+                    "Severity": 1,
+                    "Value": 85,
+                    "Index": 8
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "P0_UMC6_CH_I0",
+                    "Name": "upper critical",
+                    "Hysteresis": 3,
+                    "Severity": 1,
+                    "Value": 85,
+                    "Index": 9
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "P0_UMC11_CH_J0",
+                    "Name": "upper critical",
+                    "Hysteresis": 3,
+                    "Severity": 1,
+                    "Value": 85,
+                    "Index": 10
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "P0_UMC7_CH_K0",
+                    "Name": "upper critical",
+                    "Hysteresis": 3,
+                    "Severity": 1,
+                    "Value": 85,
+                    "Index": 11
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "P0_UMC8_CH_L0",
+                    "Name": "upper critical",
+                    "Hysteresis": 3,
+                    "Severity": 1,
+                    "Value": 85,
+                    "Index": 12
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "P0_UMC3_CH_A1",
+                    "Name": "upper critical",
+                    "Hysteresis": 3,
+                    "Severity": 1,
+                    "Value": 85,
+                    "Index": 13
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "P0_UMC4_CH_B1",
+                    "Name": "upper critical",
+                    "Hysteresis": 3,
+                    "Severity": 1,
+                    "Value": 85,
+                    "Index": 14
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "P0_UMC0_CH_C1",
+                    "Name": "upper critical",
+                    "Hysteresis": 3,
+                    "Severity": 1,
+                    "Value": 85,
+                    "Index": 15
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "P0_UMC5_CH_D1",
+                    "Name": "upper critical",
+                    "Hysteresis": 3,
+                    "Severity": 1,
+                    "Value": 85,
+                    "Index": 16
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "P0_UMC1_CH_E1",
+                    "Name": "upper critical",
+                    "Hysteresis": 3,
+                    "Severity": 1,
+                    "Value": 85,
+                    "Index": 17
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "P0_UMC2_CH_F1",
+                    "Name": "upper critical",
+                    "Hysteresis": 3,
+                    "Severity": 1,
+                    "Value": 85,
+                    "Index": 18
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "P0_UMC9_CH_G1",
+                    "Name": "upper critical",
+                    "Hysteresis": 3,
+                    "Severity": 1,
+                    "Value": 85,
+                    "Index": 19
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "P0_UMC10_CH_H1",
+                    "Name": "upper critical",
+                    "Hysteresis": 3,
+                    "Severity": 1,
+                    "Value": 85,
+                    "Index": 20
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "P0_UMC6_CH_I1",
+                    "Name": "upper critical",
+                    "Hysteresis": 3,
+                    "Severity": 1,
+                    "Value": 85,
+                    "Index": 21
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "P0_UMC11_CH_J1",
+                    "Name": "upper critical",
+                    "Hysteresis": 3,
+                    "Severity": 1,
+                    "Value": 85,
+                    "Index": 22
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "P0_UMC7_CH_K1",
+                    "Name": "upper critical",
+                    "Hysteresis": 3,
+                    "Severity": 1,
+                    "Value": 85,
+                    "Index": 23
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "P0_UMC8_CH_L1",
+                    "Name": "upper critical",
+                    "Hysteresis": 3,
+                    "Severity": 1,
+                    "Value": 85,
+                    "Index": 24
+                }
+            ],
+            "Type": "TMP75"
+        },
+        {
+            "Index": 0,
+            "Name": "CPU_CORE0",
+            "PowerState": "On",
+            "ScaleFactor": 1,
+            "MaxReading": 3,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 2.505
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 0.438
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 1,
+            "Name": "CPU_VDDIO",
+            "PowerState": "Always",
+            "ScaleFactor": 1,
+            "MaxReading": 2,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 1.315
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 0.834
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 2,
+            "Name": "CPU_SOC",
+            "PowerState": "On",
+            "ScaleFactor": 1,
+            "MaxReading": 3,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 1.504
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 0.602
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 3,
+            "Name": "CPU_11_SUS",
+            "PowerState": "On",
+            "ScaleFactor": 1,
+            "MaxReading": 3,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 1.374
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 0.875
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 4,
+            "Name": "CPU_CORE1",
+            "PowerState": "On",
+            "ScaleFactor": 1,
+            "MaxReading": 3,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 2.500
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 0.432
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 5,
+            "Name": "CPU_33_DUAL",
+            "PowerState": "Always",
+            "ScaleFactor": 0.4112,
+            "MaxReading": 5,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 3.615
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 2.792
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 6,
+            "Name": "VCC_12_RUN",
+            "PowerState": "On",
+            "ScaleFactor": 0.113,
+            "MaxReading": 20,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 13.044
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 10.521
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 7,
+            "Name": "VBAT",
+            "PowerState": "Always",
+            "ScaleFactor": 1,
+            "MaxReading": 10,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 3.584
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 2.678
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 8,
+            "Name": "VDD_12_RUN",
+            "PowerState": "On",
+            "ScaleFactor": 0.113,
+            "MaxReading": 20,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 13.044
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 10.521
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 9,
+            "Name": "VDD_5_RUN",
+            "PowerState": "Always",
+            "ScaleFactor": 0.2722,
+            "MaxReading": 10,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 5.518
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 4.488
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 10,
+            "Name": "VDD_33_RUN",
+            "PowerState": "Always",
+            "ScaleFactor": 0.4112,
+            "MaxReading": 5,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 3.615
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 2.697
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 11,
+            "Name": "VDD_33_DUAL",
+            "PowerState": "Always",
+            "ScaleFactor": 0.4112,
+            "MaxReading": 5,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 3.615
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 2.697
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 12,
+            "Name": "CPU_18_DUAL",
+            "PowerState": "On",
+            "ScaleFactor": 0.75,
+            "MaxReading": 5,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 1.993
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 1.212
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 13,
+            "Name": "USB_1V2_HUB",
+            "PowerState": "Always",
+            "ScaleFactor": 0.75,
+            "MaxReading": 3,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 1.993
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 1.004
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Address": "0x2e",
+            "Bus": 30,
+            "Name": "OCP_Area_Temp",
+            "Name1": "M2_Area_Temp",
+            "Name2": "SYS_Air_Outlet",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Label": "OCP_Area_Temp",
+                    "Name": "upper critical",
+                    "Hysteresis": 3,
+                    "Severity": 1,
+                    "Value": 50,
+                    "Index": 1
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "M2_Area_Temp",
+                    "Name": "upper critical",
+                    "Hysteresis": 3,
+                    "Severity": 1,
+                    "Value": 70,
+                    "Index": 2
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "SYS_Air_Outlet",
+                    "Name": "upper critical",
+                    "Hysteresis": 3,
+                    "Severity": 1,
+                    "Value": 70,
+                    "Index": 3
+                }
+            ],
+            "Type": "TMP75"
+        },
+        {
+            "Name": "NIC_Temp",
+            "Bus": 25,
+            "Address": "0x1F",
+            "Command": "0x01",
+            "SensorType": "temp",
+            "Mode": "Byte",
+            "PowerState": "On",
+            "MaxReading": 255,
+            "MinReading": 0,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Hysteresis": 3,
+                    "Severity": 1,
+                    "Value": 100
+                }
+            ],
+            "Type": "NicSensor"
+        },
+        {
+            "Address": "0x61",
+            "Bus": 4,
+            "Reg": "0x8d",
+            "Name": "CPU_MOSFET_1",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Hysteresis": 3,
+                    "Severity": 1,
+                    "Value": 110
+                }
+            ],
+            "Type": "VRTempSensor"
+        },
+        {
+            "Address": "0x62",
+            "Bus": 4,
+            "Reg": "0x8d",
+            "Name": "CPU_MOSFET_2",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Hysteresis": 3,
+                    "Severity": 1,
+                    "Value": 110
+                }
+            ],
+            "Type": "VRTempSensor"
+        },
+        {
+            "Address": "0x63",
+            "Bus": 4,
+            "Reg": "0x8d",
+            "Name": "CPU_MOSFET_3",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Hysteresis": 3,
+                    "Severity": 1,
+                    "Value": 110
+                }
+            ],
+            "Type": "VRTempSensor"
+        },
+        {
+            "Address": "0x59",
+            "Bus": "3",
+            "Name": "POWER_MODULE",
+            "Labels": ["vout1", "iout1", "temp1", "pout1"],
+            "vout1_Name": "PDB2_12V_VOUT",
+            "iout1_Name": "PDB2_12V_IOUT",
+            "temp1_Name": "PDB2_Temp",
+            "pout1_Name": "PDB2_12V_POUT",
+            "PowerStates": [
+                 {
+                     "Label": "vout1",
+                     "PowerState": "BiosPost"
+                 },
+                 {
+                     "Label": "iout1",
+                     "PowerState": "BiosPost"
+                 },
+                 {
+                     "Label": "temp1",
+                     "PowerState": "Always"
+                 },
+                 {
+                     "Label": "pout1",
+                     "PowerState": "BiosPost"
+                 }
+            ],
+            "Thresholds": [
+                 {
+                     "Direction": "greater than",
+                     "Label": "vout1",
+                     "Name": "upper critical",
+                     "Severity": 1,
+                     "Value": 12.5
+                 },
+                 {
+                     "Direction": "less than",
+                     "Label": "vout1",
+                     "Name": "lower critical",
+                     "Severity": 1,
+                     "Value": 11.64
+                 },
+                 {
+                     "Direction": "greater than",
+                     "Label": "temp1",
+                     "Name": "upper critical",
+                     "Hysteresis": 3,
+                     "Severity": 1,
+                     "Value": 105
+                 }
+             ],
+            "Type": "pmbus"
+        }
+    ],
+    "Name": "s8056 Baseboard",
+    "Probe": [
+        "xyz.openbmc_project.FruDevice({'BUS' : 1, 'ADDRESS': 80})"
+    ],
+    "Type": "Board",
+    "xyz.openbmc_project.Inventory.Decorator.Asset": {
+        "ChassisType": "$CHASSIS_TYPE",
+        "ChassisPartNumber": "$CHASSIS_PART_NUMBER",
+        "ChassisSerial": "$CHASSIS_SERIAL_NUMBER",
+        "ChassisExtra": "$CHASSIS_INFO_AM1",
+        "BoardMfgDate": "$BOARD_MANUFACTURE_DATE",
+        "BoardMfg": "$BOARD_MANUFACTURER",
+        "BoardProduct": "$BOARD_PRODUCT_NAME",
+        "BoardSerial": "$BOARD_SERIAL_NUMBER",
+        "BoardPartNumber": "$BOARD_PART_NUMBER",
+        "ProductName": "$PRODUCT_PRODUCT_NAME",
+        "ProductPartNumber": "$PRODUCT_PART_NUMBER",
+        "ProductVersion": "$PRODUCT_VERSION",
+        "ProductSerial": "$PRODUCT_SERIAL_NUMBER"
+    }
+}

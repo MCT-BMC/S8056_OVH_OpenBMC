@@ -1,0 +1,114 @@
+From 7164f43168dfd68d595a35d067196d5982c80b54 Mon Sep 17 00:00:00 2001
+From: Ren Chen <ren_chen@wiwynn.com>
+Date: Tue, 9 Nov 2021 14:19:36 +0800
+Subject: [PATCH] Revise the source of GPIO bridge enabled time is from
+ configuration file
+
+%% original patch: 0031-Revise-the-source-of-GPIO-bridge-enabled-time.patch
+---
+ include/ADCSensor.hpp | 11 ++++++++++-
+ src/ADCSensor.cpp     |  6 +++++-
+ src/ADCSensorMain.cpp | 18 +++++++++++++++++-
+ 3 files changed, 32 insertions(+), 3 deletions(-)
+
+diff --git a/include/ADCSensor.hpp b/include/ADCSensor.hpp
+index 373ffde..19b462d 100644
+--- a/include/ADCSensor.hpp
++++ b/include/ADCSensor.hpp
+@@ -15,7 +15,9 @@
+ class BridgeGpio
+ {
+   public:
+-    BridgeGpio(const std::string& name, const int polarity)
++    BridgeGpio(const std::string& name, const int polarity,
++               const float enableTimeMs) :
++        gpioBridgeEnableTimeMs(static_cast<unsigned int>(enableTimeMs))
+     {
+         line = gpiod::find_line(name);
+         if (!line)
+@@ -54,8 +56,14 @@ class BridgeGpio
+         }
+     }
+ 
++    unsigned int getGpioBridgeEnableTime()
++    {
++        return gpioBridgeEnableTimeMs;
++    }
++
+   private:
+     gpiod::line line;
++    unsigned int gpioBridgeEnableTimeMs;
+ };
+ 
+ class ADCSensor : public Sensor, public std::enable_shared_from_this<ADCSensor>
+@@ -84,6 +92,7 @@ class ADCSensor : public Sensor, public std::enable_shared_from_this<ADCSensor>
+     std::string path;
+     double scaleFactor;
+     unsigned int sensorPollMs;
++    unsigned int gpioBridgeEnableMs;
+     std::optional<BridgeGpio> bridgeGpio;
+     thresholds::ThresholdTimer thresholdTimer;
+     int retry;
+diff --git a/src/ADCSensor.cpp b/src/ADCSensor.cpp
+index fa81950..e9ee683 100644
+--- a/src/ADCSensor.cpp
++++ b/src/ADCSensor.cpp
+@@ -34,7 +34,6 @@
+ #include <vector>
+ 
+ static constexpr size_t warnAfterErrorCount = 10;
+-static constexpr unsigned int gpioBridgeEnableMs = 20;
+ // scaling factor from hwmon
+ static constexpr unsigned int sensorScaleFactor = 1000;
+ 
+@@ -75,6 +74,11 @@ ADCSensor::ADCSensor(const std::string& path, const std::string& objectType,
+     }
+     association = objectServer.add_interface(dbusPath, association::interface);
+     setInitialProperties(conn, sensor_paths::unitVolts);
++
++    if (bridgeGpio.has_value())
++    {
++        gpioBridgeEnableMs = (*bridgeGpio).getGpioBridgeEnableTime();
++    }
+ }
+ 
+ ADCSensor::~ADCSensor()
+diff --git a/src/ADCSensorMain.cpp b/src/ADCSensorMain.cpp
+index 182e9ac..c332301 100644
+--- a/src/ADCSensorMain.cpp
++++ b/src/ADCSensorMain.cpp
+@@ -39,6 +39,7 @@ static constexpr bool debug = false;
+ static constexpr float pollRateDefault = 1;
+ static constexpr double maxReading = 20;
+ static constexpr double minReading = 0;
++static constexpr float enableTimeMsDefault = 20;
+ 
+ namespace fs = std::filesystem;
+ 
+@@ -219,7 +220,22 @@ void createSensors(
+                                     polarity = gpiod::line::ACTIVE_LOW;
+                                 }
+                             }
+-                            bridgeGpio = BridgeGpio(gpioName, polarity);
++
++                            float enableTimeMs = enableTimeMsDefault;
++                            auto findEnableTimeMs =
++                                suppConfig.second.find("EnableTimeMs");
++                            if (findEnableTimeMs != suppConfig.second.end())
++                            {
++                                enableTimeMs =
++                                    std::visit(VariantToFloatVisitor(),
++                                               findEnableTimeMs->second);
++                                if (enableTimeMs <= 0.0f)
++                                {
++                                    enableTimeMs = enableTimeMsDefault;
++                                }
++                            }
++                            bridgeGpio =
++                                BridgeGpio(gpioName, polarity, enableTimeMs);
+                         }
+ 
+                         break;
+-- 
+2.32.0
+

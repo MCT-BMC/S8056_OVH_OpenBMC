@@ -1,0 +1,66 @@
+From e6edd1c4b8852f3aead045f2ee13cfd02de1f44b Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Sun, 22 Mar 2020 22:21:58 +0800
+Subject: [PATCH] Set the sensor value of absent DIMM as invalid
+
+---
+ include/CPUSensor.hpp |  1 +
+ src/CPUSensor.cpp     | 26 +++++++++++++++++---------
+ 2 files changed, 18 insertions(+), 9 deletions(-)
+
+diff --git a/include/CPUSensor.hpp b/include/CPUSensor.hpp
+index c2e4a8c..27e501b 100644
+--- a/include/CPUSensor.hpp
++++ b/include/CPUSensor.hpp
+@@ -32,6 +32,7 @@ class CPUSensor : public Sensor
+     // static constexpr double maxReading = 127;
+     // static constexpr double minReading = -128;
+     static constexpr const char* labelTcontrol = "Tcontrol";
++    static constexpr const double deviceAbsent = 0;
+ 
+   private:
+     sdbusplus::asio::object_server& objServer;
+diff --git a/src/CPUSensor.cpp b/src/CPUSensor.cpp
+index 17f8423..8a368d1 100644
+--- a/src/CPUSensor.cpp
++++ b/src/CPUSensor.cpp
+@@ -162,19 +162,27 @@ void CPUSensor::handleResponse(const boost::system::error_code& err)
+             double nvalue = std::stof(response);
+             responseStream.clear();
+             nvalue /= CPUSensor::sensorScaleFactor;
+-            if (nvalue != value)
++
++            if (nvalue == deviceAbsent)
+             {
+-                if (show)
+-                {
+-                    updateValue(nvalue);
+-                }
+-                else
++                updateValueInvalid(true);
++            }
++            else
++            {
++                if (nvalue != value)
+                 {
+-                    value = nvalue;
++                    if (show)
++                    {
++                        updateValue(nvalue);
++                    }
++                    else
++                    {
++                        value = nvalue;
++                    }
+                 }
+-            }
+ 
+-            updateValueInvalid(false);
++                updateValueInvalid(false);
++            }
+ 
+ #ifdef BMC_CPU_SENSOR_TCONTROL
+             double gTcontrol = gCpuSensors[nameTcontrol]
+-- 
+2.24.1
+

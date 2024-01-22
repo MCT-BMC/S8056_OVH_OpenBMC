@@ -1,0 +1,34 @@
+From d35a16f748725cdc8b7955a5856ff623905c44d6 Mon Sep 17 00:00:00 2001
+From: Ren_Chen <Ren_Chen@wiwynn.com>
+Date: Fri, 21 May 2021 12:15:16 +0800
+Subject: [PATCH] Fix endless cycle issue in toV6Cidr function
+
+Description:
+- If by whatsoever reason toV6Cidr functions gets /128 mask (ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff),
+  it fails into endless cycle.
+
+Design:
+- The toV6Cidr function return 128 if the cidr is larger than 128
+---
+ util.cpp | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/util.cpp b/util.cpp
+index cb9e720..b77d7fe 100644
+--- a/util.cpp
++++ b/util.cpp
+@@ -43,6 +43,11 @@ uint8_t toV6Cidr(const std::string& subnetMask)
+     uint16_t buff{};
+     do
+     {
++        if (cidr >= 128)
++        {
++            return 128;
++        }
++
+         // subnet mask look like ffff:ffff::
+         // or ffff:c000::
+         pos = subnetMask.find(":", prevPos);
+-- 
+2.28.0
+

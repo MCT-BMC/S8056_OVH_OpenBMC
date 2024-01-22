@@ -1,0 +1,12 @@
+[Unit]
+Description=MiTAC BIOS firmware version handler
+After=xyz.openbmc_project.Software.BMC.Updater.service
+
+[Service]
+ExecStart=/usr/bin/env mct-bios-version-handler
+Type=simple
+SyslogIdentifier=mct-bios-version-handler
+TimeoutSec=infinity
+
+[Install]
+WantedBy=multi-user.target

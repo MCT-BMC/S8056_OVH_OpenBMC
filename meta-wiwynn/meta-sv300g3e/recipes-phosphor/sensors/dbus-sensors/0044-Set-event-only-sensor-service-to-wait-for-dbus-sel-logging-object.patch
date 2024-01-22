@@ -1,0 +1,66 @@
+From f7fd5afca0e227e190e5c20bbe1f05214d1971b9 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Tue, 16 Jun 2020 13:31:10 +0800
+Subject: [PATCH] Set event-only sensor service to wait for dbus sel logging
+ object
+
+---
+ include/EventSensor.hpp                               | 4 ++--
+ service_files/xyz.openbmc_project.eventsensor.service | 5 ++++-
+ src/EventSensor.cpp                                   | 2 +-
+ 3 files changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/include/EventSensor.hpp b/include/EventSensor.hpp
+index d40dafa..7e6c3df 100644
+--- a/include/EventSensor.hpp
++++ b/include/EventSensor.hpp
+@@ -61,7 +61,7 @@ static const std::vector<struct sensorTypeMap> sensorList = {
+     {.sensorName = "IPMI_POWER_CYCLE", .sensorType = "fru_state/"},
+     {.sensorName = "CPU0_State", .sensorType = "processor/"},
+     {.sensorName = "CPU1_State", .sensorType = "processor/"},
+-    {.sensorName = "BMC_Health", .sensorType = "mgmtsystemhealth/"},
++    {.sensorName = "BMC_Reboot", .sensorType = "mgmtsystemhealth/"},
+     {.sensorName = "Power_Unit", .sensorType = "powerunit/"},
+     {.sensorName = "Processor_fail", .sensorType = "processor/"},
+     {.sensorName = "EventLogging", .sensorType = "sel_log/"},
+@@ -76,7 +76,7 @@ enum class sensorListIdx : uint8_t
+     IPMI_POWER_CYCLE = 3,
+     CPU0_State = 4,
+     CPU1_State = 5,
+-    BMC_Health = 6,
++    BMC_Reboot = 6,
+     Power_Unit = 7,
+     Processor_fail = 8,
+     EventLogging = 9,
+diff --git a/service_files/xyz.openbmc_project.eventsensor.service b/service_files/xyz.openbmc_project.eventsensor.service
+index d62a5a8..46775ab 100644
+--- a/service_files/xyz.openbmc_project.eventsensor.service
++++ b/service_files/xyz.openbmc_project.eventsensor.service
+@@ -1,7 +1,10 @@
+ [Unit]
+ Description=IPMI Event-only Sensor
+ StopWhenUnneeded=false
+-After=xyz.openbmc_project.EntityManager.service
++Wants=com.intel.crashdump.service
++After=com.intel.crashdump.service
++Wants=mapper-wait@-xyz-openbmc_project-Logging-IPMI.service
++After=mapper-wait@-xyz-openbmc_project-Logging-IPMI.service
+ 
+ [Service]
+ Restart=always
+diff --git a/src/EventSensor.cpp b/src/EventSensor.cpp
+index a58c8ee..8371bda 100644
+--- a/src/EventSensor.cpp
++++ b/src/EventSensor.cpp
+@@ -48,7 +48,7 @@ EventOnlySensor::EventOnlySensor(
+         std::cerr << "error initializing value interface\n";
+     }
+ 
+-    if (0 == sensorName.compare("BMC_Health"))
++    if (0 == sensorName.compare("BMC_Reboot"))
+     {
+         bmcRebootEventLog(conn);
+     }
+-- 
+2.24.1
+

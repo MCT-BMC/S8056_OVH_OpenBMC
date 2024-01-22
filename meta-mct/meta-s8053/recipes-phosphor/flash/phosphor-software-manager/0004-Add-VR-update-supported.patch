@@ -1,0 +1,355 @@
+From 0098d4721286fdff0430d9ac83f5951928001f0b Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Tue, 22 Nov 2022 06:56:03 +0800
+Subject: [PATCH] Add VR update supported
+
+Add VR P0_VDDCR_SOC update supported.
+Add VR P0_VDD11 update supported.
+Add VR P0_VDDIO update supported.
+---
+ activation.cpp                         | 183 +++++++++++++++++++++++++
+ activation.hpp                         |  13 ++
+ item_updater.cpp                       |   3 +
+ meson.build                            |   7 +
+ meson_options.txt                      |   3 +
+ obmc-flash-vr-p0-vdd11@.service.in     |   8 ++
+ obmc-flash-vr-p0-vddcr-soc@.service.in |   8 ++
+ obmc-flash-vr-p0-vddio@.service.in     |   8 ++
+ 8 files changed, 233 insertions(+)
+ create mode 100644 obmc-flash-vr-p0-vdd11@.service.in
+ create mode 100644 obmc-flash-vr-p0-vddcr-soc@.service.in
+ create mode 100644 obmc-flash-vr-p0-vddio@.service.in
+
+diff --git a/activation.cpp b/activation.cpp
+index 6f7fe37..6eaa099 100644
+--- a/activation.cpp
++++ b/activation.cpp
+@@ -129,6 +129,29 @@ auto Activation::activation(Activations value) -> Activations
+         }
+ #endif
+ 
++#ifdef VR_UPGRADE
++        auto vrPurpose = parent.versions.find(versionId)->second->purpose();
++        if (vrPurpose == VersionPurpose::VR)
++        {
++            if (!activationProgress)
++            {
++                activationProgress =
++                    std::make_unique<ActivationProgress>(bus, path);
++            }
++
++            // Enable systemd signals
++            subscribeToSystemdSignals();
++
++            // Set initial progress
++            activationProgress->progress(0);
++
++            // Initiate image writing to flash
++            flashWriteVr();
++
++            return softwareServer::Activation::activation(value);
++        }
++#endif
++
+         auto versionStr = parent.versions.find(versionId)->second->version();
+ 
+         if (!minimum_ship_level::verify(versionStr))
+@@ -351,6 +374,14 @@ void Activation::unitStateChange(sdbusplus::message_t& msg)
+     }
+ #endif
+ 
++#ifdef VR_UPGRADE
++    auto vrPurpose = parent.versions.find(versionId)->second->purpose();
++    if (vrPurpose == VersionPurpose::VR)
++    {
++        onStateChangesVr(msg);
++        return;
++    }
++#endif
+ 
+     onStateChanges(msg);
+ 
+@@ -627,6 +658,158 @@ int32_t Activation::getCpldImagePath(std::string& cpldImagePath)
+ 
+ #endif
+ 
++#ifdef VR_UPGRADE
++void Activation::flashWriteVr()
++{
++    std::string vrImagePath;
++    std::string vrServiceFile;
++    auto ret = getVrImagePath(vrImagePath);
++
++    if(ret!=0)
++    {
++        log<level::ERR>("Error in finding vr path.");
++        report<InternalFailure>();
++        return;
++    }
++
++    int32_t selectVr = getSelectVrPurpose(vrImagePath);
++
++    if(selectVr < 0)
++    {
++        log<level::ERR>("Error in finding specified vr file name.");
++        report<InternalFailure>();
++        return;
++    }
++
++    std::replace(vrImagePath.begin(), vrImagePath.end(), '/', '-');
++
++    auto method = bus.new_method_call(SYSTEMD_BUSNAME, SYSTEMD_PATH,
++                                      SYSTEMD_INTERFACE, "StartUnit");
++    if(selectVr == 1)
++    {
++        vrServiceFile = "obmc-flash-vr-p0-vddcr-soc@" + vrImagePath + ".service";
++    }
++    else if(selectVr == 2)
++    {
++        vrServiceFile = "obmc-flash-vr-p0-vdd11@" + vrImagePath + ".service";
++    }
++    else
++    {
++        vrServiceFile = "obmc-flash-vr-p0-vddio@" + vrImagePath + ".service";
++    }
++    method.append(vrServiceFile, "replace");
++    try
++    {
++        auto reply = bus.call(method);
++    }
++    catch (const sdbusplus::exception_t& e)
++    {
++        log<level::ERR>("Error in trying to upgrade VR.");
++        report<InternalFailure>();
++    }
++}
++
++void Activation::onStateChangesVr(sdbusplus::message::message& msg)
++{
++    uint32_t newStateID{};
++    sdbusplus::message::object_path newStateObjPath;
++    std::string newStateUnit{};
++    std::string newStateResult{};
++    std::string vrServiceFile{};
++    std::string vrImagePath;
++    auto selectVr = getVrImagePath(vrImagePath);
++
++    // Read the msg and populate each variable
++    msg.read(newStateID, newStateObjPath, newStateUnit, newStateResult);
++
++    if(selectVr == 1)
++    {
++        vrServiceFile = "obmc-flash-vr-p0-vddcr-soc@" + vrImagePath + ".service";
++    }
++    else if(selectVr == 2)
++    {
++        vrServiceFile = "obmc-flash-vr-p0-vdd11@" + vrImagePath + ".service";
++    }
++    else
++    {
++        vrServiceFile = "obmc-flash-vr-p0-vddio@" + vrImagePath + ".service";
++    }
++
++    if (newStateUnit == vrServiceFile)
++    {
++        // unsubscribe to systemd signals
++        unsubscribeFromSystemdSignals();
++
++        if (newStateResult == "done")
++        {
++            // Remove version object from image manager
++            deleteImageManagerObject();
++
++            // Set activation progress to 100
++            activationProgress->progress(100);
++
++            // Set Activation value to active
++            activation(softwareServer::Activation::Activations::Active);
++
++            log<level::INFO>("VR upgrade completed successfully.");
++        }
++        else if (newStateResult == "failed")
++        {
++            // Set Activation value to Failed
++            activation(softwareServer::Activation::Activations::Failed);
++
++            log<level::ERR>("VR upgrade failed.");
++        }
++    }
++
++    return;
++}
++
++int32_t Activation::getVrImagePath(std::string& vrImagePath)
++{
++    fs::path dirPath(std::string{IMG_UPLOAD_DIR});
++    dirPath = dirPath / versionId;
++
++    int fileCounter = 0;
++    for (auto& it: fs::directory_iterator(dirPath))
++    {
++        if ( it.path().filename() != "MANIFEST" )
++        {
++            vrImagePath = it.path();
++        }
++        fileCounter++;
++    }
++
++    // The count of files should be 2 : VR firmware file and Manifest.
++    if (fileCounter != 2)
++    {
++        log<level::ERR>("Erro in number of files");
++        return -1;
++    }
++
++    return 0;
++}
++
++int32_t Activation::getSelectVrPurpose(std::string vrImagePath)
++{
++
++    if (vrImagePath.find("P0_VDDCR_SOC") != std::string::npos)
++    {
++        return 1;
++    }
++    else if (vrImagePath.find("P0_VDD11") != std::string::npos)
++    {
++        return 2;
++    }
++    else if (vrImagePath.find("P0_VDDIO") != std::string::npos)
++    {
++        return 3;
++    }
++
++    return -1;
++}
++
++#endif
+ 
+ void Activation::rebootBmc()
+ {
+diff --git a/activation.hpp b/activation.hpp
+index e63f547..3a23637 100644
+--- a/activation.hpp
++++ b/activation.hpp
+@@ -262,6 +262,19 @@ class Activation : public ActivationInherit, public Flash
+     int32_t getCpldImagePath(std::string&);
+ #endif
+ 
++#ifdef VR_UPGRADE
++    /* @brief write to VR device function */
++    void flashWriteVr();
++
++    /** @brief Function that acts on VR upgrade service file state changes */
++    void onStateChangesVr(sdbusplus::message::message&);
++
++    /** @brief Get the VR image path. */
++    int32_t getVrImagePath(std::string&);
++
++    /** @brief Get the selected VR purpose. */
++    int32_t getSelectVrPurpose(std::string vrImagePath);
++#endif
+ 
+     /** @brief Overloaded function that acts on service file state changes */
+     void onStateChanges(sdbusplus::message_t&) override;
+diff --git a/item_updater.cpp b/item_updater.cpp
+index c51e5e9..cd39c65 100644
+--- a/item_updater.cpp
++++ b/item_updater.cpp
+@@ -75,6 +75,9 @@ void ItemUpdater::createActivation(sdbusplus::message_t& msg)
+ #ifdef CPLD_UPGRADE
+                         value == VersionPurpose::CPLD ||
+  #endif
++#ifdef VR_UPGRADE
++                        value == VersionPurpose::VR ||
++#endif
+                         value == VersionPurpose::System)
+                     {
+                         purpose = value;
+diff --git a/meson.build b/meson.build
+index 62d96e4..83c8e72 100644
+--- a/meson.build
++++ b/meson.build
+@@ -68,6 +68,7 @@ conf.set('MMC_LAYOUT', get_option('bmc-layout').contains('mmc'))
+ # Configurable features
+ conf.set('HOST_BIOS_UPGRADE', get_option('host-bios-upgrade').enabled())
+ conf.set('CPLD_UPGRADE', get_option('cpld-upgrade').enabled())
++conf.set('VR_UPGRADE', get_option('vr-upgrade').enabled())
+ conf.set('WANT_SIGNATURE_VERIFY', \
+     get_option('verify-signature').enabled() or \
+     get_option('verify-full-signature').enabled())
+@@ -220,6 +221,12 @@ if get_option('cpld-upgrade').enabled()
+     unit_files += 'obmc-flash-cpld@.service.in'
+ endif
+ 
++if get_option('vr-upgrade').enabled()
++    unit_files += 'obmc-flash-vr-p0-vdd11@.service.in'
++    unit_files += 'obmc-flash-vr-p0-vddcr-soc@.service.in'
++    unit_files += 'obmc-flash-vr-p0-vddio@.service.in'
++endif
++
+ if get_option('sync-bmc-files').enabled()
+     executable(
+         'phosphor-sync-software-manager',
+diff --git a/meson_options.txt b/meson_options.txt
+index 9743980..f7410d1 100644
+--- a/meson_options.txt
++++ b/meson_options.txt
+@@ -15,6 +15,9 @@ option('host-bios-upgrade', type: 'feature', value: 'enabled',
+ option('cpld-upgrade', type: 'feature',
+     description: 'Enable cpld upgrade support.')
+ 
++option('vr-upgrade', type: 'feature',
++    description: 'Enable vr upgrade support.')
++
+ option('sync-bmc-files', type: 'feature', value: 'enabled',
+     description: 'Enable sync of filesystem files.')
+ 
+diff --git a/obmc-flash-vr-p0-vdd11@.service.in b/obmc-flash-vr-p0-vdd11@.service.in
+new file mode 100644
+index 0000000..3e17488
+--- /dev/null
++++ b/obmc-flash-vr-p0-vdd11@.service.in
+@@ -0,0 +1,8 @@
++[Unit]
++Description=Flash VR image %I to VR device
++
++[Service]
++Type=oneshot
++RemainAfterExit=no
++ExecStart=/usr/sbin/vr-update-handler %I 1 2
++ExecStartPost=/usr/sbin/image-active %I Ready None
+\ No newline at end of file
+diff --git a/obmc-flash-vr-p0-vddcr-soc@.service.in b/obmc-flash-vr-p0-vddcr-soc@.service.in
+new file mode 100644
+index 0000000..dafcb95
+--- /dev/null
++++ b/obmc-flash-vr-p0-vddcr-soc@.service.in
+@@ -0,0 +1,8 @@
++[Unit]
++Description=Flash VR image %I to VR device
++
++[Service]
++Type=oneshot
++RemainAfterExit=no
++ExecStart=/usr/sbin/vr-update-handler %I 1 1
++ExecStartPost=/usr/sbin/image-active %I Ready None
+\ No newline at end of file
+diff --git a/obmc-flash-vr-p0-vddio@.service.in b/obmc-flash-vr-p0-vddio@.service.in
+new file mode 100644
+index 0000000..4e9a013
+--- /dev/null
++++ b/obmc-flash-vr-p0-vddio@.service.in
+@@ -0,0 +1,8 @@
++[Unit]
++Description=Flash VR image %I to VR device
++
++[Service]
++Type=oneshot
++RemainAfterExit=no
++ExecStart=/usr/sbin/vr-update-handler %I 1 3
++ExecStartPost=/usr/sbin/image-active %I Ready None
+\ No newline at end of file
+-- 
+2.25.1
+

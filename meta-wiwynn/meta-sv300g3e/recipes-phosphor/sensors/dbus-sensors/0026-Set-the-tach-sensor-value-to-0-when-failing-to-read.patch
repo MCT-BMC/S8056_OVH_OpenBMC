@@ -1,0 +1,46 @@
+From 63249cd03ab2e7ed8be3dd1be56cce689d9c73bc Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Fri, 27 Mar 2020 16:37:49 +0800
+Subject: [PATCH] Set the tach sensor value to 0 when failing to read in
+ power-on state
+
+---
+ src/TachSensor.cpp | 8 ++++----
+ 1 file changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/src/TachSensor.cpp b/src/TachSensor.cpp
+index 0dd90b4..a921a75 100644
+--- a/src/TachSensor.cpp
++++ b/src/TachSensor.cpp
+@@ -38,7 +38,7 @@
+ #include <vector>
+ 
+ static constexpr unsigned int pwmPollMs = 1000;
+-static constexpr size_t warnAfterErrorCount = 10;
++static constexpr size_t warnAfterErrorCount = 3;
+ 
+ TachSensor::TachSensor(const std::string& path, const std::string& objectType,
+                        sdbusplus::asio::object_server& objectServer,
+@@ -205,7 +205,7 @@ void TachSensor::handleResponse(const boost::system::error_code& err)
+             }
+             else
+             {
+-                pollTime = sensorFailedPollTimeMs;
++                // pollTime = sensorFailedPollTimeMs;
+                 errCount++;
+             }
+         }
+@@ -217,8 +217,8 @@ void TachSensor::handleResponse(const boost::system::error_code& err)
+                 std::cerr << "Failure to read sensor " << name << " at " << path
+                           << " ec:" << err << "\n";
+             }
+-            // updateValue(0);
+-            updateValueInvalid(true);
++            updateValue(0);
++            // updateValueInvalid(true);
+         }
+     }
+     responseStream.clear();
+-- 
+2.24.1
+

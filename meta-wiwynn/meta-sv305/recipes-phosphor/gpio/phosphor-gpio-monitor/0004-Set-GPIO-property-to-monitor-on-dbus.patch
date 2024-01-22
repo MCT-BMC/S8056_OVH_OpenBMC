@@ -1,0 +1,175 @@
+From b4777161fbc379aa72c10dbf9fb9d216bef4dca7 Mon Sep 17 00:00:00 2001
+From: Eli Huang <Eli_Huang@wiwynn.com>
+Date: Thu, 21 Jan 2021 15:44:44 +0800
+Subject: [PATCH] Set GPIO property to monitor on dbus
+
+---
+ gpioMon.cpp     | 17 ++++++++++++++++-
+ gpioMon.hpp     | 20 ++++++++++++++------
+ gpioMonMain.cpp | 19 ++++++++++++++++---
+ 3 files changed, 46 insertions(+), 10 deletions(-)
+
+diff --git a/gpioMon.cpp b/gpioMon.cpp
+index 0256dbc..80d8542 100644
+--- a/gpioMon.cpp
++++ b/gpioMon.cpp
+@@ -85,7 +85,16 @@ void GpioMonitor::startTarget()
+             auto method = bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_ROOT,
+                                               SYSTEMD_INTERFACE, "StartUnit");
+             method.append(tar, "replace");
+-            bus.call_noreply(method);
++            try
++            {
++                bus.call_noreply(method);
++            }
++            catch (const sdbusplus::exception_t& e)
++            {
++                std::string message =
++                    "Failed to start service " + tar + ". " + e.what();
++                log<level::ERR>(message.c_str());
++            }
+         }
+         pendingEvents.pop_front();
+         if (pendingEvents.empty() == false)
+@@ -94,6 +103,7 @@ void GpioMonitor::startTarget()
+         }
+     }
+ }
++
+ void GpioMonitor::gpioEventHandler()
+ {
+     gpiod_line_event gpioLineEvent;
+@@ -117,6 +127,7 @@ void GpioMonitor::gpioEventHandler()
+     std::vector<std::string> targetsToStart;
+     if (gpioLineEvent.event_type == GPIOD_LINE_EVENT_RISING_EDGE)
+     {
++        gpioStatusInterface->set_property(gpioName, true);
+         auto risingFind = target.find("RISING");
+         if (risingFind != target.end())
+         {
+@@ -125,6 +136,7 @@ void GpioMonitor::gpioEventHandler()
+     }
+     else
+     {
++        gpioStatusInterface->set_property(gpioName, false);
+         auto fallingFind = target.find("FALLING");
+         if (fallingFind != target.end())
+         {
+@@ -243,6 +255,9 @@ int GpioMonitor::requestGPIOEvents()
+         return -1;
+     }
+ 
++    bool status = gpiod_line_get_value(gpioLine);
++    gpioStatusInterface->register_property(gpioName, status);
++
+     int gpioLineFd = gpiod_line_event_get_fd(gpioLine);
+     if (gpioLineFd < 0)
+     {
+diff --git a/gpioMon.hpp b/gpioMon.hpp
+index edddcd7..d1f11f7 100644
+--- a/gpioMon.hpp
++++ b/gpioMon.hpp
+@@ -51,15 +51,17 @@ class GpioMonitor
+                 boost::asio::io_service& io,
+                 std::map<std::string, std::vector<std::string>> target,
+                 const std::string& lineMsg, bool continueRun,
+-                std::shared_ptr<sdbusplus::asio::dbus_interface> interface,
+-                const std::string& gpioStr) :
++                std::shared_ptr<sdbusplus::asio::dbus_interface> statusInterface,
++                std::shared_ptr<sdbusplus::asio::dbus_interface> eventInterface,
++                const std::string& gpioName, const std::string& gpioStr) :
+         gpioLine(line),
+         gpioConfig(config), gpioEventDescriptor(io), target(target),
+         gpioLineMsg(lineMsg), continueAfterEvent(continueRun), waitTimer(io),
+-        gpioInterface(interface), gpioEventStatus("Idle"), gpioNumber(gpioStr)
++        gpioStatusInterface(statusInterface), gpioEventInterface(eventInterface),
++        gpioEventStatus("Idle"), gpioName(gpioName), gpioNumber(gpioStr)
+     {
+-        gpioInterface->register_property(
+-            gpioStr, std::string("Idle"),
++        gpioEventInterface->register_property(
++            gpioName, std::string("Idle"),
+             [this](const std::string& newStatus, const std::string&) {
+                 gpioEventStatus = newStatus;
+                 return 1;
+@@ -92,7 +94,10 @@ class GpioMonitor
+     boost::asio::steady_timer waitTimer;
+ 
+     /** @brief GPIO status interface object */
+-    std::shared_ptr<sdbusplus::asio::dbus_interface> gpioInterface;
++    std::shared_ptr<sdbusplus::asio::dbus_interface> gpioStatusInterface;
++
++    /** @brief GPIO event interface object */
++    std::shared_ptr<sdbusplus::asio::dbus_interface> gpioEventInterface;
+ 
+     /** @brief current GPIO event status */
+     std::string gpioEventStatus;
+@@ -100,6 +105,9 @@ class GpioMonitor
+     /** @brief events that wait for executing */
+     std::list<std::vector<std::string>> pendingEvents;
+ 
++    /** @brief GPIO name. If name is missing, it will be GPIO number */
++    std::string gpioName;
++
+     std::string gpioNumber;
+     /** @brief register handler for gpio event
+      *
+diff --git a/gpioMonMain.cpp b/gpioMonMain.cpp
+index 8d5219c..52de99e 100644
+--- a/gpioMonMain.cpp
++++ b/gpioMonMain.cpp
+@@ -50,10 +50,14 @@ int main(int argc, char** argv)
+     bus->request_name("xyz.openbmc_project.GpioMonitor");
+     auto server = sdbusplus::asio::object_server(bus);
+ 
+-    std::shared_ptr<sdbusplus::asio::dbus_interface> interface =
++    std::shared_ptr<sdbusplus::asio::dbus_interface> statusInterface =
+         server.add_interface("/xyz/openbmc_project/gpio/status",
+                              "xyz.openbmc_project.GpioStatus");
+ 
++    std::shared_ptr<sdbusplus::asio::dbus_interface> eventInterface =
++        server.add_interface("/xyz/openbmc_project/gpio/event",
++                             "xyz.openbmc_project.GpioEvent");
++
+     CLI::App app{"Monitor GPIO line for requested state change"};
+ 
+     std::string gpioFileName;
+@@ -94,6 +98,7 @@ int main(int argc, char** argv)
+         /* GPIO Line message */
+         std::string lineMsg = "GPIO Line ";
+         std::string gpioStr;
++        std::string gpioName;
+ 
+         /* GPIO line */
+         gpiod_line* line = NULL;
+@@ -145,6 +150,11 @@ int main(int argc, char** argv)
+         }
+         lineMsg += gpioStr;
+ 
++        if (obj.find("Name") != obj.end())
++        {
++            gpioName = obj["Name"];
++        }
++
+         if (line == NULL)
+         {
+             errMsg = "Failed to find the " + lineMsg;
+@@ -186,10 +196,13 @@ int main(int argc, char** argv)
+ 
+         /* Create a monitor object and let it do all the rest */
+         gpios.push_back(std::make_unique<phosphor::gpio::GpioMonitor>(
+-            line, config, io, target, lineMsg, flag, interface, gpioStr));
++            line, config, io, target, lineMsg, flag, statusInterface, eventInterface,
++            gpioName, gpioStr));
+     }
+ 
+-    interface->initialize();
++    statusInterface->initialize();
++    eventInterface->initialize();
++
+     io.run();
+ 
+     return 0;
+-- 
+2.28.0
+

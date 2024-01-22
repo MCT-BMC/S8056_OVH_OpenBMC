@@ -1,0 +1,26 @@
+From c20f1120f20dd5c5f0fc8ab2b2554f088d4a3f31 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Wed, 7 Jul 2021 16:58:47 +0800
+Subject: [PATCH] Chanage kernl offset to 0x20100000 for fixing boot failed
+ issue
+
+---
+ include/configs/ast-common.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+ mode change 100644 => 100755 include/configs/ast-common.h
+
+diff --git a/include/configs/ast-common.h b/include/configs/ast-common.h
+old mode 100644
+new mode 100755
+index eff6d2b529..2ae16bea96
+--- a/include/configs/ast-common.h
++++ b/include/configs/ast-common.h
+@@ -108,7 +108,7 @@
+ #define CONFIG_ENV_OFFSET		0x60000	/* environment starts here  */
+ #define CONFIG_ENV_SIZE			0x20000	/* Total Size of Environment Sector */
+ 
+-#define CONFIG_BOOTCOMMAND		"bootm 20080000"
++#define CONFIG_BOOTCOMMAND		"bootm 20100000"
+ #define CONFIG_ENV_OVERWRITE
+ 
+ #define ASPEED_ENV_SETTINGS \

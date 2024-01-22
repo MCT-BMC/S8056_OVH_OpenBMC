@@ -1,0 +1,96 @@
+From 0df3647957cc53a48f67f4bbcf07cf03e5b06b54 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Tue, 15 Mar 2022 17:11:45 +0800
+Subject: [PATCH 01/11] Support rest API for MCT OEM
+
+---
+ meson.build            | 6 ++++--
+ meson_options.txt      | 3 ++-
+ src/webserver_main.cpp | 5 +++++
+ 3 files changed, 11 insertions(+), 3 deletions(-)
+ mode change 100644 => 100755 meson.build
+ mode change 100644 => 100755 meson_options.txt
+ mode change 100644 => 100755 src/webserver_main.cpp
+
+diff --git a/meson.build b/meson.build
+old mode 100644
+new mode 100755
+index f6fb323..97eb92d
+--- a/meson.build
++++ b/meson.build
+@@ -86,7 +86,8 @@ feature_map = {
+   'static-hosting'                              : '-DBMCWEB_ENABLE_STATIC_HOSTING',
+   'vm-websocket'                                : '-DBMCWEB_ENABLE_VM_WEBSOCKET',
+   'xtoken-auth'                                 : '-DBMCWEB_ENABLE_XTOKEN_AUTHENTICATION',
+-  #'vm-nbdproxy'                                : '-DBMCWEB_ENABLE_VM_NBDPROXY',
++  'vm-nbdproxy'                                 : '-DBMCWEB_ENABLE_VM_NBDPROXY',
++  'mct_oem_rest'                                : '-DBMCWEB_ENABLE_MCT_OEM_REST',
+ }
+ 
+ # Get the options status and build a project summary to show which flags are
+@@ -127,6 +128,7 @@ add_project_arguments(
+   '-Woverloaded-virtual',
+   '-Wsign-conversion',
+   '-Wunused',
++  '-Wno-unused-parameter',
+   '-Wno-attributes',
+   ]),
+   language: 'cpp'
+@@ -160,7 +162,7 @@ if (cxx.get_id() == 'gcc' and cxx.version().version_compare('>8.0'))
+      '-Wduplicated-cond',
+      '-Wduplicated-branches',
+      '-Wlogical-op',
+-     '-Wunused-parameter',
++     '-Wno-unused-parameter',
+      '-Wnull-dereference',
+      '-Wdouble-promotion',
+      ]),
+diff --git a/meson_options.txt b/meson_options.txt
+old mode 100644
+new mode 100755
+index 4661658..9870147
+--- a/meson_options.txt
++++ b/meson_options.txt
+@@ -9,7 +9,7 @@ option('vm-websocket', type : 'feature', value : 'enabled', description : '''Ena
+ # this interface, so for the moment this appears to be dead code;  In leiu of
+ # removing it, it has been disabled to try to give those that use it the
+ # opportunity to upstream their backend implementation
+-#option('vm-nbdproxy', type: 'feature', value : 'disabled', description : 'Enable the Virtual Media WebSocket.')
++option('vm-nbdproxy', type: 'feature', value : 'disabled', description : 'Enable the Virtual Media WebSocket.')
+ option('rest', type : 'feature', value : 'disabled', description : '''Enable Phosphor REST (D-Bus) APIs. Paths directly map Phosphor D-Bus object paths, for example, \'/xyz/openbmc_project/logging/entry/enumerate\'. See https://github.com/openbmc/docs/blob/master/rest-api.md.''')
+ option('redfish', type : 'feature',value : 'enabled', description: 'Enable Redfish APIs.  Paths are under \'/redfish/v1/\'. See https://github.com/openbmc/bmcweb/blob/master/DEVELOPING.md#redfish.')
+ option('host-serial-socket', type : 'feature', value : 'enabled', description : 'Enable host serial console WebSocket. Path is \'/console0\'.  See https://github.com/openbmc/docs/blob/master/console.md.')
+@@ -44,3 +44,4 @@ option ('insecure-disable-auth', type : 'feature', value : 'disabled', descripti
+ option ('insecure-disable-xss', type : 'feature', value : 'disabled', description : 'Disable XSS preventions')
+ option ('insecure-tftp-update', type : 'feature', value : 'disabled', description : '''Enable TFTP based firmware update transactions through Redfish UpdateService.SimpleUpdate.''')
+ option ('insecure-push-style-notification',type : 'feature', value : 'disabled', description : 'Enable HTTP push style eventing feature')
++option('mct_oem_rest', type : 'feature', value : 'disabled', description : 'Enable MCT OEM REST APIs.')
+\ No newline at end of file
+diff --git a/src/webserver_main.cpp b/src/webserver_main.cpp
+old mode 100644
+new mode 100755
+index 6bdce98..9d50530
+--- a/src/webserver_main.cpp
++++ b/src/webserver_main.cpp
+@@ -23,6 +23,7 @@
+ #include <ssl_key_handler.hpp>
+ #include <vm_websocket.hpp>
+ #include <webassets.hpp>
++#include <mct_oem_rest.hpp>
+ 
+ #include <memory>
+ #include <string>
+@@ -104,6 +105,10 @@ static int run()
+     crow::obmc_vm::requestRoutes(app);
+ #endif
+ 
++#ifdef BMCWEB_ENABLE_MCT_OEM_REST
++    crow::mct_oem_rest::requestRoutes(app);
++#endif
++
+ #ifdef BMCWEB_ENABLE_IBM_MANAGEMENT_CONSOLE
+     crow::ibm_mc::requestRoutes(app);
+     crow::ibm_mc_lock::Lock::getInstance();
+-- 
+2.7.4
+

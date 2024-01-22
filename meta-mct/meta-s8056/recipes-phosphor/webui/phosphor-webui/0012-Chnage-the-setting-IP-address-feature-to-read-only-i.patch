@@ -1,0 +1,225 @@
+From 30149c27066ba395a648904238a36b036b93818c Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Fri, 20 Nov 2020 11:21:41 +0800
+Subject: [PATCH] Chnage the setting IP address feature to read only in
+ networking setting page
+
+Chnage the IPV4 setting, MAC address, default gateway to read only.
+---
+ .../controllers/network-controller.html            |  25 ++---
+ .../controllers/network-controller.js              | 110 ++++++++++-----------
+ 2 files changed, 69 insertions(+), 66 deletions(-)
+ mode change 100644 => 100755 app/configuration/controllers/network-controller.html
+ mode change 100644 => 100755 app/configuration/controllers/network-controller.js
+
+diff --git a/app/configuration/controllers/network-controller.html b/app/configuration/controllers/network-controller.html
+old mode 100644
+new mode 100755
+index 6b4e9dd..81e40ca
+--- a/app/configuration/controllers/network-controller.html
++++ b/app/configuration/controllers/network-controller.html
+@@ -27,11 +27,11 @@
+         </div>
+         <div class="column small-12 large-3">
+           <label for="net-config__host">MAC address</label>
+-          <input id="net-config__host" type="text" ng-model="interface.MACAddress" />
++          <input id="net-config__host" type="text" ng-model="interface.MACAddress" disabled/>
+         </div>
+         <div class="column small-12 large-3">
+           <label for="net-config__domain">Default Gateway</label>
+-          <input id="net-config__domain" type="text" ng-model="defaultGateway" />
++          <input id="net-config__domain" type="text" ng-model="defaultGateway" ng-disabled="interface.DHCPEnabled" disabled/>
+         </div>
+       </div>
+     </fieldset>
+@@ -43,14 +43,14 @@
+         <div class="row column">
+           <label class="control-radio" for="dhcp-address">Obtain an IP address automatically using DHCP
+             <input type="radio" name="ip-address" id="dhcp-address" ng-checked="true" ng-model="interface.DHCPEnabled"
+-              ng-value="true">
++              ng-value="true" disabled />
+             <span class="control__indicator control__indicator-on"></span>
+           </label>
+         </div>
+         <div class="row column">
+           <label class="control-radio" for="static-ip-address">Assign a static IP address
+             <input type="radio" name="ip-address" id="static-ip-address" ng-model="interface.DHCPEnabled"
+-              ng-value="false" />
++              ng-value="false" disabled />
+             <span class="control__indicator control__indicator-on"></span>
+           </label>
+         </div>
+@@ -59,27 +59,30 @@
+             <div class="column small-12 large-3">
+               <label for="ipv4-address-{{$index+1}}">IPV4 address</label>
+               <input id="ipv4-address-{{$index+1}}" ng-change="ipv4.updateAddress = true" type="text"
+-                ng-disabled="interface.DHCPEnabled" ng-model="ipv4.Address" />
++                ng-disabled="interface.DHCPEnabled" ng-model="ipv4.Address" disabled />
+             </div>
+-            <div class="column small-12 large-3">
++            <!-- <div class="column small-12 large-3">
+               <label for="ipv4-gateway-{{$index+1}}">Gateway</label>
+               <input id="ipv4-gateway-{{$index+1}}" ng-change="ipv4.updateGateway = true" type="text"
+                 ng-disabled="interface.DHCPEnabled" value="" ng-model="ipv4.Gateway" />
+-            </div>
++            </div> -->
+             <!-- This netmask prefix length max only works with IPV4 -->
+             <div class="column small-12 large-6">
+               <label for="ipv4-prefix-{{$index+1}}">Netmask Prefix Length</label>
+               <input id="ipv4-prefix-{{$index+1}}" class="column small-6" ng-change="ipv4.updatePrefix = true"
+                 type="number" min="1" max="32" step="1" ng-disabled="interface.DHCPEnabled"
+-                ng-model="ipv4.PrefixLength" />
+-              <button type="button" class="btn  btn-tertiary network-config_remove-button" ng-click="removeIpv4Address($index)">Remove</button>
++                ng-model="ipv4.PrefixLength" disabled />
++              <button type="button" class="btn  btn-tertiary network-config_remove-button" ng-click="removeIpv4Address($index)" disabled></button>
++            </div>
++            <div class="column small-12 large-3">
++              <!--Null section for UI display-->
+             </div>
+           </fieldset>
+-          <div class="row column">
++          <!-- <div class="row column">
+             <div class="column small-12">
+               <button type="button" class="btn  btn-primary" ng-click="addIpv4Field()">Add IPV4 address</button>
+             </div>
+-          </div>
++          </div> -->
+         </div>
+       </div>
+     </fieldset>
+diff --git a/app/configuration/controllers/network-controller.js b/app/configuration/controllers/network-controller.js
+old mode 100644
+new mode 100755
+index 0eee6fb..6f48d8c
+--- a/app/configuration/controllers/network-controller.js
++++ b/app/configuration/controllers/network-controller.js
+@@ -66,19 +66,19 @@ window.angular && (function(angular) {
+         var promises = [];
+ 
+         // MAC Address are case-insensitive
+-        if ($scope.interface.MACAddress.toLowerCase() !=
+-            dataService.mac_address.toLowerCase()) {
+-          promises.push(setMACAddress());
+-        }
+-        if ($scope.defaultGateway != dataService.defaultgateway) {
+-          promises.push(setDefaultGateway());
+-        }
++        // if ($scope.interface.MACAddress.toLowerCase() !=
++        //     dataService.mac_address.toLowerCase()) {
++        //   promises.push(setMACAddress());
++        // }
++        // if ($scope.defaultGateway != dataService.defaultgateway && !$scope.interface.DHCPEnabled) {
++        //   promises.push(setDefaultGateway());
++        // }
+         if ($scope.hostname != dataService.hostname) {
+           promises.push(setHostname());
+         }
+-        if ($scope.interface.DHCPEnabled != $scope.oldInterface.DHCPEnabled) {
+-          promises.push(setDHCPEnabled());
+-        }
++        // if ($scope.interface.DHCPEnabled != $scope.oldInterface.DHCPEnabled) {
++        //   promises.push(setDHCPEnabled());
++        // }
+ 
+         // Remove any empty strings from the array. Important because we add an
+         // empty string to the end so the user can add a new DNS server, if the
+@@ -92,51 +92,51 @@ window.angular && (function(angular) {
+         }
+ 
+         // Set IPV4 IP Addresses, Netmask Prefix Lengths, and Gateways
+-        if (!$scope.interface.DHCPEnabled) {
+-          // Delete existing IPV4 addresses that were removed
+-          promises.push(removeIPV4s());
+-          // Update any changed IPV4 addresses and add new
+-          for (var i in $scope.interface.ipv4.values) {
+-            if (!APIUtils.validIPV4IP(
+-                    $scope.interface.ipv4.values[i].Address)) {
+-              toastService.error(
+-                  $scope.interface.ipv4.values[i].Address +
+-                  ' invalid IP parameter');
+-              $scope.loading = false;
+-              return;
+-            }
+-            if ($scope.interface.ipv4.values[i].Gateway &&
+-                !APIUtils.validIPV4IP(
+-                    $scope.interface.ipv4.values[i].Gateway)) {
+-              toastService.error(
+-                  $scope.interface.ipv4.values[i].Address +
+-                  ' invalid gateway parameter');
+-              $scope.loading = false;
+-              return;
+-            }
+-            // The netmask prefix length will be undefined if outside range
+-            if (!$scope.interface.ipv4.values[i].PrefixLength) {
+-              toastService.error(
+-                  $scope.interface.ipv4.values[i].Address +
+-                  ' invalid Prefix Length parameter');
+-              $scope.loading = false;
+-              return;
+-            }
+-            if ($scope.interface.ipv4.values[i].updateAddress ||
+-                $scope.interface.ipv4.values[i].updateGateway ||
+-                $scope.interface.ipv4.values[i].updatePrefix) {
+-              // If IPV4 has an id it means it already exists in the back end,
+-              // and in order to update it is required to remove previous IPV4
+-              // address and add new one. See openbmc/openbmc/issues/2163.
+-              // TODO: update to use PUT once issue 2163 is resolved.
+-              if ($scope.interface.ipv4.values[i].id) {
+-                promises.push(updateIPV4(i));
+-              } else {
+-                promises.push(addIPV4(i));
+-              }
+-            }
+-          }
+-        }
++        // if (!$scope.interface.DHCPEnabled) {
++        //   // Delete existing IPV4 addresses that were removed
++        //   promises.push(removeIPV4s());
++        //   // Update any changed IPV4 addresses and add new
++        //   for (var i in $scope.interface.ipv4.values) {
++        //     if (!APIUtils.validIPV4IP(
++        //             $scope.interface.ipv4.values[i].Address)) {
++        //       toastService.error(
++        //           $scope.interface.ipv4.values[i].Address +
++        //           ' invalid IP parameter');
++        //       $scope.loading = false;
++        //       return;
++        //     }
++        //     if ($scope.interface.ipv4.values[i].Gateway &&
++        //         !APIUtils.validIPV4IP(
++        //             $scope.interface.ipv4.values[i].Gateway)) {
++        //       toastService.error(
++        //           $scope.interface.ipv4.values[i].Address +
++        //           ' invalid gateway parameter');
++        //       $scope.loading = false;
++        //       return;
++        //     }
++        //     // The netmask prefix length will be undefined if outside range
++        //     if (!$scope.interface.ipv4.values[i].PrefixLength) {
++        //       toastService.error(
++        //           $scope.interface.ipv4.values[i].Address +
++        //           ' invalid Prefix Length parameter');
++        //       $scope.loading = false;
++        //       return;
++        //     }
++        //     if ($scope.interface.ipv4.values[i].updateAddress ||
++        //         $scope.interface.ipv4.values[i].updateGateway ||
++        //         $scope.interface.ipv4.values[i].updatePrefix) {
++        //       // If IPV4 has an id it means it already exists in the back end,
++        //       // and in order to update it is required to remove previous IPV4
++        //       // address and add new one. See openbmc/openbmc/issues/2163.
++        //       // TODO: update to use PUT once issue 2163 is resolved.
++        //       if ($scope.interface.ipv4.values[i].id) {
++        //         promises.push(updateIPV4(i));
++        //       } else {
++        //         promises.push(addIPV4(i));
++        //       }
++        //     }
++        //   }
++        // }
+ 
+         if (promises.length) {
+           $q.all(promises).then(
+-- 
+2.7.4
+

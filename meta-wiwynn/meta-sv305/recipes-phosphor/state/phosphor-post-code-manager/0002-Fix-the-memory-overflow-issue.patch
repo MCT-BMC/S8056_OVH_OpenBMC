@@ -1,0 +1,89 @@
+From 5c44060a00fde5c64b28e5dd920612dcd3d3f26c Mon Sep 17 00:00:00 2001
+From: Ren_Chen <Ren_Chen@wiwynn.com>
+Date: Tue, 15 Jun 2021 13:42:00 +0800
+Subject: [PATCH] Fix the memory overflow issue
+
+Decription:
+- In the phosphor-post-code-manager service, the post codes are stored into buffer.
+  When a new host boot cycle occurs, the post-code buffer will be cleared.
+  The original implementation refers to the CurrentHostState changing to OFF as a new host boot cycle.
+  However, the CurrentHostState property won't be changed when host powers reset.
+  In this case, the phosphor-post-code-manager service will not start a new host boot cycle,
+  which causes the BMC memory overflow issue.
+
+Designed:
+- phosphor-post-code-manager service monitors platformreset prooperty.
+  The post-code buffer will be cleared when "CurrentHostState" change to OFF or "platformreset" change to true.
+---
+ inc/post_code.hpp | 30 +++++++++++++-----------------
+ 1 file changed, 13 insertions(+), 17 deletions(-)
+
+diff --git a/inc/post_code.hpp b/inc/post_code.hpp
+index 13b0c7a..3dd0473 100644
+--- a/inc/post_code.hpp
++++ b/inc/post_code.hpp
+@@ -40,6 +40,9 @@ const static constexpr char *CurrentBootCycleCountName =
+ const static constexpr char *CurrentBootCycleIndexName =
+     "CurrentBootCycleIndex";
+ 
++const static constexpr char *PowerStatePath = "/org/openbmc/control/power0";
++const static constexpr char *PowerRstStateIntf = "org.openbmc.control.Power";
++
+ // Singleton holder to store host/node and other path information
+ class PostCodeDataHolder
+ {
+@@ -118,33 +121,26 @@ struct PostCode : sdbusplus::server::object_t<post_code, delete_all>
+                     }
+                 }
+             }),
+-        propertiesChangedSignalCurrentHostState(
++        propertiesChangedSignalPlatformResetState(
+             bus,
+-            sdbusplus::bus::match::rules::type::signal() +
+-                sdbusplus::bus::match::rules::member("PropertiesChanged") +
+-                sdbusplus::bus::match::rules::path(
+-                    postcodeDataHolderObj->HostStatePathPrefix +
+-                    std::to_string(postcodeDataHolderObj->node)) +
+-                sdbusplus::bus::match::rules::interface(
+-                    postcodeDataHolderObj->PropertiesIntf),
++            sdbusplus::bus::match::rules::propertiesChanged(PowerStatePath,
++                                                            PowerRstStateIntf),
+             [this](sdbusplus::message::message &msg) {
+                 std::string objectName;
+-                std::map<std::string, std::variant<std::string>> msgData;
++                std::map<std::string, std::variant<bool>> msgData;
+                 msg.read(objectName, msgData);
+                 // Check if it was the Value property that changed.
+-                auto valPropMap = msgData.find("CurrentHostState");
++                auto valPropMap = msgData.find("platformreset");
+                 {
+                     if (valPropMap != msgData.end())
+                     {
+-                        StateServer::Host::HostState currentHostState =
+-                            StateServer::Host::convertHostStateFromString(
+-                                std::get<std::string>(valPropMap->second));
+-                        if (currentHostState ==
+-                            StateServer::Host::HostState::Off)
++                        int platformRstState =
++                            std::get<bool>(valPropMap->second);
++                        if (true == platformRstState)
+                         {
+                             if (this->postCodes.empty())
+                             {
+-                                std::cerr << "HostState changed to OFF. Empty "
++                                std::cerr << "Platform reset. Empty "
+                                              "postcode log, keep boot cycle at "
+                                           << this->currentBootCycleIndex
+                                           << std::endl;
+@@ -202,7 +198,7 @@ struct PostCode : sdbusplus::server::object_t<post_code, delete_all>
+     std::string strCurrentBootCycleCountName;
+     void savePostCodes(postcode_t code);
+     sdbusplus::bus::match_t propertiesChangedSignalRaw;
+-    sdbusplus::bus::match_t propertiesChangedSignalCurrentHostState;
++    sdbusplus::bus::match_t propertiesChangedSignalPlatformResetState;
+     fs::path serialize(const std::string &path);
+     bool deserialize(const fs::path &path, uint16_t &index);
+     bool deserializePostCodes(const fs::path &path,
+-- 
+2.28.0
+

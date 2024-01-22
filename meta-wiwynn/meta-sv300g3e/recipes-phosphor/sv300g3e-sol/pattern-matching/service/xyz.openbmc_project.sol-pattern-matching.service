@@ -1,0 +1,14 @@
+[Unit]
+Description=Twitter SOL Pattern Matching Service
+StopWhenUnneeded=false
+Wants=obmc-console@ttyS2.service
+After=obmc-console@ttyS2.service
+
+[Service]
+Restart=always
+RestartSec=5
+ExecStart=/usr/bin/sol-pattern-matching
+SyslogIdentifier=sol-pattern-matching
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,51 @@
+From e7d84fce0944c0cb2317c88a3639bba8c2d2e880 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Thu, 2 Feb 2023 08:05:08 +0800
+Subject: [PATCH] Add retry mechanism at getting invalid fru.json
+
+---
+ src/FruDevice.cpp | 20 +++++++++++++-------
+ 1 file changed, 13 insertions(+), 7 deletions(-)
+
+diff --git a/src/FruDevice.cpp b/src/FruDevice.cpp
+index ae2d45c..6a4b5e8 100755
+--- a/src/FruDevice.cpp
++++ b/src/FruDevice.cpp
+@@ -622,21 +622,27 @@ static void getFruDevices(void)
+         ret = CheckFruConfig();
+         if (ret >= 0)
+         {
+-            break;
++            std::ifstream ConfTemp(fruConfig);
++            auto data = nlohmann::json::parse(ConfTemp, nullptr, false);
++            if (data.is_discarded())
++            {
++                std::cerr << "Invalid json format: " << fruConfig << "\n";
++                sleep(3);
++                continue;
++            }
++            else
++            {
++                break;
++            }
+         }
+         else
+         {
+             sleep(3);
+         }
+     }
+-
+     std::ifstream motherboardConf(fruConfig);
+     auto data = nlohmann::json::parse(motherboardConf, nullptr, false);
+-    if (data.is_discarded())
+-    {
+-        std::cerr << "Invalid json format: " << fruConfig << "\n";
+-        return ;
+-    }
++
+     auto fruFind = data.find("Fru");
+     if (fruFind != data.end())
+     {
+-- 
+2.25.1
+

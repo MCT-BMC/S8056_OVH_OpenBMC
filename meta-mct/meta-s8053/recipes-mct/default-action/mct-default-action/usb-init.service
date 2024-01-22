@@ -1,0 +1,12 @@
+[Unit]
+Description=Host inventory service
+StopWhenUnneeded=false
+Requires=xyz.openbmc_project.EntityManager.service
+After=xyz.openbmc_project.EntityManager.service
+
+[Service]
+Restart=simple
+ExecStart=sh /usr/sbin/configure_usb_gadget.sh
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,253 @@
+From a2823972f76e955f6330d36c05929afd106750bf Mon Sep 17 00:00:00 2001
+From: JPChang <JP_Chang@wiwynn.com>
+Date: Thu, 12 Dec 2019 12:46:24 +0800
+Subject: [PATCH] Check sensor failures
+
+Description
+- Remove disable timeout option in configure.ac by fan-table.json define sensors timeout to 0.
+- Check CPU and DIMM sensors failures. If CPU or DIMM sensors failed, enter failsafe mode.
+- When system is power-off, terminate phosphor-pid-control service.
+- Now write PWM shell script can write specified percentage by the first parameter.
+- If fan table does not exist, write 100% pwm to pwm files and stop restarting phosphor-pid-control.service.
+- If there is no inputs in a pid profile, fan control will keep processing now instead of exiting.
+- Now system has to reach multi-user-target before starting the fan control service.
+---
+ configure.ac               | 10 ------
+ main.cpp                   |  7 ++--
+ pid/stepwisecontroller.cpp |  3 +-
+ pid/thermalcontroller.cpp  |  4 ++-
+ pid/zone.cpp               | 68 +++++++++++++++++++++++++++++++++-----
+ pid/zone.hpp               |  5 ++-
+ 6 files changed, 73 insertions(+), 24 deletions(-)
+
+diff --git a/configure.ac b/configure.ac
+index 07e7287..e18bbba 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -209,16 +209,6 @@ AS_IF([test "x$enable_configure_dbus" = "xyes"],
+     [AC_DEFINE(CONFIGURE_DBUS, [0], [Do not read configuration from D-Bus.])]
+ )
+ 
+-AC_ARG_ENABLE([not-sensors-timeout],
+-    AS_HELP_STRING(
+-        [--enable-not-sensors-timeout], [Disable sensor timeout checking mechanism.]
+-    )
+-)
+-AS_IF([test "x$enable_not_sensors_timeout" = "xyes"],
+-    [AC_DEFINE(DISABLE_SENSORS_TIMEOUT, [1], [Disable sensors timeout when updating values from D-Bus.])],
+-    [AC_DEFINE(DISABLE_SENSORS_TIMEOUT, [0], [Ensable sensors timeout when updating values from D-Bus.])]
+-)
+-
+ AC_ARG_VAR(MAX_FAN_REDUNDANCY,
+            [The maximum number of fan redundancy in the project(default = 1). If set to 0, process will not enter failsafe mode beacause of fan failures.])
+ AS_IF([test "x$MAX_FAN_REDUNDANCY" == "x"], [MAX_FAN_REDUNDANCY=1])
+diff --git a/main.cpp b/main.cpp
+index 4c31b31..1c49817 100644
+--- a/main.cpp
++++ b/main.cpp
+@@ -311,12 +311,13 @@ void writePwmFailsafeHandler(int signum)
+             sigStr = "UNKNOWN";
+             break;
+     }
++    int pwmPercent = 80;
+     sd_journal_print(LOG_INFO,
+                      "Fan control receive %s. Try to "
+-                     "write 60%% pwm to all pwm files.\n",
+-                     sigStr.c_str());
++                     "write %d%% pwm to all pwm files.\n",
++                     sigStr.c_str(), pwmPercent);
+ 
+-    std::string cmd = "/usr/sbin/writePwmFailsafe.sh";
++    std::string cmd = "/usr/bin/writePwm.sh " + std::to_string(pwmPercent);
+     std::array<char, 1024> buffer;
+     std::unique_ptr<FILE, decltype(&pclose)> pipePtr(popen(cmd.c_str(), "r"),
+                                                      pclose);
+diff --git a/pid/stepwisecontroller.cpp b/pid/stepwisecontroller.cpp
+index 4869982..5d984ae 100644
+--- a/pid/stepwisecontroller.cpp
++++ b/pid/stepwisecontroller.cpp
+@@ -72,7 +72,8 @@ std::unique_ptr<Controller> StepwiseController::createStepwiseController(
+     // StepwiseController requires at least 1 input
+     if (inputs.empty())
+     {
+-        throw ControllerBuildException("Stepwise controller missing inputs");
++        // throw ControllerBuildException("Stepwise controller missing inputs");
++        std::cerr << id << " Stepwise controller missing inputs\n";
+         return nullptr;
+     }
+ 
+diff --git a/pid/thermalcontroller.cpp b/pid/thermalcontroller.cpp
+index 72ad204..13ba0bb 100644
+--- a/pid/thermalcontroller.cpp
++++ b/pid/thermalcontroller.cpp
+@@ -23,6 +23,7 @@
+ #include <systemd/sd-journal.h>
+ 
+ #include <algorithm>
++#include <iostream>
+ 
+ ThermalType getThermalType(const std::string& typeString)
+ {
+@@ -44,7 +45,8 @@ std::unique_ptr<PIDController> ThermalController::createThermalPid(
+     // ThermalController requires at least 1 input
+     if (inputs.empty())
+     {
+-        throw ControllerBuildException("Thermal controller missing inputs");
++        // throw ControllerBuildException("Thermal controller missing inputs");
++        std::cerr << id << " Thermal controller missing inputs\n";
+         return nullptr;
+     }
+ 
+diff --git a/pid/zone.cpp b/pid/zone.cpp
+index 2264dd6..85a98cb 100644
+--- a/pid/zone.cpp
++++ b/pid/zone.cpp
+@@ -65,10 +65,13 @@ bool PIDZone::getFailSafeMode(void) const
+     {
+         return true;
+     }
+-    // TODO: sensors failures handling.
+-    else if (_failSafeTemps.empty() == false)
++    // If any CPU or DIMM sensors are failed, enter fail safe mode.
++    for (auto& it : _failSafeTemps)
+     {
+-        return true;
++        if ((it.find("CPU") != std::string::npos) || (it.find("DIMM") != std::string::npos))
++        {
++            return true;
++        }
+     }
+ 
+     return false;
+@@ -156,7 +159,7 @@ void PIDZone::addFanInput(const std::string& fan)
+ 
+ void PIDZone::addThermalInput(const std::string& therm)
+ {
+-    _thermalInputs.push_back(therm);
++    _thermalInputs.insert(therm);
+ }
+ 
+ void PIDZone::determineMaxSetPointRequest(void)
+@@ -299,11 +302,9 @@ void PIDZone::updateFanTelemetry(void)
+         }
+         else if (timeout != 0 && duration >= period)
+         {
+-#if DISABLE_SENSORS_TIMEOUT == 0
+             sd_journal_print(LOG_INFO, "%s fan sensor timeout, duration: %lld",
+                              f.c_str(), duration);
+             _failSafeFans.insert(f);
+-#endif
+         }
+         else
+         {
+@@ -422,6 +423,35 @@ void PIDZone::updateSensors(void)
+         auto duration = duration_cast<std::chrono::seconds>(now - then).count();
+         auto period = std::chrono::seconds(timeout).count();
+ 
++        auto vReadingState = std::variant<bool>(false);
++        bool readingStateUnavailable = false;
++        if (((t.find("CPU") != std::string::npos) || (t.find("DIMM") != std::string::npos)))
++        {
++            auto method = _bus.new_method_call("xyz.openbmc_project.CPUSensor",
++                                        ("/xyz/openbmc_project/sensors/temperature/" + t).c_str(),
++                                        "org.freedesktop.DBus.Properties", "Get");
++            method.append("xyz.openbmc_project.Sensor.Value", "InvalidValue");
++
++            sdbusplus::message::message reply;
++            try
++            {
++                reply = _bus.call(method);
++                reply.read(vReadingState);
++                readingStateUnavailable = std::get<bool>(vReadingState);
++            }
++            catch (sdbusplus::exception::SdBusError& e)
++            {
++                sd_journal_print(LOG_INFO, "Failed to get readingState from D-Bus: %s => %s",
++                    t.c_str(), e.what());
++            }
++
++            if (readingStateUnavailable == false)
++            {
++                // Reset sensor failure time counter.
++                sensorFailuresTimer[t] = 0;
++            }
++        }
++
+         if (sensor->getFailed())
+         {
+             sd_journal_print(LOG_INFO, "%s temperature sensor getfailed",
+@@ -430,13 +460,35 @@ void PIDZone::updateSensors(void)
+         }
+         else if (timeout != 0 && duration >= period)
+         {
+-#if DISABLE_SENSORS_TIMEOUT == 0
+             // std::cerr << "Entering fail safe mode.\n";
+             sd_journal_print(LOG_INFO,
+                              "%s temperature sensor timeout, duration: %lld",
+                              t.c_str(), duration);
+             _failSafeTemps.insert(t);
+-#endif
++        }
++        // readingStateUnavailable is true means that sensor value is invalid.
++        else if (readingStateUnavailable == true)
++        {
++            // The interval of pid control update sensor values.
++            sensorFailuresTimer[t] += (getUpdateThermalsCycle() * getCycleTimeBase());
++            sd_journal_print(LOG_INFO,
++                 "%s temperature sensor readingStateUnavailable is true, duration: %lldms",
++                 t.c_str(), sensorFailuresTimer[t]);
++
++            /**
++             *  If BMC can’t get the correct response from CPU or DIMM over 30 seconds.
++             *  Add these CPU and DIMM sensors to fail safe set.
++             *  When BMC can't get sensor value, it will try 10 times(about 10 seconds)
++             *  before it changes sensor state. So when PID control receives that
++             *  state has changed, it’s been 10 seconds already.
++             *  So we need to set sensor failure time to 20 seconds(30s - 10s).
++             */
++
++            // If sensor failure time is more than 20000 ms(20 seconds)
++            if (sensorFailuresTimer[t] >= 20000)
++            {
++                _failSafeTemps.insert(t);
++            }
+         }
+         else
+         {
+diff --git a/pid/zone.hpp b/pid/zone.hpp
+index c814add..36b7bcd 100644
+--- a/pid/zone.hpp
++++ b/pid/zone.hpp
+@@ -51,6 +51,7 @@ class PIDZone : public ZoneInterface, public ModeObject
+             uint64_t updateThermalsTime, const SensorManager& mgr,
+             sdbusplus::bus::bus& bus, const char* objPath, bool defer) :
+         ModeObject(bus, objPath, defer),
++        _bus(bus),
+         _zoneId(zone), _maximumSetPoint(),
+         _minThermalOutputSetPt(minThermalOutput),
+         _failSafePercent(failSafePercent), _cycleTimeBase(cycleTimeBase),
+@@ -110,6 +111,7 @@ class PIDZone : public ZoneInterface, public ModeObject
+     bool failSafe() const override;
+ 
+   private:
++    sdbusplus::bus::bus& _bus;
+     std::ofstream _log;
+ 
+     const int64_t _zoneId;
+@@ -125,11 +127,12 @@ class PIDZone : public ZoneInterface, public ModeObject
+     std::set<std::string> _failSafeTemps;
+     std::set<std::string> _failSafeFans;
+     std::map<std::string, bool> _isFanFailure;
++    std::map<std::string, int64_t> sensorFailuresTimer;
+ 
+     std::vector<double> _SetPoints;
+     std::vector<double> _RPMCeilings;
+     std::vector<std::string> _fanInputs;
+-    std::vector<std::string> _thermalInputs;
++    std::set<std::string> _thermalInputs;
+     std::map<std::string, double> _cachedValuesByName;
+     const SensorManager& _mgr;
+ 
+-- 
+2.24.0
+

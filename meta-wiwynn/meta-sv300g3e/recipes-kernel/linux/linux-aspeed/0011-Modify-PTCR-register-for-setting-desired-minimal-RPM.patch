@@ -1,0 +1,35 @@
+From 5c8d9231caa18b1767d9f81b935ecdc8f44272fb Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Wed, 29 Apr 2020 17:50:23 +0800
+Subject: [PATCH] Modify PTCR register for setting desired minimal RPM
+
+---
+ drivers/hwmon/aspeed-pwm-tacho.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/hwmon/aspeed-pwm-tacho.c b/drivers/hwmon/aspeed-pwm-tacho.c
+index 35d2f9b2c381..25ea25039ecb 100644
+--- a/drivers/hwmon/aspeed-pwm-tacho.c
++++ b/drivers/hwmon/aspeed-pwm-tacho.c
+@@ -159,7 +159,8 @@
+  * 11: reserved.
+  */
+ #define M_TACH_MODE 0x02 /* 10b */
+-#define M_TACH_UNIT 0x0210
++#define M_TACH_UNIT 0x1780
++#define M_TACH_FALLING_POINT 0x1770
+ #define INIT_FAN_CTRL 0xCC /* Set default PWM 80% */
+ 
+ /* How long we sleep in us while waiting for an RPM result. */
+@@ -447,7 +448,7 @@ static void aspeed_set_tacho_type_values(struct regmap *regmap, u8 type,
+ 	regmap_update_bits(regmap, type_params[type].ctrl_reg,
+ 			   TYPE_CTRL_FAN_MASK, reg_value);
+ 	regmap_update_bits(regmap, type_params[type].ctrl_reg1,
+-			   TYPE_CTRL_FAN1_MASK, unit << 16);
++			   TYPE_CTRL_FAN1_MASK, M_TACH_FALLING_POINT << 16);
+ }
+ 
+ static void aspeed_set_fan_tach_ch_enable(struct regmap *regmap, u8 fan_tach_ch,
+-- 
+2.24.1
+

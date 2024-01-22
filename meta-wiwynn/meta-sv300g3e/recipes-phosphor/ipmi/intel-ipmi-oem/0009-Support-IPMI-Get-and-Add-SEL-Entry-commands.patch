@@ -1,0 +1,85 @@
+From cb16599a63b768c4391c82b635bc6182d57d517b Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Mon, 25 Nov 2019 22:15:14 +0800
+Subject: [PATCH] Support IPMI Get and Add SEL Entry commands
+
+---
+ src/storagecommands.cpp | 40 +++++++++++++++++++++++++++++++++++++---
+ 1 file changed, 37 insertions(+), 3 deletions(-)
+
+diff --git a/src/storagecommands.cpp b/src/storagecommands.cpp
+index 0716096..9ea28e8 100644
+--- a/src/storagecommands.cpp
++++ b/src/storagecommands.cpp
+@@ -944,7 +944,8 @@ ipmi::RspType<uint16_t, // Next Record ID
+         return ipmi::responseUnspecifiedError();
+     }
+ 
+-    if (recordType == intel_oem::ipmi::sel::systemEvent)
++    if (recordType == intel_oem::ipmi::sel::systemEvent &&
++        targetEntryFields.size() > 4)
+     {
+         // Get the timestamp
+         std::tm timeStruct = {};
+@@ -1008,8 +1009,10 @@ ipmi::RspType<uint16_t, // Next Record ID
+             systemEventType{timestamp, generatorID, evmRev, sensorType,
+                             sensorNum, eventType, eventDir, eventData});
+     }
+-    else if (recordType >= intel_oem::ipmi::sel::oemTsEventFirst &&
+-             recordType <= intel_oem::ipmi::sel::oemTsEventLast)
++    else if ((recordType == intel_oem::ipmi::sel::systemEvent &&
++              targetEntryFields.size() == 4) ||
++             (recordType >= intel_oem::ipmi::sel::oemTsEventFirst &&
++              recordType <= intel_oem::ipmi::sel::oemTsEventLast))
+     {
+         // Get the timestamp
+         std::tm timeStruct = {};
+@@ -1046,6 +1049,11 @@ ipmi::RspType<uint16_t, // Next Record ID
+     return ipmi::responseUnspecifiedError();
+ }
+ 
++static constexpr char const* ipmiSELService =    "xyz.openbmc_project.Logging.IPMI";
++static constexpr char const* ipmiSELPath = "/xyz/openbmc_project/Logging/IPMI";
++static constexpr char const* ipmiSELAddInterface = "xyz.openbmc_project.Logging.IPMI";
++static const std::string ipmiSELAddMessage = "SEL Entry";
++
+ ipmi::RspType<uint16_t> ipmiStorageAddSELEntry(
+     uint16_t recordID, uint8_t recordType, uint32_t timestamp,
+     uint16_t generatorID, uint8_t evmRev, uint8_t sensorType, uint8_t sensorNum,
+@@ -1062,7 +1070,33 @@ ipmi::RspType<uint16_t> ipmiStorageAddSELEntry(
+         recordID, recordType, timestamp, generatorID, evmRev, sensorType,
+         sensorNum, eventType, eventData1, eventData2, eventData3);
+ 
++    std::vector<uint8_t> eventData(9, 0xFF);
++    eventData[0] = generatorID;
++    eventData[1] = generatorID >> 8;
++    eventData[2] = evmRev;
++    eventData[3] = sensorType;
++    eventData[4] = sensorNum;
++    eventData[5] = eventType;
++    eventData[6] = eventData1;
++    eventData[7] = eventData2;
++    eventData[8] = eventData3;
++
++    std::shared_ptr<sdbusplus::asio::connection> bus = getSdBus();
++    sdbusplus::message::message writeSEL = bus->new_method_call(
++        ipmiSELService, ipmiSELPath, ipmiSELAddInterface, "IpmiSelAddOem");
++    writeSEL.append(ipmiSELAddMessage,  eventData, recordType);
++
+     uint16_t responseID = 0xFFFF;
++    try
++    {
++        auto ret = bus->call(writeSEL);
++        ret.read(responseID);
++    }
++    catch (sdbusplus::exception_t& e)
++    {
++        std::cerr << "failed to call IpmiSelAdd method\n";
++    }
++
+     return ipmi::responseSuccess(responseID);
+ }
+ 
+-- 
+2.22.0
+

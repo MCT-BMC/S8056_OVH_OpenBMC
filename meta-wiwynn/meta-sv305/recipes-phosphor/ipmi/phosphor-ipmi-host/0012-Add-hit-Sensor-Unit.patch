@@ -1,0 +1,49 @@
+From dad4b2b1a93c42d906879c83108dec88fd956442 Mon Sep 17 00:00:00 2001
+From: Eli Huang <Eli_Huang@wiwynn.com>
+Date: Fri, 25 Dec 2020 17:01:03 +0800
+Subject: [PATCH] Add hit Sensor Unit
+
+---
+ sensorhandler.cpp | 6 ++++++
+ sensorhandler.hpp | 1 +
+ 2 files changed, 7 insertions(+)
+
+diff --git a/sensorhandler.cpp b/sensorhandler.cpp
+index 213c5a1..8377eb6 100644
+--- a/sensorhandler.cpp
++++ b/sensorhandler.cpp
+@@ -737,6 +737,9 @@ void setUnitFieldsForObject(const ipmi::sensor::Info* info,
+             case server::Value::Unit::Watts:
+                 body->sensor_units_2_base = get_sdr::SENSOR_UNIT_WATTS;
+                 break;
++            case server::Value::Unit::Hit:
++                body->sensor_units_2_base = get_sdr::SENSOR_UNIT_HIT;
++                break;
+             default:
+                 // Cannot be hit.
+                 std::fprintf(stderr, "Unknown value unit type: = %s\n",
+@@ -824,6 +827,9 @@ void setUnitFieldsForCompactObject(const ipmi::sensor::Info* info,
+             case server::Value::Unit::Watts:
+                 body->sensor_units_2_base = get_sdr::SENSOR_UNIT_WATTS;
+                 break;
++            case server::Value::Unit::Hit:
++                body->sensor_units_2_base = get_sdr::SENSOR_UNIT_HIT;
++                break;
+             default:
+                 // Cannot be hit.
+                 std::fprintf(stderr, "Unknown value unit type: = %s\n",
+diff --git a/sensorhandler.hpp b/sensorhandler.hpp
+index 5d2f2f3..9c81038 100644
+--- a/sensorhandler.hpp
++++ b/sensorhandler.hpp
+@@ -702,6 +702,7 @@ enum SensorUnitTypeCodes
+     SENSOR_UNIT_RPM = 18,
+     SENSOR_UNIT_METERS = 34,
+     SENSOR_UNIT_REVOLUTIONS = 41,
++    SENSOR_UNIT_HIT = 78,
+ };
+ 
+ struct SensorDataFullRecord
+-- 
+2.28.0
+

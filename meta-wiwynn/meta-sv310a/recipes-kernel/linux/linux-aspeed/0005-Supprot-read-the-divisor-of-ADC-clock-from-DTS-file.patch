@@ -1,0 +1,55 @@
+From 0f3c51181afbd6501295231725581652153a6494 Mon Sep 17 00:00:00 2001
+From: Ren_Chen <Ren_Chen@wiwynn.com>
+Date: Sat, 28 Nov 2020 13:48:25 +0800
+Subject: [PATCH] Supprot read the divisor of ADC clock from DTS file
+
+Decription:
+- Because there is an issue about ADC charge time for Aspeed chip.
+  The ADC sensor reported value and the onboard measurement value show different results
+  when there is a large voltage gap between two ADC channels.
+  So We need to add ADC clock period time by changing ADC0C register from 40h to 140h
+  to extend the internal 1pF Csam capacitor charge time to address this issue.
+
+Designed:
+- ADC driver reads the clock-devisor from DTS file and set ADC0C register to change the divisor of ADC clock.
+---
+ drivers/iio/adc/aspeed_adc.c | 16 ++++++++++++++++
+ 1 file changed, 16 insertions(+)
+
+diff --git a/drivers/iio/adc/aspeed_adc.c b/drivers/iio/adc/aspeed_adc.c
+index 1e5375235cfe..adae60a0cf28 100644
+--- a/drivers/iio/adc/aspeed_adc.c
++++ b/drivers/iio/adc/aspeed_adc.c
+@@ -176,6 +176,7 @@ static int aspeed_adc_probe(struct platform_device *pdev)
+ 	const char *clk_parent_name;
+ 	int ret;
+ 	u32 adc_engine_control_reg_val;
++	u32 clock_divisor;
+ 
+ 	indio_dev = devm_iio_device_alloc(&pdev->dev, sizeof(*data));
+ 	if (!indio_dev)
+@@ -245,6 +246,21 @@ static int aspeed_adc_probe(struct platform_device *pdev)
+ 	if (ret)
+ 		goto clk_enable_error;
+ 
++	ret = of_property_read_u32(pdev->dev.of_node, "clock-divisor",
++				   &clock_divisor);
++	if (ret < 0) {
++		printk(KERN_ERR
++		       "%s: Unable to read clock-divisor from device tree\n",
++		       __func__);
++	} else {
++		writel(clock_divisor, data->base + ASPEED_REG_CLOCK_CONTROL);
++		if (clock_divisor !=
++		    readl(data->base + ASPEED_REG_CLOCK_CONTROL)) {
++			printk(KERN_ERR "%s: Fail to set clock-divisor\n",
++			       __func__);
++		}
++	}
++
+ 	adc_engine_control_reg_val = GENMASK(31, 16) |
+ 		ASPEED_OPERATION_MODE_NORMAL | ASPEED_ENGINE_ENABLE;
+ 	writel(adc_engine_control_reg_val,
+-- 
+2.28.0
+

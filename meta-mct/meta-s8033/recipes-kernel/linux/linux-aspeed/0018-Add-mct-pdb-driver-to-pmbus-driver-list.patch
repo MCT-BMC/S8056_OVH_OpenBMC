@@ -1,0 +1,21 @@
+From 5bd3baf87c0da1051ec0c9829224f4be0f8d49b4 Mon Sep 17 00:00:00 2001
+From: Janny Au <janny.au@mic.com.tw>
+Date: Thu, 10 Mar 2022 17:41:11 +0800
+Subject: [PATCH] Add-mct-pdb-driver-to-pmbus-driver-list
+
+---
+ drivers/hwmon/pmbus/pmbus.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/hwmon/pmbus/pmbus.c b/drivers/hwmon/pmbus/pmbus.c
+index d0d386990af5..67a7d8746ad8 100644
+--- a/drivers/hwmon/pmbus/pmbus.c
++++ b/drivers/hwmon/pmbus/pmbus.c
+@@ -228,6 +228,7 @@ static const struct i2c_device_id pmbus_id[] = {
+ 	{"dps650ab", (kernel_ulong_t)&pmbus_info_one_skip},
+ 	{"dps800", (kernel_ulong_t)&pmbus_info_one_skip},
+ 	{"max20796", (kernel_ulong_t)&pmbus_info_one},
++	{"mct-pdb", (kernel_ulong_t)&pmbus_info_one_skip},
+ 	{"mdt040", (kernel_ulong_t)&pmbus_info_one},
+ 	{"ncp4200", (kernel_ulong_t)&pmbus_info_one},
+ 	{"ncp4208", (kernel_ulong_t)&pmbus_info_one},

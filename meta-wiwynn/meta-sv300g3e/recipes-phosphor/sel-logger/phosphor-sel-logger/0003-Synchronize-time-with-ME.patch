@@ -1,0 +1,108 @@
+From 3198b280aa09e5e3b1c87c9c28c93bca64355d95 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Tue, 21 Apr 2020 18:57:24 +0800
+Subject: [PATCH] Synchronize time with ME
+
+---
+ src/sel_logger.cpp | 71 ++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 71 insertions(+)
+
+diff --git a/src/sel_logger.cpp b/src/sel_logger.cpp
+index bf6316c..157bedd 100644
+--- a/src/sel_logger.cpp
++++ b/src/sel_logger.cpp
+@@ -28,6 +28,10 @@
+ #include <sstream>
+ #include <threshold_event_monitor.hpp>
+ 
++#include <tuple>
++#include <time.h>
++#include <boost/asio/steady_timer.hpp>
++
+ struct DBusInternalError final : public sdbusplus::exception_t
+ {
+     const char *name() const noexcept override
+@@ -193,6 +197,62 @@ static uint16_t selAddOemRecord(const std::string &message,
+     return recordId;
+ }
+ 
++static void syncTimeWithME(std::shared_ptr<sdbusplus::asio::connection> conn)
++{
++    std::tuple<int32_t, uint8_t, uint8_t, uint8_t, uint8_t, std::vector<uint8_t>> cmdResponses;
++
++    uint8_t commandAddress = 1;
++    uint8_t netfn = 0xa;
++    uint8_t lun = 0;
++    uint8_t command = 0x48;
++    std::vector<uint8_t> commandData = {};
++
++    auto mesg = conn->new_method_call("xyz.openbmc_project.Ipmi.Channel.Ipmb",
++                                      "/xyz/openbmc_project/Ipmi/Channel/Ipmb",
++                                      "org.openbmc.Ipmb", "sendRequest");
++    mesg.append(commandAddress, netfn, lun, command, commandData);
++
++    try
++    {
++        auto reply = conn->call(mesg);
++        reply.read(cmdResponses);
++    }
++    catch (sdbusplus::exception_t& e)
++    {
++        sd_journal_print(LOG_ERR, "Failed to sync Time with ME:%s\n",e.name());
++        return;
++    }
++
++    std::vector<uint8_t> dataReceived(4, 0);
++    int32_t status = -1;
++    uint8_t netFn = 0;
++    uint8_t rslun = 0;
++    uint8_t cmd = 0;
++    uint8_t cc = 0;
++
++    std::tie(status, netFn, rslun, cmd, cc, dataReceived) = cmdResponses;
++
++    sd_journal_print(LOG_INFO, "ME Get Time CC: 0x%x\n", cc);
++    sd_journal_print(LOG_INFO, "ME Get Time Data [0x%x:0x%x:0x%x:0x%x]\n",
++            dataReceived.at(0), dataReceived.at(1), dataReceived.at(2),dataReceived.at(3));
++
++    if (0 == cc)
++    {
++        uint32_t selTime = static_cast<uint32_t>(dataReceived.at(3) << 24) |
++                                                (dataReceived.at(2) << 16) |
++                                                (dataReceived.at(1) << 8) |
++                                                (dataReceived.at(0));
++        struct timespec selTimeBuf = {};
++        selTimeBuf.tv_sec = selTime;
++        if (clock_settime(CLOCK_REALTIME, &selTimeBuf) < 0)
++        {
++            std::cerr << "Failed to set BMC system time.\n";
++        }
++    }
++
++    return;
++}
++
+ static void bmcStatusLedInit(std::shared_ptr<sdbusplus::asio::connection> conn)
+ {
+     assertCount = 0;
+@@ -278,6 +338,17 @@ int main(int argc, char *argv[])
+         startPulseEventMonitor(conn);
+ #endif
+ 
++    // Sync BMC system time with ME
++    boost::asio::steady_timer syncMETimer(io);
++    syncMETimer.expires_from_now(boost::asio::chrono::seconds(60));
++    syncMETimer.async_wait([&](const boost::system::error_code& ec) {
++        if (ec == boost::asio::error::operation_aborted)
++        {
++            return; // we're being canceled
++        }
++        syncTimeWithME(conn);;
++    });
++
+     io.run();
+ 
+     return 0;
+-- 
+2.24.1
+

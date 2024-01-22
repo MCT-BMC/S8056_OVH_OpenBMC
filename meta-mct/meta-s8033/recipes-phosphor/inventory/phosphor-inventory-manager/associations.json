@@ -1,0 +1,19 @@
+[
+    {
+        "path": "system/chassis",
+        "endpoints":
+        [
+            {
+                "types":
+                {
+                    "rType": "chassis",
+                    "fType": "all_sensors"
+                },
+                "paths":
+                [
+                    "/xyz/openbmc_project/sensors/temperature/CPU_Temp"
+                ]
+            }
+        ]
+    }
+]

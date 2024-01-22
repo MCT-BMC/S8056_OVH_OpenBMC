@@ -1,0 +1,10 @@
+[Unit]
+Description=Phosphor-ipmi-flash alternate bmc update service
+
+[Service]
+ExecStart=/usr/sbin/alt-bmc-update -p /run/initramfs/bmc-backup 
+ExecStart=rm /run/initramfs/bmc-backup
+Type=oneshot
+
+[Install]
+WantedBy=phosphor-ipmi-flash-alt-bmc-update.target

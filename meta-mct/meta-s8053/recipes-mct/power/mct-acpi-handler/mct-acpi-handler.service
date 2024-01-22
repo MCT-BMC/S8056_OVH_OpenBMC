@@ -1,0 +1,14 @@
+[Unit]
+Description=ACPI state handler implementation
+StopWhenUnneeded=false
+After=xyz.openbmc_project.EntityManager.service
+After=xyz.openbmc_project.Chassis.Control.Power@0.service
+
+[Service]
+Restart=always
+RestartSec=5
+ExecStart=/usr/bin/env mct-acpi-handler
+SyslogIdentifier=mct-acpi-handler
+
+[Install]
+WantedBy=multi-user.target

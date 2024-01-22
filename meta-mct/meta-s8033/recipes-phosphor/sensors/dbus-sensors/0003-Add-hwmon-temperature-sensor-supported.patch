@@ -1,0 +1,253 @@
+From 4d198effcd7b3b73c9e3efe6b90e47ae151aa460 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Tue, 22 Mar 2022 16:40:47 +0800
+Subject: [PATCH] Add hwmon temperature sensor supported
+
+---
+ include/HwmonTempSensor.hpp |  8 ++++--
+ include/sensor.hpp          |  7 ++++-
+ src/HwmonTempMain.cpp       | 64 ++++++++++++++++++++++++++++++---------------
+ src/HwmonTempSensor.cpp     | 17 +++++++++---
+ 4 files changed, 68 insertions(+), 28 deletions(-)
+ mode change 100644 => 100755 include/HwmonTempSensor.hpp
+ mode change 100644 => 100755 include/sensor.hpp
+ mode change 100644 => 100755 src/HwmonTempMain.cpp
+ mode change 100644 => 100755 src/HwmonTempSensor.cpp
+
+diff --git a/include/HwmonTempSensor.hpp b/include/HwmonTempSensor.hpp
+old mode 100644
+new mode 100755
+index 8ae92cf..90e8c90
+--- a/include/HwmonTempSensor.hpp
++++ b/include/HwmonTempSensor.hpp
+@@ -31,19 +31,23 @@ class HwmonTempSensor :
+                     const struct SensorParams& thisSensorParameters,
+                     const float pollRate,
+                     const std::string& sensorConfiguration,
+-                    const PowerState powerState);
++                    const PowerState powerState,
++                    const double hysteresisVal);
+     ~HwmonTempSensor() override;
+     void setupRead(void);
+ 
+   private:
+     sdbusplus::asio::object_server& objServer;
+     boost::asio::posix::stream_descriptor inputDev;
+-    boost::asio::deadline_timer waitTimer;
++    boost::asio::steady_timer waitTimer;
+     boost::asio::streambuf readBuf;
+     std::string path;
+     double offsetValue;
+     double scaleValue;
+     unsigned int sensorPollMs;
++    PowerState readState;
++    double hysteresisVal;
++    thresholds::ThresholdTimer thresholdTimer;
+ 
+     void handleResponse(const boost::system::error_code& err);
+     void restartRead();
+diff --git a/include/sensor.hpp b/include/sensor.hpp
+old mode 100644
+new mode 100755
+index 12de959..b037f49
+--- a/include/sensor.hpp
++++ b/include/sensor.hpp
+@@ -49,7 +49,7 @@ struct Sensor
+         configurationPath(configurationPath), objectType(objectType),
+         isSensorSettable(isSettable), isValueMutable(isMutable), maxValue(max),
+         minValue(min), thresholds(std::move(thresholdData)),
+-        hysteresisTrigger((max - min) * 0.01),
++        hysteresisTrigger(0),
+         hysteresisPublish((max - min) * 0.0001), dbusConnection(conn),
+         readState(readState), errCount(0),
+         instrumentation(enableInstrumentation
+@@ -498,6 +498,11 @@ struct Sensor
+         }
+     }
+ 
++    void updateHysteresis(const double& HysteresisValue)
++    {
++       hysteresisTrigger = HysteresisValue;
++    }
++
+     void updateProperty(
+         std::shared_ptr<sdbusplus::asio::dbus_interface>& interface,
+         double& oldValue, const double& newValue, const char* dbusPropertyName)
+diff --git a/src/HwmonTempMain.cpp b/src/HwmonTempMain.cpp
+old mode 100644
+new mode 100755
+index f1f4a1f..fee1ca8
+--- a/src/HwmonTempMain.cpp
++++ b/src/HwmonTempMain.cpp
+@@ -379,7 +379,7 @@ void createSensors(
+                 int index = 1;
+ 
+                 if (!parseThresholdsFromConfig(sensorData, sensorThresholds,
+-                                               nullptr, &index))
++                                               &sensorName, &index))
+                 {
+                     std::cerr << "error populating thresholds for "
+                               << sensorName << " index 1\n";
+@@ -405,6 +405,14 @@ void createSensors(
+                         VariantToStringVisitor(), findPowerOn->second);
+                     setReadState(powerState, readState);
+                 }
++                float hysteresisVal = 0;
++                auto findHysteresisVal =
++                    baseConfigMap.find("HysteresisVal");
++                if (findHysteresisVal != baseConfigMap.end())
++                {
++                    hysteresisVal = std::visit(VariantToFloatVisitor(),
++                                             findHysteresisVal->second);
++                }
+ 
+                 auto permitSet = getPermitSet(baseConfigMap);
+                 auto& sensor = sensors[sensorName];
+@@ -417,15 +425,18 @@ void createSensors(
+                 }
+                 if (hwmonFile)
+                 {
+-                    sensor = std::make_shared<HwmonTempSensor>(
+-                        *hwmonFile, sensorType, objectServer, dbusConnection,
+-                        io, sensorName, std::move(sensorThresholds),
+-                        thisSensorParameters, pollRate, interfacePath,
+-                        readState);
+-                    sensor->setupRead();
+-                    hwmonName.erase(
+-                        remove(hwmonName.begin(), hwmonName.end(), sensorName),
+-                        hwmonName.end());
++                    if (sensorName != "IGNORE")
++                    {
++                        sensor = std::make_shared<HwmonTempSensor>(
++                            *hwmonFile, sensorType, objectServer, dbusConnection,
++                            io, sensorName, std::move(sensorThresholds),
++                            thisSensorParameters, pollRate, interfacePath,
++                            readState, hysteresisVal);
++                        sensor->setupRead();
++                        hwmonName.erase(
++                            remove(hwmonName.begin(), hwmonName.end(), sensorName),
++                            hwmonName.end());
++                    }
+                 }
+                 // Looking for keys like "Name1" for temp2_input,
+                 // "Name2" for temp3_input, etc.
+@@ -441,6 +452,14 @@ void createSensors(
+                     }
+                     std::string sensorName =
+                         std::get<std::string>(findKey->second);
++
++                    std::vector<thresholds::Threshold> sensorThresholds;
++                    if (!parseThresholdsFromConfig(sensorData, sensorThresholds, &sensorName))
++                    {
++                        std::cerr << "error populating thresholds for "
++                                << sensorName << "\n";
++                    }
++
+                     hwmonFile = getFullHwmonFilePath(
+                         directory.string(), "temp" + std::to_string(i + 1),
+                         permitSet);
+@@ -467,15 +486,18 @@ void createSensors(
+ 
+                         auto& sensor = sensors[sensorName];
+                         sensor = nullptr;
+-                        sensor = std::make_shared<HwmonTempSensor>(
+-                            *hwmonFile, sensorType, objectServer,
+-                            dbusConnection, io, sensorName,
+-                            std::move(thresholds), thisSensorParameters,
+-                            pollRate, interfacePath, readState);
+-                        sensor->setupRead();
+-                        hwmonName.erase(remove(hwmonName.begin(),
+-                                               hwmonName.end(), sensorName),
+-                                        hwmonName.end());
++                        if (sensorName != "IGNORE")
++                        {
++                            sensor = std::make_shared<HwmonTempSensor>(
++                                *hwmonFile, sensorType, objectServer,
++                                dbusConnection, io, sensorName,
++                                std::move(thresholds), thisSensorParameters,
++                                pollRate, interfacePath, readState, hysteresisVal);
++                            sensor->setupRead();
++                            hwmonName.erase(remove(hwmonName.begin(),
++                                                hwmonName.end(), sensorName),
++                                            hwmonName.end());
++                        }
+                     }
+                 }
+                 if (hwmonName.empty())
+@@ -538,7 +560,7 @@ int main()
+         createSensors(io, objectServer, sensors, systemBus, nullptr);
+     });
+ 
+-    boost::asio::deadline_timer filterTimer(io);
++    boost::asio::steady_timer filterTimer(io);
+     std::function<void(sdbusplus::message::message&)> eventHandler =
+         [&](sdbusplus::message::message& message) {
+             if (message.is_method_error())
+@@ -548,7 +570,7 @@ int main()
+             }
+             sensorsChanged->insert(message.get_path());
+             // this implicitly cancels the timer
+-            filterTimer.expires_from_now(boost::posix_time::seconds(1));
++            filterTimer.expires_from_now(boost::asio::chrono::seconds(1));
+ 
+             filterTimer.async_wait([&](const boost::system::error_code& ec) {
+                 if (ec == boost::asio::error::operation_aborted)
+diff --git a/src/HwmonTempSensor.cpp b/src/HwmonTempSensor.cpp
+old mode 100644
+new mode 100755
+index 6577739..d2c3242
+--- a/src/HwmonTempSensor.cpp
++++ b/src/HwmonTempSensor.cpp
+@@ -46,7 +46,7 @@ HwmonTempSensor::HwmonTempSensor(
+     boost::asio::io_service& io, const std::string& sensorName,
+     std::vector<thresholds::Threshold>&& thresholdsIn,
+     const struct SensorParams& thisSensorParameters, const float pollRate,
+-    const std::string& sensorConfiguration, const PowerState powerState) :
++    const std::string& sensorConfiguration, const PowerState powerState, const double hysteresisVal) :
+     Sensor(boost::replace_all_copy(sensorName, " ", "_"),
+            std::move(thresholdsIn), sensorConfiguration, objectType, false,
+            false, thisSensorParameters.maxValue, thisSensorParameters.minValue,
+@@ -55,7 +55,8 @@ HwmonTempSensor::HwmonTempSensor(
+     inputDev(io), waitTimer(io), path(path),
+     offsetValue(thisSensorParameters.offsetValue),
+     scaleValue(thisSensorParameters.scaleValue),
+-    sensorPollMs(static_cast<unsigned int>(pollRate * 1000))
++    sensorPollMs(static_cast<unsigned int>(pollRate * 1000)), hysteresisVal(hysteresisVal),
++        thresholdTimer(io)
+ {
+     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
+     int fd = open(path.c_str(), O_RDONLY);
+@@ -85,6 +86,7 @@ HwmonTempSensor::HwmonTempSensor(
+                                                  "/" + name,
+                                              association::interface);
+     setInitialProperties(thisSensorParameters.units);
++    updateHysteresis(hysteresisVal);
+ }
+ 
+ HwmonTempSensor::~HwmonTempSensor()
+@@ -126,7 +128,7 @@ void HwmonTempSensor::setupRead(void)
+ void HwmonTempSensor::restartRead()
+ {
+     std::weak_ptr<HwmonTempSensor> weakRef = weak_from_this();
+-    waitTimer.expires_from_now(boost::posix_time::milliseconds(sensorPollMs));
++    waitTimer.expires_from_now(boost::asio::chrono::milliseconds(sensorPollMs));
+     waitTimer.async_wait([weakRef](const boost::system::error_code& ec) {
+         if (ec == boost::asio::error::operation_aborted)
+         {
+@@ -188,5 +190,12 @@ void HwmonTempSensor::handleResponse(const boost::system::error_code& err)
+ 
+ void HwmonTempSensor::checkThresholds(void)
+ {
+-    thresholds::checkThresholds(this);
++    if(readState == PowerState::always)
++    {
++        thresholds::checkThresholds(this);
++    }
++    else
++    {
++        thresholds::checkThresholdsPowerDelay(weak_from_this(), thresholdTimer);
++    }
+ }
+-- 
+2.7.4
+

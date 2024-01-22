@@ -1,0 +1,487 @@
+From ccbbb283d74b56d5e270c82f6a4861def0b0d262 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Mon, 16 Nov 2020 16:03:18 +0800
+Subject: [PATCH 03/10] Support owner id for sdr sensors
+
+---
+ include/ipmid/types.hpp            |   4 +-
+ scripts/writesensor.mako.cpp       | 187 +++++++++++++++--------------
+ scripts/writesensor_extra.mako.cpp |  29 +++--
+ sensorhandler.cpp                  |  97 +++++++++++++--
+ sensorhandler.hpp                  |   1 +
+ 5 files changed, 208 insertions(+), 110 deletions(-)
+
+diff --git a/include/ipmid/types.hpp b/include/ipmid/types.hpp
+index 86c7241..5cc24a6 100644
+--- a/include/ipmid/types.hpp
++++ b/include/ipmid/types.hpp
+@@ -138,6 +138,7 @@ using Unit = std::string;
+ using EntityType = uint8_t;
+ using EntityInst = uint8_t;
+ using SensorName = std::string;
++using OwnerIDType = uint16_t;
+ 
+ enum class Mutability
+ {
+@@ -168,6 +169,7 @@ inline Mutability operator&(Mutability lhs, Mutability rhs)
+ 
+ struct Info
+ {
++    OwnerIDType ownerID;
+     EntityType entityType;
+     EntityInst instance;
+     Type sensorType;
+@@ -192,7 +194,7 @@ struct Info
+ };
+ 
+ using Id = uint8_t;
+-using IdInfoMap = std::map<Id, Info>;
++using IdInfoMap = std::multimap<Id, Info>;
+ 
+ using PropertyMap = ipmi::PropertyMap;
+ 
+diff --git a/scripts/writesensor.mako.cpp b/scripts/writesensor.mako.cpp
+index bff4586..3140cbe 100644
+--- a/scripts/writesensor.mako.cpp
++++ b/scripts/writesensor.mako.cpp
+@@ -7,21 +7,25 @@ sensorNameMaxLength = 16
+ %>\
+ %for key in sensorDict.keys():
+ <%
+-    sensor = sensorDict[key]
+-    serviceInterface = sensor["serviceInterface"]
+-    if serviceInterface == "org.freedesktop.DBus.Properties":
+-        updateFunc = "set::"
+-        getFunc = "get::"
+-    elif serviceInterface == "xyz.openbmc_project.Inventory.Manager":
+-        updateFunc = "notify::"
+-        getFunc = "inventory::get::"
+-    else:
+-        assert "Un-supported interface: " + serviceInterface
+-    endif
+-    if serviceInterface not in interfaceDict:
+-        interfaceDict[serviceInterface] = {}
+-        interfaceDict[serviceInterface]["updateFunc"] = updateFunc
+-        interfaceDict[serviceInterface]["getFunc"] = getFunc
++    sensors = sensorDict[key]
++    assert isinstance(sensors, list), \
++            "sensor number '%d' is not list" % \
++            (key)
++    for sensor in sensors:
++        serviceInterface = sensor["serviceInterface"]
++        if serviceInterface == "org.freedesktop.DBus.Properties":
++            updateFunc = "set::"
++            getFunc = "get::"
++        elif serviceInterface == "xyz.openbmc_project.Inventory.Manager":
++            updateFunc = "notify::"
++            getFunc = "inventory::get::"
++        else:
++            assert "Un-supported interface: " + serviceInterface
++        endif
++        if serviceInterface not in interfaceDict:
++            interfaceDict[serviceInterface] = {}
++            interfaceDict[serviceInterface]["updateFunc"] = updateFunc
++            interfaceDict[serviceInterface]["getFunc"] = getFunc
+ %>\
+ % endfor
+ 
+@@ -35,79 +39,87 @@ namespace sensor {
+ extern const IdInfoMap sensors = {
+ % for key in sensorDict.keys():
+    % if key:
++<%      
++        sensors = sensorDict[key]
++        assert isinstance(sensors, list), \
++                "sensor number '%d' is not list" % \
++                (key)
++%>
++        % for sensor in sensors:
+ {${key},{
+ <%
+-       sensor = sensorDict[key]
+-       interfaces = sensor["interfaces"]
+-       path = sensor["path"]
+-       serviceInterface = sensor["serviceInterface"]
+-       sensorType = sensor["sensorType"]
+-       entityID = sensor.get("entityID", 0)
+-       instance = sensor.get("entityInstance", 0)
+-       readingType = sensor["sensorReadingType"]
+-       multiplier = sensor.get("multiplierM", 1)
+-       offsetB = sensor.get("offsetB", 0)
+-       bExp = sensor.get("bExp", 0)
+-       rExp = sensor.get("rExp", 0)
+-       unit = sensor.get("unit", "")
+-       scale = sensor.get("scale", 0)
+-       hasScale = "true" if "scale" in sensor.keys() else "false"
+-       valueReadingType = sensor["readingType"]
+-       updateFunc = interfaceDict[serviceInterface]["updateFunc"]
+-       updateFunc += sensor["readingType"]
+-       getFunc = interfaceDict[serviceInterface]["getFunc"]
+-       getFunc += sensor["readingType"]
+-       sensorName = sensor.get("sensorName", None)
+-       if sensorName:
+-           assert len(sensorName) <= sensorNameMaxLength, \
+-                   "sensor name '%s' is too long (%d bytes max)" % \
+-                   (sensorName, sensorNameMaxLength)
+-       else:
+-           sensorNameFunc = "get::" + sensor.get("sensorNamePattern",
+-                   "nameLeaf")
++            ownerID = sensor.get("ownerID", 32)
++            interfaces = sensor["interfaces"]
++            path = sensor["path"]
++            serviceInterface = sensor["serviceInterface"]
++            sensorType = sensor["sensorType"]
++            entityID = sensor.get("entityID", 0)
++            instance = sensor.get("entityInstance", 0)
++            readingType = sensor["sensorReadingType"]
++            multiplier = sensor.get("multiplierM", 1)
++            offsetB = sensor.get("offsetB", 0)
++            bExp = sensor.get("bExp", 0)
++            rExp = sensor.get("rExp", 0)
++            unit = sensor.get("unit", "")
++            scale = sensor.get("scale", 0)
++            hasScale = "true" if "scale" in sensor.keys() else "false"
++            valueReadingType = sensor["readingType"]
++            updateFunc = interfaceDict[serviceInterface]["updateFunc"]
++            updateFunc += sensor["readingType"]
++            getFunc = interfaceDict[serviceInterface]["getFunc"]
++            getFunc += sensor["readingType"]
++            sensorName = sensor.get("sensorName", None)
++            if sensorName:
++               assert len(sensorName) <= sensorNameMaxLength, \
++                       "sensor name '%s' is too long (%d bytes max)" % \
++                       (sensorName, sensorNameMaxLength)
++            else:
++               sensorNameFunc = "get::" + sensor.get("sensorNamePattern",
++                       "nameLeaf")
+ 
+-       if "readingAssertion" == valueReadingType or "readingData" == valueReadingType:
+-           for interface,properties in interfaces.items():
+-               for dbus_property,property_value in properties.items():
+-                   for offset,values in property_value["Offsets"].items():
+-                       valueType = values["type"]
+-           updateFunc = "set::" + valueReadingType + "<" + valueType + ">"
+-           getFunc = "get::" + valueReadingType + "<" + valueType + ">"
+-       sensorInterface = serviceInterface
+-       if serviceInterface == "org.freedesktop.DBus.Properties":
+-           sensorInterface = next(iter(interfaces))
+-       mutability = sensor.get("mutability", "Mutability::Read")
+-       sdrType = sensor.get("sdrType", "SdrType::sdr_full_record")
++            if "readingAssertion" == valueReadingType or "readingData" == valueReadingType:
++               for interface,properties in interfaces.items():
++                   for dbus_property,property_value in properties.items():
++                       for offset,values in property_value["Offsets"].items():
++                           valueType = values["type"]
++               updateFunc = "set::" + valueReadingType + "<" + valueType + ">"
++               getFunc = "get::" + valueReadingType + "<" + valueType + ">"
++            sensorInterface = serviceInterface
++            if serviceInterface == "org.freedesktop.DBus.Properties":
++               sensorInterface = next(iter(interfaces))
++            mutability = sensor.get("mutability", "Mutability::Read")
++            sdrType = sensor.get("sdrType", "SdrType::sdr_full_record")
+ %>
+-        .entityType = ${entityID},
+-        .instance = ${instance},
+-        .sensorType = ${sensorType},
+-        .sensorPath = "${path}",
+-        .sensorInterface = "${sensorInterface}",
+-        .sensorReadingType = ${readingType},
+-        .coefficientM = ${multiplier},
+-        .coefficientB = ${offsetB},
+-        .exponentB = ${bExp},
+-        .scaledOffset = ${offsetB * pow(10,bExp)},
+-        .exponentR = ${rExp},
+-        .hasScale = ${hasScale},
+-        .scale = ${scale},
+-        .unit = "${unit}",
+-        .updateFunc = ${updateFunc},
+-        .getFunc = ${getFunc},
+-        .mutability = Mutability(${mutability}),
+-        .sdrType = ${sdrType},
+-    % if sensorName:
+-        .sensorName = "${sensorName}",
+-    % else:
+-        .sensorNameFunc = ${sensorNameFunc},
+-    % endif
+-        .propertyInterfaces = {
+-    % for interface,properties in interfaces.items():
+-            {"${interface}",{
+-            % if properties:
+-                % for dbus_property,property_value in properties.items():
+-                    {"${dbus_property}",{
++            .ownerID = ${ownerID},
++            .entityType = ${entityID},
++            .instance = ${instance},
++            .sensorType = ${sensorType},
++            .sensorPath = "${path}",
++            .sensorInterface = "${sensorInterface}",
++            .sensorReadingType = ${readingType},
++            .coefficientM = ${multiplier},
++            .coefficientB = ${offsetB},
++            .exponentB = ${bExp},
++            .scaledOffset = ${offsetB * pow(10,bExp)},
++            .exponentR = ${rExp},
++            .hasScale = ${hasScale},
++            .scale = ${scale},
++            .unit = "${unit}",
++            .updateFunc = ${updateFunc},
++            .getFunc = ${getFunc},
++            .mutability = Mutability(${mutability}),
++            .sdrType = ${sdrType},
++        % if sensorName:
++            .sensorName = "${sensorName}",
++        % else:
++            .sensorNameFunc = ${sensorNameFunc},
++        % endif
++            .propertyInterfaces = {
++        % for interface,properties in interfaces.items():
++                {"${interface}",{
++                % if properties:
++                    % for dbus_property,property_value in properties.items():
++                        {"${dbus_property}",{
+ <%
+ try:
+     preReq = property_value["Prereqs"]
+@@ -166,12 +178,13 @@ except KeyError:
+                         },
+                     % endfor
+                     }}},
+-                % endfor
+-            % endif
++                  % endfor
++              % endif
+             }},
+-    % endfor
++      % endfor
+      },
+ }},
++         % endfor
+    % endif
+ % endfor
+ };
+diff --git a/scripts/writesensor_extra.mako.cpp b/scripts/writesensor_extra.mako.cpp
+index d490e46..3a3fcd0 100644
+--- a/scripts/writesensor_extra.mako.cpp
++++ b/scripts/writesensor_extra.mako.cpp
+@@ -13,7 +13,7 @@ struct SensorInfo
+ 	uint8_t sensorReadingType;
+ };
+ 
+-using extraIdInfoMap = std::map<std::string, SensorInfo>;
++using extraIdInfoMap = std::multimap<std::string, SensorInfo>;
+ 
+ namespace ipmi {
+ namespace sensor {
+@@ -21,18 +21,25 @@ namespace sensor {
+ inline const extraIdInfoMap sensorsInfo = {
+ % for key in sensorDict.keys():
+    % if key:
+-{
+ <%
+-       sensor = sensorDict[key]
+-       path = sensor["path"]
+-       sensorType = sensor["sensorType"]
+-       sensorReadingType = sensor["sensorReadingType"]
++        sensors = sensorDict[key]
++        assert isinstance(sensors, list), \
++                "sensor number '%d' is not list" % \
++                (key)
++%>
++        % for sensor in sensors:
++<%
++            path = sensor["path"]
++            sensorType = sensor["sensorType"]
++            sensorReadingType = sensor["sensorReadingType"]
+ %>
+-       "${path}",
+-       {
+-           ${key}, ${sensorType}, ${sensorReadingType}
+-       }
+-},
++            {
++               "${path}",
++               {
++                   ${key}, ${sensorType}, ${sensorReadingType}
++               }
++            },
++        % endfor
+    % endif
+ % endfor
+ };
+diff --git a/sensorhandler.cpp b/sensorhandler.cpp
+index 420dfd0..3b22cbf 100644
+--- a/sensorhandler.cpp
++++ b/sensorhandler.cpp
+@@ -860,7 +860,7 @@ ipmi_ret_t ipmi_compact_get_sdr(ipmi_request_t request,
+     record.header.record_length = sizeof(record.key) + sizeof(record.body);
+ 
+     /* Key */
+-    get_sdr::key::set_owner_id_bmc(&(record.key));
++    record.key.owner_id = sensor->second.ownerID;
+     record.key.sensor_number = sensor_id;
+ 
+     /* Body */
+@@ -907,7 +907,27 @@ ipmi_ret_t ipmi_compact_get_sdr(ipmi_request_t request,
+     }
+     else
+     {
+-        get_sdr::response::set_next_record_id(sensor->first, resp);
++        // Same sensor number with different owner id.
++        if (sensor_id == sensor->first)
++        {
++            auto recordID = get_sdr::request::get_record_id(req);
++            uint16_t next_record_id;
++            if (recordID >= FRU_RECORD_ID_START)
++            {
++                next_record_id = recordID + RECORD_ID_OFFSET;
++            }
++            else
++            {
++                next_record_id =
++                    recordID + ENTITY_RECORD_ID_START + RECORD_ID_OFFSET;
++            }
++
++            get_sdr::response::set_next_record_id(next_record_id, resp);
++        }
++        else
++        {
++            get_sdr::response::set_next_record_id(sensor->first, resp);
++        }
+     }
+ 
+     if (req->offset > sizeof(record))
+@@ -954,7 +974,7 @@ ipmi_ret_t ipmi_event_get_sdr(ipmi_request_t request, ipmi_response_t response,
+     record.header.record_length = sizeof(record.key) + sizeof(record.body);
+ 
+     /* Key */
+-    get_sdr::key::set_owner_id_bmc(&(record.key));
++    record.key.owner_id = sensor->second.ownerID;
+     record.key.sensor_number = sensor_id;
+ 
+     /* Body */
+@@ -999,7 +1019,27 @@ ipmi_ret_t ipmi_event_get_sdr(ipmi_request_t request, ipmi_response_t response,
+     }
+     else
+     {
+-        get_sdr::response::set_next_record_id(sensor->first, resp);
++        // Same sensor number with different owner id.
++        if (sensor_id == sensor->first)
++        {
++            auto recordID = get_sdr::request::get_record_id(req);
++            uint16_t next_record_id;
++            if (recordID >= FRU_RECORD_ID_START)
++            {
++                next_record_id = recordID + RECORD_ID_OFFSET;
++            }
++            else
++            {
++                next_record_id =
++                    recordID + ENTITY_RECORD_ID_START + RECORD_ID_OFFSET;
++            }
++
++            get_sdr::response::set_next_record_id(next_record_id, resp);
++        }
++        else
++        {
++            get_sdr::response::set_next_record_id(sensor->first, resp);
++        }
+     }
+ 
+     if (req->offset > sizeof(record))
+@@ -1320,7 +1360,7 @@ ipmi_ret_t ipmi_full_get_sdr(ipmi_request_t request, ipmi_response_t response,
+     record.header.record_length = sizeof(record.key) + sizeof(record.body);
+ 
+     /* Key */
+-    get_sdr::key::set_owner_id_bmc(&(record.key));
++    record.key.owner_id = sensor->second.ownerID;
+     record.key.sensor_number = sensor_id;
+ 
+     /* Body */
+@@ -1350,7 +1390,27 @@ ipmi_ret_t ipmi_full_get_sdr(ipmi_request_t request, ipmi_response_t response,
+     }
+     else
+     {
+-        get_sdr::response::set_next_record_id(sensor->first, resp);
++        // Same sensor number with different owner id.
++        if (sensor_id == sensor->first)
++        {
++            auto recordID = get_sdr::request::get_record_id(req);
++            uint16_t next_record_id;
++            if (recordID >= FRU_RECORD_ID_START)
++            {
++                next_record_id = recordID + RECORD_ID_OFFSET;
++            }
++            else
++            {
++                next_record_id =
++                    recordID + ENTITY_RECORD_ID_START + RECORD_ID_OFFSET;
++            }
++
++            get_sdr::response::set_next_record_id(next_record_id, resp);
++        }
++        else
++        {
++            get_sdr::response::set_next_record_id(sensor->first, resp);
++        }
+     }
+ 
+     if (req->offset > sizeof(record))
+@@ -1394,10 +1454,13 @@ ipmi_ret_t ipmi_sen_get_sdr(ipmi_netfn_t netfn, ipmi_cmd_t cmd,
+     {
+         // recordID 0 to 255 means it is a FULL record.
+         // recordID 256 to 511 means it is a FRU record.
+-        // recordID greater then 511 means it is a Entity Association
+-        // record. Currently we are supporting three record types: FULL
+-        // record, FRU record and Enttiy Association record.
+-        if (recordID >= ENTITY_RECORD_ID_START)
++        // recordID 512 to 767 means it is a Entity Association record.
++        // recordID greater than 767 means FULL records have same sensor number,
++        // but different owner ID.
++        // Currently we are supporting three record types: FULL record,
++        // FRU record and Enttiy Association record.
++        if (recordID >= ENTITY_RECORD_ID_START &&
++            recordID < ENTITY_RECORD_ID_START + RECORD_ID_OFFSET)
+         {
+             return ipmi_entity_get_sdr(request, response, data_len);
+         }
+@@ -1408,12 +1471,24 @@ ipmi_ret_t ipmi_sen_get_sdr(ipmi_netfn_t netfn, ipmi_cmd_t cmd,
+         }
+         else
+         {
+-            sensor = ipmi::sensor::sensors.find(recordID);
++            size_t sensorID = recordID % RECORD_ID_OFFSET;
++            sensor = ipmi::sensor::sensors.find(sensorID);
+             if (sensor == ipmi::sensor::sensors.end())
+             {
+                 return IPMI_CC_SENSOR_INVALID;
+             }
+ 
++            // Find the correct sensor when it has the same sensor number.
++            if (recordID >= FRU_RECORD_ID_START)
++            {
++                recordID -= ENTITY_RECORD_ID_START;
++                size_t quot = recordID / RECORD_ID_OFFSET;
++                while (quot--)
++                {
++                    ++sensor;
++                }
++            }
++
+             switch (sensor->second.sdrType)
+             {
+                 case ipmi::sensor::SdrType::sdr_compact_record:
+diff --git a/sensorhandler.hpp b/sensorhandler.hpp
+index f0ef088..b3191db 100644
+--- a/sensorhandler.hpp
++++ b/sensorhandler.hpp
+@@ -120,6 +120,7 @@ ipmi::RspType<uint16_t> ipmiSensorReserveSdr();
+ 
+ static const uint16_t FRU_RECORD_ID_START = 256;
+ static const uint16_t ENTITY_RECORD_ID_START = 512;
++static const uint16_t RECORD_ID_OFFSET = 256;
+ static const uint8_t SDR_VERSION = 0x51;
+ static const uint16_t END_OF_RECORD = 0xFFFF;
+ static const uint8_t LENGTH_MASK = 0x1F;
+-- 
+2.32.0
+

@@ -1,0 +1,15 @@
+[Unit]
+Description=MCT BIOS Code Update
+Wants=mapper-wait@-org-openbmc-managers-Download.service
+After=mapper-wait@-org-openbmc-managers-Download.service
+
+[Service]
+Restart=always
+ExecStart=/usr/bin/env bios_update.py
+SyslogIdentifier=bios_update.py
+Environment="PYTHONUNBUFFERED=1"
+Type=dbus
+BusName=org.openbmc.control.BiosFlash
+
+[Install]
+WantedBy={SYSTEMD_DEFAULT_TARGET}

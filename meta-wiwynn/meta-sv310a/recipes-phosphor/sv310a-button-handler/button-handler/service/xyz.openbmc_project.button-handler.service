@@ -1,0 +1,11 @@
+[Unit]
+Description=Button handler Service
+
+[Service]
+Restart=always
+RestartSec=5
+ExecStart=/usr/bin/button-handler
+SyslogIdentifier=button-handler
+
+[Install]
+WantedBy=multi-user.target

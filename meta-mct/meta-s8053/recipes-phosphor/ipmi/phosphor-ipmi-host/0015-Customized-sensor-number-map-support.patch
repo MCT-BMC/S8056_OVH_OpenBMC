@@ -1,0 +1,244 @@
+From e67e1598d69196976e538dc3b786203d8a1cc4a4 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Tue, 22 Mar 2022 15:25:36 +0800
+Subject: [PATCH 15/24] Customized sensor number map support
+
+---
+ dbus-sdr/sdrutils.cpp         | 99 +++++++++++++++++++++++++++++++++++--------
+ dbus-sdr/sensorcommands.cpp   | 16 ++++---
+ dbus-sdr/storagecommands.cpp  |  2 +-
+ include/dbus-sdr/sdrutils.hpp |  6 +++
+ 4 files changed, 99 insertions(+), 24 deletions(-)
+
+diff --git a/dbus-sdr/sdrutils.cpp b/dbus-sdr/sdrutils.cpp
+index 3df0dc1..bb17d8f 100755
+--- a/dbus-sdr/sdrutils.cpp
++++ b/dbus-sdr/sdrutils.cpp
+@@ -147,6 +147,30 @@ uint16_t getSensorSubtree(std::shared_ptr<SensorSubTree>& subtree)
+ bool getSensorNumMap(std::shared_ptr<SensorNumMap>& sensorNumMap)
+ {
+     static std::shared_ptr<SensorNumMap> sensorNumMapPtr;
++
++    sd_bus* bus = NULL;
++    int ret = sd_bus_default_system(&bus);
++    if (ret < 0)
++    {
++        phosphor::logging::log<phosphor::logging::level::ERR>(
++            "Failed to connect to system bus",
++            phosphor::logging::entry("ERRNO=0x%X", -ret));
++        sd_bus_unref(bus);
++        return false;
++    }
++    sdbusplus::bus::bus dbus(bus);
++    static sdbusplus::bus::match::match sensorAdded(
++        dbus,
++        "type='signal',member='InterfacesAdded',arg0path='/xyz/openbmc_project/"
++        "sensors/'",
++        [](sdbusplus::message::message& m) { sensorNumMapPtr.reset(); });
++
++    static sdbusplus::bus::match::match sensorRemoved(
++        dbus,
++        "type='signal',member='InterfacesRemoved',arg0path='/xyz/"
++        "openbmc_project/sensors/'",
++        [](sdbusplus::message::message& m) { sensorNumMapPtr.reset(); });
++
+     bool sensorNumMapUpated = false;
+     static uint16_t prevSensorUpdatedIndex = 0;
+     std::shared_ptr<SensorSubTree> sensorTree;
+@@ -165,29 +189,37 @@ bool getSensorNumMap(std::shared_ptr<SensorNumMap>& sensorNumMap)
+ 
+     sensorNumMapPtr = std::make_shared<SensorNumMap>();
+ 
+-    uint16_t sensorNum = 0;
+-    uint16_t sensorIndex = 0;
+-    for (const auto& sensor : *sensorTree)
++    std::ifstream sdrStream(sdrFile);
++
++    if (!sdrStream.is_open())
+     {
+-        sensorNumMapPtr->insert(
+-            SensorNumMap::value_type(sensorNum, sensor.first));
+-        sensorIndex++;
+-        if (sensorIndex == maxSensorsPerLUN)
+-        {
+-            sensorIndex = lun1Sensor0;
+-        }
+-        else if (sensorIndex == (lun1Sensor0 | maxSensorsPerLUN))
++        std::cerr << "NO defined sensor number map found\n";
++        return false;
++    }
++    else
++    {
++        auto data = nlohmann::json::parse(sdrStream, nullptr, false);
++        if (data.is_discarded())
+         {
+-            // Skip assigning LUN 0x2 any sensors
+-            sensorIndex = lun3Sensor0;
++            std::cerr << "syntax error in " << sdrFile << "\n";
+         }
+-        else if (sensorIndex == (lun3Sensor0 | maxSensorsPerLUN))
++        else
+         {
+-            // this is an error, too many IPMI sensors
+-            throw std::out_of_range("Maximum number of IPMI sensors exceeded.");
++            int idx = 0;
++            while (!data[idx].is_null())
++            {
++                if (sensorTree->find(data[idx]["path"]) != sensorTree->end())
++                {
++                    sensorNumMapPtr->insert(SensorNumMap::value_type(std::stoul((std::string)data[idx]["sensorNumber"], nullptr, 16), data[idx]["path"]));
++                    //std::cout << "SensorNumMap add sensornum: " << data[idx]["sensorNumber"] << " path: " << data[idx]["path"] << std::endl;
++                }
++                idx++;
++            }
+         }
+-        sensorNum = sensorIndex;
++        sdrStream.close();
++        std::cout << "SensorNumber map reloaded\n";
+     }
++
+     sensorNumMap = sensorNumMapPtr;
+     sensorNumMapUpated = true;
+     return sensorNumMapUpated;
+@@ -287,6 +319,39 @@ uint8_t getSensorEventTypeFromPath(const std::string& path)
+     return sensorEventType;
+ }
+ 
++void getSensorEntityIdAndInstance(const std::string& path, uint8_t& entityId, uint8_t& entityInstance)
++{
++    std::ifstream sdrStream(sdrFile);
++
++    if (!sdrStream.is_open())
++    {
++        std::cerr << "NO defined sensor number map found\n";
++        return ;
++    }
++
++    auto data = nlohmann::json::parse(sdrStream, nullptr, false);
++    if (data.is_discarded())
++    {
++        std::cerr << "syntax error in " << sdrFile << "\n";
++    }
++    else
++    {
++        int idx = 0;
++        while (!data[idx].is_null())
++        {
++            if (data[idx]["path"] == path)
++            {
++                entityId =  std::stoul(std::string(data[idx]["entityID"]), nullptr, 16);
++                entityInstance = std::stoul(std::string(data[idx]["entityInstance"]), nullptr, 16);
++                break;
++            }
++            idx++;
++        }
++    }
++
++    sdrStream.close();
++}
++
+ std::string getPathFromSensorNumber(uint16_t sensorNum)
+ {
+     std::shared_ptr<SensorNumMap> sensorNumMapPtr;
+diff --git a/dbus-sdr/sensorcommands.cpp b/dbus-sdr/sensorcommands.cpp
+index b0a0d1d..215bd00 100755
+--- a/dbus-sdr/sensorcommands.cpp
++++ b/dbus-sdr/sensorcommands.cpp
+@@ -562,8 +562,6 @@ static void loadSdr(uint16_t baseID)
+     record.header.record_length = sizeof(get_sdr::SensorDataEventRecord) -
+                                       sizeof(get_sdr::SensorDataRecordHeader);
+     record.key.owner_lun = 0x0;
+-    record.body.entity_id = 0x07;
+-    record.body.entity_instance = 0x01;
+     record.body.event_reading_type = 0x6f;
+ 
+     std::ifstream sdrStream(sdrEventOnlyFile);
+@@ -588,6 +586,8 @@ static void loadSdr(uint16_t baseID)
+                 record.key.owner_id = std::stoul((std::string)data[idx]["ownerId"], nullptr, 16);
+                 record.key.sensor_number = std::stoul((std::string)data[idx]["sensorNumber"], nullptr, 16);
+                 record.body.sensor_type = std::stoul((std::string)data[idx]["sensorType"], nullptr, 16);
++                record.body.entity_id = std::stoul((std::string)data[idx]["entityID"], nullptr, 16);
++                record.body.entity_instance = std::stoul((std::string)data[idx]["entityInstance"], nullptr, 16);
+                 std::string sensor_name = data[idx]["sensorName"];
+                 record.body.id_string_info = sensor_name.size();
+                 std::strncpy(record.body.id_string, sensor_name.c_str(),
+@@ -1716,7 +1716,7 @@ bool constructSensorSdr(ipmi::Context::ptr ctx, uint16_t sensorNum,
+ 
+     // follow the association chain to get the parent board's entityid and
+     // entityInstance
+-    updateIpmiFromAssociation(path, sensorMap, entityId, entityInstance);
++    getSensorEntityIdAndInstance(path, entityId, entityInstance);
+ 
+     record.body.entity_id = entityId;
+     record.body.entity_instance = entityInstance;
+@@ -1936,9 +1936,6 @@ void constructEventSdrHeaderKey(uint16_t sensorNum, uint16_t recordID,
+     record.key.owner_id = bmcI2CAddr;
+     record.key.owner_lun = lun;
+     record.key.sensor_number = sensornumber;
+-
+-    record.body.entity_id = 0x07;
+-    record.body.entity_instance = 0x01;
+ }
+ 
+ // Construct a type 3 SDR for type 3 sensor (daemon).
+@@ -1968,6 +1965,13 @@ bool constructVrSdr(ipmi::Context::ptr ctx, uint16_t sensorNum,
+     // sensor path. This is because VR control is allocated in an independent
+     // path(/xyz/openbmc_project/vr/profile/...) which is not categorized by
+     // types.
++    uint8_t entityId = 0x07;
++    uint8_t entityInstance = 0x01;
++
++    getSensorEntityIdAndInstance(path, entityId, entityInstance);
++
++    record.body.entity_id = entityId;
++    record.body.entity_instance = entityInstance;
+     record.body.sensor_type = getSensorTypeFromPath(path);
+     record.body.event_reading_type = 0x6f;
+ 
+diff --git a/dbus-sdr/storagecommands.cpp b/dbus-sdr/storagecommands.cpp
+index 900e765..0170781 100755
+--- a/dbus-sdr/storagecommands.cpp
++++ b/dbus-sdr/storagecommands.cpp
+@@ -895,7 +895,7 @@ ipmi_ret_t getFruSdrs(ipmi::Context::ptr ctx, size_t index,
+     resp.body.deviceType = 0x10;
+     resp.body.deviceTypeModifier = 0x0;
+ 
+-    uint8_t entityID = 0;
++    uint8_t entityID = 0x07;
+     uint8_t entityInstance = 0x0;
+ 
+ #ifdef USING_ENTITY_MANAGER_DECORATORS
+diff --git a/include/dbus-sdr/sdrutils.hpp b/include/dbus-sdr/sdrutils.hpp
+index 03aed8e..660fae9 100755
+--- a/include/dbus-sdr/sdrutils.hpp
++++ b/include/dbus-sdr/sdrutils.hpp
+@@ -28,6 +28,8 @@
+ #include <sdbusplus/bus/match.hpp>
+ #include <string>
+ #include <vector>
++#include <fstream>
++#include <nlohmann/json.hpp>
+ 
+ #pragma once
+ 
+@@ -55,6 +57,8 @@ static constexpr uint16_t lun3Sensor0 = 0x300;
+ static constexpr uint16_t invalidSensorNumber = 0xFFFF;
+ static constexpr uint8_t reservedSensorNumber = 0xFF;
+ 
++static constexpr const char* sdrFile = "/usr/share/ipmi-providers/sdr_general.json";
++
+ namespace details
+ {
+ // Enable/disable the logging of stats instrumentation
+@@ -399,6 +403,8 @@ uint16_t getSensorNumberFromPath(const std::string& path);
+ 
+ uint8_t getSensorEventTypeFromPath(const std::string& path);
+ 
++void getSensorEntityIdAndInstance(const std::string& path, uint8_t& entityId, uint8_t& entityInstance);
++
+ std::string getPathFromSensorNumber(uint16_t sensorNum);
+ 
+ namespace ipmi
+-- 
+2.7.4
+

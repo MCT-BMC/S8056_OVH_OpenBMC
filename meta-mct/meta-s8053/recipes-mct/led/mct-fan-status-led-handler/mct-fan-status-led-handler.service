@@ -1,0 +1,15 @@
+[Unit]
+Description=MiTAC FAN status LED handler
+After=xyz.openbmc_project.ObjectMapper.service
+After=mapper-wait@-mct-node-manager.service
+
+
+[Service]
+Restart=always
+RestartSec=60
+ExecStart=/usr/bin/env mct-fan-status-led-handler
+SyslogIdentifier=mct-fan-status-led-handler
+TimeoutSec=infinity
+
+[Install]
+WantedBy={SYSTEMD_DEFAULT_TARGET}

@@ -1,0 +1,121 @@
+From fdf05a354c8e65a0caee59cde792c1c0ddd87c0b Mon Sep 17 00:00:00 2001
+From: Eli Huang <Eli_Huang@wiwynn.com>
+Date: Wed, 3 Mar 2021 15:28:25 +0800
+Subject: [PATCH] Check power on per second in threshold delay
+
+---
+ include/Thresholds.hpp |  5 ++++
+ src/Thresholds.cpp     | 59 ++++++++++++++++++++++++++++--------------
+ 2 files changed, 44 insertions(+), 20 deletions(-)
+
+diff --git a/include/Thresholds.hpp b/include/Thresholds.hpp
+index 38db2f5..13a0aab 100644
+--- a/include/Thresholds.hpp
++++ b/include/Thresholds.hpp
+@@ -10,6 +10,8 @@
+ #include <utility>
+ #include <vector>
+ 
++constexpr const size_t maxWaitTime = 5;
++
+ struct Sensor;
+ namespace thresholds
+ {
+@@ -52,6 +54,7 @@ struct TimerUsed
+     Level level;
+     Direction direction;
+     bool assert;
++    int count;
+ };
+ 
+ using TimerPair = std::pair<struct TimerUsed, boost::asio::steady_timer>;
+@@ -101,6 +104,8 @@ struct ThresholdTimer
+     void startTimer(const Threshold& threshold, bool assert,
+                     double assertValue);
+ 
++    void duringTime(TimerPair* pair, double assertValue);
++
+     boost::asio::io_service& io;
+     std::list<TimerPair> timers;
+     Sensor* sensor;
+diff --git a/src/Thresholds.cpp b/src/Thresholds.cpp
+index b6d20e0..45df427 100644
+--- a/src/Thresholds.cpp
++++ b/src/Thresholds.cpp
+@@ -445,7 +445,6 @@ void ThresholdTimer::startTimer(const Threshold& threshold, bool assert,
+                                 double assertValue)
+ {
+     struct TimerUsed timerUsed = {};
+-    constexpr const size_t waitTime = 5;
+     TimerPair* pair = nullptr;
+ 
+     for (TimerPair& timer : timers)
+@@ -465,26 +464,46 @@ void ThresholdTimer::startTimer(const Threshold& threshold, bool assert,
+     pair->first.level = threshold.level;
+     pair->first.direction = threshold.direction;
+     pair->first.assert = assert;
+-    pair->second.expires_from_now(std::chrono::seconds(waitTime));
+-    pair->second.async_wait([this, pair, threshold, assert,
+-                             assertValue](boost::system::error_code ec) {
+-        pair->first.used = false;
++    pair->first.count = 0;
+ 
+-        if (ec == boost::asio::error::operation_aborted)
+-        {
+-            return; // we're being canceled
+-        }
+-        if (ec)
+-        {
+-            std::cerr << "timer error: " << ec.message() << "\n";
+-            return;
+-        }
+-        if (sensor->readingStateGood())
+-        {
+-            assertThresholds(sensor, assertValue, threshold.level,
+-                             threshold.direction, assert);
+-        }
+-    });
++    duringTime(pair, assertValue);
++}
++
++void ThresholdTimer::duringTime(TimerPair* pair, double assertValue)
++{
++    constexpr const size_t waitTime = 1;
++    pair->second.expires_from_now(boost::asio::chrono::seconds(waitTime));
++    pair->second.async_wait(
++        [this, pair, assertValue](boost::system::error_code ec) {
++            pair->first.count++;
++            if (ec == boost::asio::error::operation_aborted)
++            {
++                return; // we're being canceled
++            }
++            if (ec)
++            {
++                std::cerr << "timer error: " << ec.message() << "\n";
++                return;
++            }
++
++            if (sensor->readingStateGood())
++            {
++                if (maxWaitTime == pair->first.count)
++                {
++                    pair->first.used = false;
++                    assertThresholds(sensor, assertValue, pair->first.level,
++                                     pair->first.direction, pair->first.assert);
++                }
++                else
++                {
++                    duringTime(pair, assertValue);
++                }
++            }
++            else
++            {
++                pair->first.used = false;
++            }
++        });
+ }
+ 
+ bool checkThresholds(Sensor* sensor)
+-- 
+2.28.0
+

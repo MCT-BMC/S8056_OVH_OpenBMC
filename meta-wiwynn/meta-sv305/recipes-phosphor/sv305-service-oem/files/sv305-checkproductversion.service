@@ -1,0 +1,13 @@
+[Unit]
+Description=SV305 BMC Check Product Version
+Wants=mapper-wait@-xyz-openbmc_project-FruDevice.service
+After=mapper-wait@-xyz-openbmc_project-FruDevice.service
+After=sv305-gpio-init.service
+Before=xyz.openbmc_project.EntityManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/sv305-checkproductversion.sh
+
+[Install]
+WantedBy=multi-user.target

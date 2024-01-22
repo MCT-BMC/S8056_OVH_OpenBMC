@@ -1,0 +1,78 @@
+From 28359406d6570f3ac153716de1ed91123a190c40 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Mon, 8 Jun 2020 18:02:14 +0800
+Subject: [PATCH] Support SEL entry for IPMI SEL clear event
+
+---
+ include/sdrutils.hpp    |  2 ++
+ src/storagecommands.cpp | 27 +++++++++++++++++++++++++++
+ 2 files changed, 29 insertions(+)
+
+diff --git a/include/sdrutils.hpp b/include/sdrutils.hpp
+index 40ec5e2..2ce6db0 100644
+--- a/include/sdrutils.hpp
++++ b/include/sdrutils.hpp
+@@ -166,6 +166,7 @@ enum class SensorTypeCodes : uint8_t
+     powerunit = 0x9,
+     other = 0xB,
+     memory = 0xC,
++    eventlogdisabled = 0x10,
+     watchdog1 = 0x11,
+     systemevent = 0x12,
+     button = 0x14,
+@@ -186,6 +187,7 @@ const static boost::container::flat_map<const char*, SensorTypeCodes, CmpStr>
+                  {"powerunit", SensorTypeCodes::powerunit},
+                  {"power", SensorTypeCodes::other},
+                  {"pattern", SensorTypeCodes::other},
++                 {"sel_log", SensorTypeCodes::eventlogdisabled},
+                  {"acpi", SensorTypeCodes::acpi},
+                  {"systemevent", SensorTypeCodes::systemevent},
+                  {"mgmtsystemhealth", SensorTypeCodes::mgmtsystemhealth},
+diff --git a/src/storagecommands.cpp b/src/storagecommands.cpp
+index 7d40356..5949dc4 100644
+--- a/src/storagecommands.cpp
++++ b/src/storagecommands.cpp
+@@ -31,6 +31,7 @@
+ #include <storagecommands.hpp>
+ #include <string_view>
+ #include <nlohmann/json.hpp>
++#include <chrono>
+ 
+ namespace intel_oem::ipmi::sel
+ {
+@@ -1209,6 +1210,32 @@ ipmi::RspType<uint8_t> ipmiStorageClearSEL(ipmi::Context::ptr ctx,
+         sdbusplus::message::message reloadResponse = dbus->call(rsyslogReload);
+     }
+     catch (sdbusplus::exception_t& e)
++    {
++        phosphor::logging::log<phosphor::logging::level::ERR>(e.what());
++        return ipmi::responseSuccess(ipmi::sel::eraseComplete);
++    }
++
++    // Wait for the rsyslog reload
++    std::this_thread::sleep_for(std::chrono::milliseconds(500));
++
++    // Add SEL clear SEL entry
++    uint16_t genId = 0x20;
++    std::vector<uint8_t> eventData(3, 0xFF);
++    bool assert = true;
++    std::string dbusPath = "/xyz/openbmc_project/sensors/sel_log/EventLogging";
++
++    // 0x2 - Log Area Reset/Cleared
++    eventData[0] = 0x2;
++
++    sdbusplus::message::message addSEL = dbus->new_method_call(
++        ipmiSELService, ipmiSELPath, ipmiSELAddInterface, "IpmiSelAdd");
++    addSEL.append(ipmiSELAddMessage, dbusPath, eventData, assert, genId);
++
++    try
++    {
++        dbus->call_noreply(addSEL);
++    }
++    catch (sdbusplus::exception_t& e)
+     {
+         phosphor::logging::log<phosphor::logging::level::ERR>(e.what());
+     }
+-- 
+2.24.1
+

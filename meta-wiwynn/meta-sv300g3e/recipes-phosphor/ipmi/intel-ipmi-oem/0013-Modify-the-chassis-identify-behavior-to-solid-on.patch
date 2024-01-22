@@ -1,0 +1,42 @@
+From 743c38ffc30e658875180788d27d6d71abde605a Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Tue, 7 Jan 2020 23:28:16 +0800
+Subject: [PATCH] Modify the chassis identify behavior from blinking to solid
+ on
+
+---
+ src/chassiscommands.cpp | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/src/chassiscommands.cpp b/src/chassiscommands.cpp
+index 1af5b28..65ea053 100644
+--- a/src/chassiscommands.cpp
++++ b/src/chassiscommands.cpp
+@@ -113,6 +113,7 @@ void enclosureIdentifyLedBlinkOff()
+ {
+     chassisIDState = ChassisIDState::off;
+     enclosureIdentifyLed(ledIDBlinkObj, false);
++    enclosureIdentifyLed(ledIDOnObj, false);
+ }
+ 
+ void idButtonPropChanged(sdbusplus::message::message& msg)
+@@ -191,7 +192,7 @@ ipmi::RspType<> ipmiChassisIdentify(std::optional<uint8_t> interval,
+ 
+     if (identifyInterval || forceIdentify)
+     {
+-        enclosureIdentifyLed(ledIDBlinkObj, true);
++        enclosureIdentifyLed(ledIDOnObj, true);
+         if (forceIdentify)
+         {
+             chassisIDState = ChassisIDState::indefinite;
+@@ -207,6 +208,7 @@ ipmi::RspType<> ipmiChassisIdentify(std::optional<uint8_t> interval,
+     {
+         chassisIDState = ChassisIDState::off;
+         enclosureIdentifyLed(ledIDBlinkObj, false);
++        enclosureIdentifyLed(ledIDOnObj, false);
+     }
+     return ipmi::responseSuccess();
+ }
+-- 
+2.24.1
+

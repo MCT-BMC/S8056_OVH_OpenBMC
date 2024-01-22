@@ -1,0 +1,24 @@
+From c2595ae6f012f7e286bceea02c3e378c876459bd Mon Sep 17 00:00:00 2001
+From: Ray Lue <ray.lue@mic.com.tw>
+Date: Thu, 24 Oct 2019 20:54:00 +0800
+Subject: [PATCH] Force baseboard FRU to ID0
+
+---
+ src/storagecommands.cpp | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/src/storagecommands.cpp b/src/storagecommands.cpp
+index 39405c5..890b895 100644
+--- a/src/storagecommands.cpp
++++ b/src/storagecommands.cpp
+@@ -203,7 +203,9 @@ ipmi_ret_t replaceCacheFru(uint8_t devId)
+         uint8_t fruAddr = std::get<uint32_t>(addrFind->second);
+ 
+         uint8_t fruHash = 0;
+-        if (fruBus != 0 || fruAddr != 0)
++        //if (fruBus != 0 || fruAddr != 0)
++        //force basebaord fru id to 0. TODO: move baseboard FRU config to Json 
++        if (fruBus != 2)
+         {
+             fruHash = hasher(fru.first.str);
+             // can't be 0xFF based on spec, and 0 is reserved for baseboard

@@ -1,0 +1,29 @@
+From ae48ff614c84c172ab297fb3d18ade40a3a3ffec Mon Sep 17 00:00:00 2001
+From: "Henbin.Chang" <henbin-chang@mic.com.tw>
+Date: Wed, 30 Oct 2019 09:27:11 +0800
+Subject: [PATCH] version change sel log
+
+---
+ include/sdrutils.hpp | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/include/sdrutils.hpp b/include/sdrutils.hpp
+index 5b0b74a..796281c 100755
+--- a/include/sdrutils.hpp
++++ b/include/sdrutils.hpp
+@@ -165,6 +165,7 @@ enum class SensorTypeCodes : uint8_t
+     pwr_button = 0x14,
+     restart = 0x1d,
+     acpi = 0x22,
++    versionchange = 0x2b,
+     other = 0xB,
+ };
+ 
+@@ -178,6 +179,7 @@ const static boost::container::flat_map<const char*, SensorTypeCodes, CmpStr>
+                  {"pwr_button", SensorTypeCodes::pwr_button},   
+                  {"restart", SensorTypeCodes::restart},  
+                  {"acpi", SensorTypeCodes::acpi},     
++                 {"versionchange", SensorTypeCodes::versionchange},     
+                  {"power", SensorTypeCodes::other}}};
+ 
+ inline static std::string getSensorTypeStringFromPath(const std::string& path)

@@ -1,0 +1,111 @@
+From d1bc8fa79fe0723c5b48d4cff7c49dcb64679dcc Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Fri, 12 Aug 2022 14:54:50 +0800
+Subject: [PATCH] nct7904: support fan/vol/multi-func options for DTS
+
+---
+ drivers/hwmon/nct7904.c | 67 +++++++++++++++++++++++++++++++++++--------------
+ 1 file changed, 48 insertions(+), 19 deletions(-)
+
+diff --git a/drivers/hwmon/nct7904.c b/drivers/hwmon/nct7904.c
+index a81647c..ecd87cc 100644
+--- a/drivers/hwmon/nct7904.c
++++ b/drivers/hwmon/nct7904.c
+@@ -1014,7 +1014,8 @@ static int nct7904_probe(struct i2c_client *client)
+ 	struct nct7904_data *data;
+ 	struct device *hwmon_dev;
+ 	struct device *dev = &client->dev;
+-	int ret, i;
++	struct device_node *np = client->dev.of_node;
++	int ret, i = 0;
+ 	u32 mask;
+ 	u8 val, bit;
+ 
+@@ -1028,9 +1029,17 @@ static int nct7904_probe(struct i2c_client *client)
+ 
+ 	/* Setup sensor groups. */
+ 	/* FANIN attributes */
+-	ret = nct7904_read_reg16(data, BANK_0, FANIN_CTRL0_REG);
+-	if (ret < 0)
+-		return ret;
++	ret = of_property_read_u32(np, "fanin-control-register", &i);
++	if (ret >= 0) {
++		ret = nct7904_write_reg(data, BANK_0, VT_ADC_MD_REG, i);
++		if (ret < 0)
++			return ret;
++		ret = i;
++	} else {
++		ret = nct7904_read_reg16(data, BANK_0, FANIN_CTRL0_REG);
++		if (ret < 0)
++			return ret;
++	}
+ 	data->fanin_mask = (ret >> 8) | ((ret & 0xff) << 8);
+ 
+ 	/*
+@@ -1041,12 +1050,29 @@ static int nct7904_probe(struct i2c_client *client)
+ 	 * we will have to adjust 'vsen_mask' accordingly.
+ 	 */
+ 	mask = 0;
+-	ret = nct7904_read_reg16(data, BANK_0, VT_ADC_CTRL0_REG);
+-	if (ret >= 0)
+-		mask = (ret >> 8) | ((ret & 0xff) << 8);
+-	ret = nct7904_read_reg(data, BANK_0, VT_ADC_CTRL2_REG);
+-	if (ret >= 0)
+-		mask |= (ret << 16);
++	ret = of_property_read_u32(np, "voltage-control-register", &i);
++	if (ret >= 0) {
++		val = ((i >> 16) & 0xff);
++		ret = nct7904_write_reg(data, BANK_0, VT_ADC_CTRL0_REG, val);
++		if (ret < 0)
++			return ret;
++		val = ((i & 0xff00) >> 8);
++		ret = nct7904_write_reg(data, BANK_0, VT_ADC_CTRL1_REG, val);
++		if (ret < 0)
++			return ret;
++		val = (i & 0xff);
++		ret = nct7904_write_reg(data, BANK_0, VT_ADC_CTRL2_REG, val);
++		if (ret < 0)
++			return ret;
++		mask = (i >> 16) | (i & 0xff00) | ((i & 0xff) << 16);
++	} else {
++		ret = nct7904_read_reg16(data, BANK_0, VT_ADC_CTRL0_REG);
++		if (ret >= 0)
++			mask = (ret >> 8) | ((ret & 0xff) << 8);
++		ret = nct7904_read_reg(data, BANK_0, VT_ADC_CTRL2_REG);
++		if (ret >= 0)
++			mask |= (ret << 16);
++	}
+ 	data->vsen_mask = mask;
+ 
+ 	/* CPU_TEMP attributes */
+@@ -1070,15 +1096,18 @@ static int nct7904_probe(struct i2c_client *client)
+ 	if ((ret & 0x02) == 0x02)
+ 		data->tcpu_mask |= 0x10;
+ 
+-	/* Mitac: Multi-Function setting for TR1/TR2/TR3. */
+-	ret = nct7904_write_reg(data, BANK_0, VT_ADC_MD_REG, 0x3F);
+-	if (ret < 0)
+-		return ret;
+-	/* Multi-Function detecting for Volt and TR/TD */
+-	ret = nct7904_read_reg(data, BANK_0, VT_ADC_MD_REG);
+-	if (ret < 0)
+-		return ret;
+-
++	ret = of_property_read_u32(np, "volt-temp-mode-control-register", &i);
++	if (ret >= 0) {
++		ret = nct7904_write_reg(data, BANK_0, VT_ADC_MD_REG, i);
++		if (ret < 0)
++			return ret;
++		ret = i;
++	} else {
++		/* Multi-Function detecting for Volt and TR/TD */
++		ret = nct7904_read_reg(data, BANK_0, VT_ADC_MD_REG);
++		if (ret < 0)
++			return ret;
++	}
+ 	data->temp_mode = 0;
+ 
+ 	printk("nct7904_read_reg: VT_ADC_MD_REG[0x%X]\n", ret);
+-- 
+2.7.4
+

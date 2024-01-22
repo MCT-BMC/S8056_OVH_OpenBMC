@@ -1,0 +1,11 @@
+[Unit]
+Description=Timesync with RTC in BMC
+
+[Service]
+Restart=no
+ExecStart=/usr/sbin/bmc-rtc-time-sync
+SyslogIdentifier=bmc-rtc-time-sync
+TimeoutSec=infinity
+
+[Install]
+WantedBy={SYSTEMD_DEFAULT_TARGET}

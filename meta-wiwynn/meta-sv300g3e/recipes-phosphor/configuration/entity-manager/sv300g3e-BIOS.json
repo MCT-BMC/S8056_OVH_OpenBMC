@@ -1,0 +1,104 @@
+[
+     {
+          "ownerId" : "0x21",
+          "sensorNumber" : 214,
+          "sensorType" : "0xC",
+          "sensorName" : "CPU0 DIMM_A STS"
+     },
+     {
+          "ownerId" : "0x21",
+          "sensorNumber" : 216,
+          "sensorType" : "0xC",
+          "sensorName" : "CPU0 DIMM_B STS"
+     },
+     {
+          "ownerId" : "0x21",
+          "sensorNumber" : 218,
+          "sensorType" : "0xC",
+          "sensorName" : "CPU0 DIMM_C STS"
+     },
+     {
+          "ownerId" : "0x21",
+          "sensorNumber" : 220,
+          "sensorType" : "0xC",
+          "sensorName" : "CPU0 DIMM_D STS"
+     },
+     {
+          "ownerId" : "0x21",
+          "sensorNumber" : 222,
+          "sensorType" : "0xC",
+          "sensorName" : "CPU0 DIMM_E STS"
+     },
+     {
+          "ownerId" : "0x21",
+          "sensorNumber" : 224,
+          "sensorType" : "0xC",
+          "sensorName" : "CPU0 DIMM_F STS"
+     },
+     {
+          "ownerId" : "0x21",
+          "sensorNumber" : 226,
+          "sensorType" : "0xC",
+          "sensorName" : "CPU1 DIMM_G STS"
+     },
+     {
+          "ownerId" : "0x21",
+          "sensorNumber" : 228,
+          "sensorType" : "0xC",
+          "sensorName" : "CPU1 DIMM_H STS"
+     },
+     {
+          "ownerId" : "0x21",
+          "sensorNumber" : 230,
+          "sensorType" : "0xC",
+          "sensorName" : "CPU1 DIMM_J STS"
+     },
+     {
+          "ownerId" : "0x21",
+          "sensorNumber" : 232,
+          "sensorType" : "0xC",
+          "sensorName" : "CPU1 DIMM_K STS"
+     },
+     {
+          "ownerId" : "0x21",
+          "sensorNumber" : 234,
+          "sensorType" : "0xC",
+          "sensorName" : "CPU1 DIMM_L STS"
+     },
+     {
+          "ownerId" : "0x21",
+          "sensorNumber" : 236,
+          "sensorType" : "0xC",
+          "sensorName" : "CPU1 DIMM_M STS"
+     },
+     {
+          "ownerId" : "0x21",
+          "sensorNumber" : 208,
+          "sensorType" : "0x7",
+          "sensorName" : "CPU0_State"
+     },
+     {
+          "ownerId" : "0x21",
+          "sensorNumber" : 209,
+          "sensorType" : "0x7",
+          "sensorName" : "CPU1_Stat1"
+     },
+     {
+          "ownerId" : "0x1",
+          "sensorNumber" : 238,
+          "sensorType" : "0x13",
+          "sensorName" : "Critical IRQ"
+     },
+     {
+          "ownerId" : "0x21",
+          "sensorNumber" : 245,
+          "sensorType" : "0xC",
+          "sensorName" : "MRC Error"
+     },
+     {
+          "ownerId" : "0x20",
+          "sensorNumber" : 254,
+          "sensorType" : "0x2b",
+          "sensorName" : "IB BMC FW UPDATE"
+     }
+]

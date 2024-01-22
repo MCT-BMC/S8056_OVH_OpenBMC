@@ -1,0 +1,11 @@
+[Unit]
+Description=Boot option
+Before=phosphor-ipmi-host.service
+
+[Service]
+Restart=always
+RestartSec=5
+ExecStart=/usr/bin/boot-option
+
+[Install]
+WantedBy=multi-user.target

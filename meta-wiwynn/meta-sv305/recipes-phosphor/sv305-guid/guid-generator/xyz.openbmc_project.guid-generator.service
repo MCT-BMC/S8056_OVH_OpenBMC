@@ -1,0 +1,10 @@
+[Unit]
+Description=GUID Generator Service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/guid-generator
+SyslogIdentifier=guid-generator
+
+[Install]
+WantedBy=sysinit.target

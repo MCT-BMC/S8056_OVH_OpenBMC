@@ -1,0 +1,42 @@
+From aeb54ffc992b31517786cd451da2642ba90d909c Mon Sep 17 00:00:00 2001
+From: Mirage Su <mirage.su@mic.com.tw>
+Date: Fri, 14 Dec 2018 15:31:24 +0800
+Subject: [PATCH] Light BMC Heartbeat LED
+
+---
+ board/aspeed/ast-g5/ast-g5.c | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+ mode change 100644 => 100755 board/aspeed/ast-g5/ast-g5.c
+
+diff --git a/board/aspeed/ast-g5/ast-g5.c b/board/aspeed/ast-g5/ast-g5.c
+old mode 100644
+new mode 100755
+index e67a4bf..e1d3011
+--- a/board/aspeed/ast-g5/ast-g5.c
++++ b/board/aspeed/ast-g5/ast-g5.c
+@@ -16,11 +16,25 @@
+ 
+ DECLARE_GLOBAL_DATA_PTR;
+ 
++/*--------------------------------------------------------------------
++ * @fn Light_BMC_Heartbeat_LED
++ * @brief switch the BMC_Heartbeat_LED solid ON
++ * Author  Mirage
++ *--------------------------------------------------------------------*/
++void Light_BMC_Heartbeat_LED(void)
++{
++    puts("Switch the BMC Heartbeat LED solid ON\n");
++    *(volatile ulong *)(0x1E780020) |= 0x0000080 ;
++    *(volatile ulong *)(0x1E780024) |= 0x0000080 ;
++}
++
+ int board_init(void)
+ {
+ 	gd->bd->bi_boot_params = CONFIG_SYS_SDRAM_BASE + 0x100;
+ 	gd->flags = 0;
+ 
++	Light_BMC_Heartbeat_LED();
++
+ 	return 0;
+ }
+ 

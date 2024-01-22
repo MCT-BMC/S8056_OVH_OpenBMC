@@ -1,0 +1,13 @@
+[Unit]
+Description=Log Power Cycle Event
+Requires=host-gpio.service
+After=host-gpio.service
+
+[Service]
+RemainAfterExit=no
+Type=oneshot
+ExecStart=/usr/bin/env powercyclelog.sh
+SyslogIdentifier=Power Cycle
+
+[Install]
+WantedBy=obmc-host-reboot@0.target

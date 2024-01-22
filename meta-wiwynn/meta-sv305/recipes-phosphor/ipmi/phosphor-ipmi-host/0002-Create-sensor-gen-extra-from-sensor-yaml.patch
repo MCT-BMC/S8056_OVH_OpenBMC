@@ -1,0 +1,169 @@
+From 67e74f13854f63b975d511f789f0bd5624bd58eb Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Wed, 7 Oct 2020 10:10:41 +0800
+Subject: [PATCH] Create sensor gen extra from sensor yaml
+
+---
+ Makefile.am                        |  6 ++-
+ configure.ac                       |  2 +
+ scripts/sensor_gen_extra.py        | 60 ++++++++++++++++++++++++++++++
+ scripts/writesensor_extra.mako.cpp | 41 ++++++++++++++++++++
+ 4 files changed, 108 insertions(+), 1 deletion(-)
+ create mode 100755 scripts/sensor_gen_extra.py
+ create mode 100644 scripts/writesensor_extra.mako.cpp
+
+diff --git a/Makefile.am b/Makefile.am
+index 82fdd5d..c0f23c0 100644
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -26,7 +26,8 @@ bin_PROGRAMS = \
+ ipmid_SOURCES = \
+ 	ipmid-new.cpp \
+ 	settings.cpp \
+-	host-cmd-manager.cpp
++	host-cmd-manager.cpp \
++	sensor-gen-extra.cpp
+ 
+ libipmi20_BUILT_LIST = \
+ 	sensor-gen.cpp \
+@@ -84,6 +85,9 @@ inventory-sensor-gen.cpp: scripts/inventorysensor.mako.cpp scripts/inventory-sen
+ fru-read-gen.cpp: scripts/readfru.mako.cpp scripts/fru_gen.py @FRU_YAML_GEN@
+ 	$(AM_V_GEN)@FRUGEN@ -o $(top_builddir) generate-cpp
+ 
++sensor-gen-extra.cpp: scripts/writesensor_extra.mako.cpp scripts/sensor_gen_extra.py @SENSOR_YAML_GEN@
++	$(AM_V_GEN)@SENSOREXTRAGEN@ -o $(top_builddir) generate-cpp
++
+ providers_LTLIBRARIES += libipmi20.la
+ if FEATURE_TRANSPORT_OEM
+ libipmi20_la_TRANSPORTOEM = transporthandler_oem.cpp
+diff --git a/configure.ac b/configure.ac
+index 29f58e2..f99e142 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -127,8 +127,10 @@ fi
+ 
+ AS_IF([test "x$SENSOR_YAML_GEN" == "x"], [SENSOR_YAML_GEN="$srcdir/scripts/sensor-example.yaml"])
+ SENSORGEN="$PYTHON ${srcdir}/scripts/sensor_gen.py -i $SENSOR_YAML_GEN"
++SENSOREXTRAGEN="$PYTHON ${srcdir}/scripts/sensor_gen_extra.py -i $SENSOR_YAML_GEN"
+ AC_SUBST(SENSOR_YAML_GEN)
+ AC_SUBST(SENSORGEN)
++AC_SUBST(SENSOREXTRAGEN)
+ 
+ AS_IF([test "x$INVSENSOR_YAML_GEN" == "x"], [INVSENSOR_YAML_GEN="$srcdir/scripts/inventory-sensor-example.yaml"])
+ INVSENSORGEN="$PYTHON ${srcdir}/scripts/inventory-sensor.py -i $INVSENSOR_YAML_GEN"
+diff --git a/scripts/sensor_gen_extra.py b/scripts/sensor_gen_extra.py
+new file mode 100755
+index 0000000..e3f5636
+--- /dev/null
++++ b/scripts/sensor_gen_extra.py
+@@ -0,0 +1,60 @@
++#!/usr/bin/env python
++
++import os
++import sys
++import yaml
++import argparse
++from mako.template import Template
++
++
++def generate_cpp(sensor_yaml, output_dir):
++    with open(sensor_yaml, 'r') as f:
++        ifile = yaml.safe_load(f)
++        if not isinstance(ifile, dict):
++            ifile = {}
++
++        # Render the mako template
++
++        t = Template(filename=os.path.join(
++                     script_dir,
++                     "writesensor_extra.mako.cpp"))
++
++        output_cpp = os.path.join(output_dir, "sensor-gen-extra.cpp")
++        with open(output_cpp, 'w') as fd:
++            fd.write(t.render(sensorDict=ifile))
++
++
++def main():
++
++    valid_commands = {
++        'generate-cpp': generate_cpp
++    }
++    parser = argparse.ArgumentParser(
++        description="IPMI Sensor parser and code generator")
++
++    parser.add_argument(
++        '-i', '--sensor_yaml', dest='sensor_yaml',
++        default='example.yaml', help='input sensor yaml file to parse')
++
++    parser.add_argument(
++        "-o", "--output-dir", dest="outputdir",
++        default=".",
++        help="output directory")
++
++    parser.add_argument(
++        'command', metavar='COMMAND', type=str,
++        choices=valid_commands.keys(),
++        help='Command to run.')
++
++    args = parser.parse_args()
++
++    if (not (os.path.isfile(args.sensor_yaml))):
++        sys.exit("Can not find input yaml file " + args.sensor_yaml)
++
++    function = valid_commands[args.command]
++    function(args.sensor_yaml, args.outputdir)
++
++
++if __name__ == '__main__':
++    script_dir = os.path.dirname(os.path.realpath(__file__))
++    main()
+diff --git a/scripts/writesensor_extra.mako.cpp b/scripts/writesensor_extra.mako.cpp
+new file mode 100644
+index 0000000..d490e46
+--- /dev/null
++++ b/scripts/writesensor_extra.mako.cpp
+@@ -0,0 +1,41 @@
++## This file is a template.  The comment below is emitted
++## into the rendered file; feel free to edit this file.
++// !!! WARNING: This is a GENERATED Code..Please do NOT Edit !!!
++
++#include <cstdint>
++#include <map>
++#include <string>
++
++struct SensorInfo
++{
++	uint8_t sensorNumber;
++	uint8_t sensorType;
++	uint8_t sensorReadingType;
++};
++
++using extraIdInfoMap = std::map<std::string, SensorInfo>;
++
++namespace ipmi {
++namespace sensor {
++
++inline const extraIdInfoMap sensorsInfo = {
++% for key in sensorDict.keys():
++   % if key:
++{
++<%
++       sensor = sensorDict[key]
++       path = sensor["path"]
++       sensorType = sensor["sensorType"]
++       sensorReadingType = sensor["sensorReadingType"]
++%>
++       "${path}",
++       {
++           ${key}, ${sensorType}, ${sensorReadingType}
++       }
++},
++   % endif
++% endfor
++};
++
++} // namespace sensor
++} // namespace ipmi
+-- 
+2.28.0
+

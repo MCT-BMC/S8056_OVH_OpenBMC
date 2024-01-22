@@ -1,0 +1,89 @@
+From 9c14b2e61974733a3cc1fa406793337764c01c02 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Tue, 22 Mar 2022 14:05:44 +0800
+Subject: [PATCH] Add event sensor supported
+
+---
+ meson.build               |  1 +
+ meson_options.txt         |  1 +
+ service_files/meson.build |  1 +
+ src/meson.build           | 17 +++++++++++++++++
+ 4 files changed, 20 insertions(+)
+ mode change 100644 => 100755 meson.build
+ mode change 100644 => 100755 meson_options.txt
+ mode change 100644 => 100755 service_files/meson.build
+ mode change 100644 => 100755 src/meson.build
+
+diff --git a/meson.build b/meson.build
+old mode 100644
+new mode 100755
+index 8003366..98fba3f
+--- a/meson.build
++++ b/meson.build
+@@ -21,6 +21,7 @@ add_project_arguments(
+     '-DBOOST_ALL_NO_LIB',
+     '-DBOOST_ASIO_DISABLE_THREADS',
+     '-DBOOST_ALLOW_DEPRECATED_HEADERS',
++    '-Wno-unused-parameter',
+     language: 'cpp',
+ )
+ 
+diff --git a/meson_options.txt b/meson_options.txt
+old mode 100644
+new mode 100755
+index ea0302d..2c29c8f
+--- a/meson_options.txt
++++ b/meson_options.txt
+@@ -10,6 +10,7 @@ option('nvme', type: 'feature', value: 'enabled', description: 'Enable NVMe sens
+ option('nvme-mi-mctp', type: 'feature', value: 'disabled', description: 'Manage NVMe devices via MCTP')
+ option('psu', type: 'feature', value: 'enabled', description: 'Enable PSU sensor.',)
+ option('external', type: 'feature', value: 'enabled', description: 'Enable External sensor.',)
++option('event', type: 'feature', value: 'enabled', description: 'Enable Event-only sensor.',)
+ option('tests', type: 'feature', value: 'enabled', description: 'Build tests.',)
+ option('validate-unsecure-feature', type : 'feature', value : 'disabled', description : 'Enables unsecure features required by validation. Note: mustbe turned off for production images.',)
+ option('insecure-sensor-override', type : 'feature', value : 'disabled', description : 'Enables Sensor override feature without any check.',)
+diff --git a/service_files/meson.build b/service_files/meson.build
+old mode 100644
+new mode 100755
+index 37bb261..a52b821
+--- a/service_files/meson.build
++++ b/service_files/meson.build
+@@ -10,6 +10,7 @@ unit_files = [
+     ['nvme', 'xyz.openbmc_project.nvmesensor.service'],
+     ['psu', 'xyz.openbmc_project.psusensor.service'],
+     ['external', 'xyz.openbmc_project.externalsensor.service'],
++    ['event', 'xyz.openbmc_project.eventsensor.service'],
+ ]
+ 
+ foreach tuple : unit_files
+diff --git a/src/meson.build b/src/meson.build
+old mode 100644
+new mode 100755
+index d2535e2..c51c0a9
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -193,3 +193,20 @@ if get_option('external').enabled()
+         install: true,
+     )
+ endif
++
++if get_option('event').enabled()
++    executable(
++        'eventsensor',
++        'EventSensor.cpp',
++        dependencies: [
++            sdbusplus,
++        ],
++        implicit_include_directories: false,
++        include_directories: '../include',
++        install: true,
++        link_with: [
++            thresholds_a,
++            utils_a,
++        ],
++    )
++endif
+\ No newline at end of file
+-- 
+2.7.4
+

@@ -1,0 +1,129 @@
+From 67e4f3ea643e13a3b9f9b1780ba3aaada582f367 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Wed, 11 Aug 2021 14:08:03 +0800
+Subject: [PATCH] Set restart cause when chassis power control
+
+---
+ chassishandler.cpp | 50 +++++++++++++++++++++++++++++++++++++---------
+ 1 file changed, 41 insertions(+), 9 deletions(-)
+
+diff --git a/chassishandler.cpp b/chassishandler.cpp
+index 5578560..402765c 100644
+--- a/chassishandler.cpp
++++ b/chassishandler.cpp
+@@ -1188,13 +1188,15 @@ ipmi::RspType<bool,    // Power is on
+ enum class IpmiRestartCause
+ {
+     Unknown = 0x0,
+-    RemoteCommand = 0x1,
++    IpmiPowerOn = 0x1,
+     ResetButton = 0x2,
+     PowerButton = 0x3,
+     WatchdogTimer = 0x4,
+     PowerPolicyAlwaysOn = 0x6,
+     PowerPolicyPreviousState = 0x7,
+     SoftReset = 0xa,
++    IpmiPowerCycle = 0xc,
++    IpmiPowerReset = 0xd,
+ };
+ 
+ static IpmiRestartCause
+@@ -1206,9 +1208,9 @@ static IpmiRestartCause
+         {
+             return IpmiRestartCause::Unknown;
+         }
+-        case State::Host::RestartCause::RemoteCommand:
++        case State::Host::RestartCause::IpmiPowerOn:
+         {
+-            return IpmiRestartCause::RemoteCommand;
++            return IpmiRestartCause::IpmiPowerOn;
+         }
+         case State::Host::RestartCause::ResetButton:
+         {
+@@ -1234,6 +1236,14 @@ static IpmiRestartCause
+         {
+             return IpmiRestartCause::SoftReset;
+         }
++        case State::Host::RestartCause::IpmiPowerCycle:
++        {
++            return IpmiRestartCause::IpmiPowerCycle;
++        }
++        case State::Host::RestartCause::IpmiPowerReset:
++        {
++            return IpmiRestartCause::IpmiPowerReset;
++        }
+         default:
+         {
+             return IpmiRestartCause::Unknown;
+@@ -1248,10 +1258,8 @@ static IpmiRestartCause
+  */
+ static std::optional<uint4_t> getRestartCause(ipmi::Context::ptr ctx)
+ {
+-    constexpr const char* restartCausePath =
+-        "/xyz/openbmc_project/control/host0/restart_cause";
+-    constexpr const char* restartCauseIntf =
+-        "xyz.openbmc_project.Control.Host.RestartCause";
++    constexpr const char* restartCausePath = "/xyz/openbmc_project/state/host0";
++    constexpr const char* restartCauseIntf = "xyz.openbmc_project.State.Host";
+ 
+     std::string service;
+     boost::system::error_code ec =
+@@ -1278,6 +1286,27 @@ static std::optional<uint4_t> getRestartCause(ipmi::Context::ptr ctx)
+     return std::nullopt;
+ }
+ 
++static void setRestartCause(const State::Host::RestartCause& restartCause)
++{
++    constexpr const char* restartCausePath = "/xyz/openbmc_project/state/host0";
++    constexpr const char* restartCauseIntf = "xyz.openbmc_project.State.Host";
++
++    try
++    {
++        sdbusplus::bus::bus bus(ipmid_get_sd_bus_connection());
++        std::string service =
++            ipmi::getService(bus, restartCauseIntf, restartCausePath);
++
++        ipmi::setDbusProperty(bus, service, restartCausePath, restartCauseIntf,
++                              "RestartCause", convertForMessage(restartCause));
++    }
++    catch (const std::exception& e)
++    {
++        log<level::ERR>("Failed to set RestartCause property",
++                        entry("ERROR=%s", e.what()));
++    }
++}
++
+ ipmi::RspType<uint4_t, // Restart Cause
+               uint4_t, // reserved
+               uint8_t  // channel number (not supported)
+@@ -1389,6 +1418,7 @@ ipmi::RspType<> ipmiChassisControl(uint8_t chassisControl)
+             }
+ 
+             rc = initiate_state_transition(State::Host::Transition::On);
++            setRestartCause(State::Host::RestartCause::IpmiPowerOn);
+             break;
+         case CMD_POWER_OFF:
+             if (powerGood && (*powerGood == false))
+@@ -1407,7 +1437,9 @@ ipmi::RspType<> ipmiChassisControl(uint8_t chassisControl)
+                 return ipmi::responseCommandNotAvailable();
+             }
+ 
+-            rc = initiate_state_transition(State::Host::Transition::ForceWarmReboot);
++            rc = initiate_state_transition(
++                State::Host::Transition::ForceWarmReboot);
++            setRestartCause(State::Host::RestartCause::IpmiPowerReset);
+             break;
+         case CMD_POWER_CYCLE:
+             if (powerGood && (*powerGood == false))
+@@ -1416,7 +1448,7 @@ ipmi::RspType<> ipmiChassisControl(uint8_t chassisControl)
+             }
+ 
+             rc = initiate_state_transition(State::Host::Transition::Reboot);
+-
++            setRestartCause(State::Host::RestartCause::IpmiPowerCycle);
+             break;
+ 
+         case CMD_SOFT_OFF_VIA_OVER_TEMP:
+-- 
+2.32.0
+

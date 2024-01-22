@@ -1,0 +1,45 @@
+From f9a77df7b3513f0d74b11e2deeffd32f811de5aa Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Thu, 26 Aug 2021 16:27:47 +0800
+Subject: [PATCH] Add restart property for post code manager service
+
+---
+ service_files/xyz.openbmc_project.State.Boot.PostCode.service  | 2 ++
+ service_files/xyz.openbmc_project.State.Boot.PostCode@.service | 2 ++
+ 2 files changed, 4 insertions(+)
+ mode change 100644 => 100755 service_files/xyz.openbmc_project.State.Boot.PostCode.service
+ mode change 100644 => 100755 service_files/xyz.openbmc_project.State.Boot.PostCode@.service
+
+diff --git a/service_files/xyz.openbmc_project.State.Boot.PostCode.service b/service_files/xyz.openbmc_project.State.Boot.PostCode.service
+old mode 100644
+new mode 100755
+index 35ffd1f..b53033a
+--- a/service_files/xyz.openbmc_project.State.Boot.PostCode.service
++++ b/service_files/xyz.openbmc_project.State.Boot.PostCode.service
+@@ -6,6 +6,8 @@ ExecStart=/usr/bin/post-code-manager --host 0
+ SyslogIdentifier=post-code-manager
+ Type=dbus
+ BusName=xyz.openbmc_project.State.Boot.PostCode0
++Restart=always
++RestartSec=5
+ 
+ [Install]
+ WantedBy=multi-user.target
+diff --git a/service_files/xyz.openbmc_project.State.Boot.PostCode@.service b/service_files/xyz.openbmc_project.State.Boot.PostCode@.service
+old mode 100644
+new mode 100755
+index 1118434..16b9ddd
+--- a/service_files/xyz.openbmc_project.State.Boot.PostCode@.service
++++ b/service_files/xyz.openbmc_project.State.Boot.PostCode@.service
+@@ -6,6 +6,8 @@ ExecStart=/usr/bin/env post-code-manager --host %i
+ SyslogIdentifier=post-code-manager%i
+ Type=dbus
+ BusName=xyz.openbmc_project.State.Boot.PostCode%i
++Restart=always
++RestartSec=5
+ 
+ [Install]
+ WantedBy=multi-user.target
+-- 
+2.7.4
+

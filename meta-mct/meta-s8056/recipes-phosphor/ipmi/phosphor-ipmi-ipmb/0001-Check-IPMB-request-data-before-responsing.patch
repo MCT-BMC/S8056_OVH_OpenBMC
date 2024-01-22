@@ -1,0 +1,130 @@
+From df83d30ccd84649e5d7299db79ddb76cf491415d Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Thu, 4 Nov 2021 10:50:01 +0800
+Subject: [PATCH] Check IPMB request data before responsing
+
+---
+ ipmbbridged.cpp | 54 +++++++++++++++++++++++++++++++++++++------------
+ ipmbbridged.hpp |  4 ++--
+ 2 files changed, 43 insertions(+), 15 deletions(-)
+
+diff --git a/ipmbbridged.cpp b/ipmbbridged.cpp
+index 3bf8469..7a9093f 100644
+--- a/ipmbbridged.cpp
++++ b/ipmbbridged.cpp
+@@ -42,6 +42,16 @@ static const std::unordered_map<std::string, ipmbChannelType>
+     ipmbChannelTypeMap = {{"me", ipmbChannelType::me},
+                           {"ipmb", ipmbChannelType::ipmb}};
+ 
++struct RequestData
++{
++    uint8_t netFn;
++    uint8_t cmd;
++    std::vector<uint8_t> data;
++    std::chrono::time_point<std::chrono::system_clock> time;
++};
++
++static std::unordered_map<uint8_t, RequestData> seqMap;
++
+ /**
+  * @brief Ipmb request class methods
+  */
+@@ -371,18 +381,6 @@ void IpmbChannel::processI2cEvent()
+         goto end;
+     }
+ 
+-    // if it is message received from ipmb channel, send out dbus signal
+-    if (getChannelType() == ipmbChannelType::ipmb)
+-    {
+-        auto ipmbMessageReceived = IpmbRequest();
+-        ipmbMessageReceived.i2cToIpmbConstruct(ipmbFrame, r);
+-        sdbusplus::message::message msg =
+-            conn->new_signal(ipmbObj, ipmbDbusIntf, "receiveBroadcast");
+-        msg.append(ipmbMessageReceived.netFn, ipmbMessageReceived.cmd,
+-                   ipmbMessageReceived.data);
+-        msg.signal_send();
+-    }
+-
+     // copy frame to ipmib message buffer
+     if (ipmbIsResponse(ipmbFrame))
+     {
+@@ -436,9 +434,23 @@ void IpmbChannel::processI2cEvent()
+ 
+         using IpmiDbusRspType = std::tuple<uint8_t, uint8_t, uint8_t, uint8_t,
+                                            std::vector<uint8_t>>;
++
++        auto findRequestData = seqMap.find(ipmbMessageReceived.seq);
++        // The first try or the seq number is timeout.
++        if ((findRequestData == seqMap.end()) ||
++            (findRequestData->second.netFn != ipmbMessageReceived.netFn) ||
++            (findRequestData->second.cmd != ipmbMessageReceived.cmd) ||
++            (findRequestData->second.data != ipmbMessageReceived.data))
++        {
++            seqMap[ipmbMessageReceived.seq] = RequestData{
++                ipmbMessageReceived.netFn, ipmbMessageReceived.cmd,
++                ipmbMessageReceived.data, std::chrono::system_clock::now()};
++        }
++
+         conn->async_method_call(
+             [this, rqLun{ipmbMessageReceived.rqLun},
+-             seq{ipmbMessageReceived.seq}, address{ipmbMessageReceived.rqSA}](
++             seq{ipmbMessageReceived.seq}, address{ipmbMessageReceived.rqSA},
++             requestData{seqMap[ipmbMessageReceived.seq]}](
+                 const boost::system::error_code &ec,
+                 const IpmiDbusRspType &response) {
+                 const auto &[netfn, lun, cmd, cc, payload] = response;
+@@ -449,6 +461,20 @@ void IpmbChannel::processI2cEvent()
+                     return;
+                 }
+ 
++                auto findRequestData = seqMap.find(seq);
++                if ((findRequestData == seqMap.end()) ||
++                    (findRequestData->second.netFn != requestData.netFn) ||
++                    (findRequestData->second.cmd != requestData.cmd) ||
++                    (findRequestData->second.data != requestData.data) ||
++                    (std::chrono::duration_cast<std::chrono::milliseconds>(
++                         std::chrono::system_clock::now() -
++                         findRequestData->second.time)
++                         .count() >
++                     (ipmbNumberOfTries * ipmbRequestRetryTimeout) - 500))
++                {
++                    return;
++                }
++
+                 uint8_t bmcSlaveAddress = getBmcSlaveAddress();
+ 
+                 if (payload.size() > ipmbMaxDataSize)
+@@ -464,6 +490,7 @@ void IpmbChannel::processI2cEvent()
+                     auto buffer = ipmbResponse.ipmbToi2cConstruct();
+                     if (buffer)
+                     {
++                        seqMap.erase(seq);
+                         ipmbSendI2cFrame(buffer);
+                     }
+ 
+@@ -497,6 +524,7 @@ void IpmbChannel::processI2cEvent()
+                     return;
+                 }
+ 
++                seqMap.erase(seq);
+                 ipmbSendI2cFrame(buffer);
+             },
+             "xyz.openbmc_project.Ipmi.Host", "/xyz/openbmc_project/Ipmi",
+diff --git a/ipmbbridged.hpp b/ipmbbridged.hpp
+index 052c193..44ea429 100644
+--- a/ipmbbridged.hpp
++++ b/ipmbbridged.hpp
+@@ -47,8 +47,8 @@ enum class ipmbResponseStatus
+  * @brief Ipmb outstanding requests defines
+  */
+ constexpr int ipmbMaxOutstandingRequestsCount = 64;
+-constexpr int ipmbNumberOfTries = 6;
+-constexpr uint64_t ipmbRequestRetryTimeout = 250; // ms
++constexpr int ipmbNumberOfTries = 1;
++constexpr uint64_t ipmbRequestRetryTimeout = 3000; // ms
+ 
+ /**
+  * @brief Ipmb I2C communication
+-- 
+2.32.0
+

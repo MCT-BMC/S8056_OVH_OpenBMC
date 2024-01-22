@@ -1,0 +1,73 @@
+From 98f014495b922ea6f5e185a6dae684445f4fc24e Mon Sep 17 00:00:00 2001
+From: Eli Huang <Eli_Huang@wiwynn.com>
+Date: Mon, 13 Sep 2021 16:24:04 +0800
+Subject: [PATCH] Support bmc boot from command
+
+---
+ board/aspeed/ast-g5/ast-g5.c | 19 +++++++++++++++++++
+ common/board_r.c             |  1 +
+ include/common.h             |  2 ++
+ 3 files changed, 22 insertions(+)
+
+diff --git a/board/aspeed/ast-g5/ast-g5.c b/board/aspeed/ast-g5/ast-g5.c
+index 3329273bd9..279a0f7303 100644
+--- a/board/aspeed/ast-g5/ast-g5.c
++++ b/board/aspeed/ast-g5/ast-g5.c
+@@ -94,6 +94,7 @@ void SCU_Init(void)
+     ast_reg32 |= BIT(FWSPICS1_FUNC_PIN);
+     ast_reg32 &= ~BIT(FWSPICS2_FUNC_PIN);
+     *(volatile ulong *) (AST_SCU_BASE + 0x88) = ast_reg32;
++
+ }
+ 
+ void LED_Init()
+@@ -273,3 +274,21 @@ void hw_watchdog_reset(void)
+ 	writel(0x4755, AST_WDT2_BASE + 0x08);
+ }
+ #endif /* CONFIG_WATCHDOG */
++
++int set_bmc_bootup(void)
++{
++   char *cmdline = getenv("switchBMC");
++
++    if (cmdline && (cmdline[0] != '\0')) {
++        if (strcasecmp(cmdline, "true") == 0) {
++            setenv("switchBMC", "\0");
++            saveenv();
++
++            writel(0x05, AST_WDT2_BASE + 0x04);
++            writel(0x4755, AST_WDT2_BASE + 0x08);
++            writel(0x9B, AST_WDT2_BASE + 0x0c);
++
++        }
++    }
++    return 0;
++}
+diff --git a/common/board_r.c b/common/board_r.c
+index d959ad3c6f..bf7bb5fa2c 100644
+--- a/common/board_r.c
++++ b/common/board_r.c
+@@ -866,6 +866,7 @@ init_fnc_t init_sequence_r[] = {
+ 	initr_dataflash,
+ #endif
+ 	initr_env,
++	set_bmc_bootup,
+ #ifdef CONFIG_SYS_BOOTPARAMS_LEN
+ 	initr_malloc_bootparams,
+ #endif
+diff --git a/include/common.h b/include/common.h
+index 3feaae641c..75822117d9 100644
+--- a/include/common.h
++++ b/include/common.h
+@@ -495,6 +495,8 @@ int board_postclk_init (void); /* after clocks/timebase, before env/serial */
+ int board_early_init_r (void);
+ void board_poweroff (void);
+ 
++int set_bmc_bootup(void);
++
+ #if defined(CONFIG_SYS_DRAM_TEST)
+ int testdram(void);
+ #endif /* CONFIG_SYS_DRAM_TEST */
+-- 
+2.32.0
+

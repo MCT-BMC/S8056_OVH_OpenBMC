@@ -1,0 +1,366 @@
+From 2e0e64dc7066de6a385b74933d945044da90e6a6 Mon Sep 17 00:00:00 2001
+From: JarvisWang <Jarvis_Wang@wiwynn.com>
+Date: Wed, 24 Feb 2021 10:03:42 +0800
+Subject: [PATCH] Add dbus interface and method to return default gateway
+
+---
+ routing_table.cpp        | 114 +++++++++++++++++++++++++++++++++++++--
+ routing_table.hpp        |  16 +++++-
+ system_configuration.cpp |  59 +++++++++++++++++++-
+ system_configuration.hpp |   8 +++
+ 4 files changed, 191 insertions(+), 6 deletions(-)
+
+diff --git a/routing_table.cpp b/routing_table.cpp
+index ffbeecb..a23f228 100644
+--- a/routing_table.cpp
++++ b/routing_table.cpp
+@@ -40,12 +40,11 @@ Table::Table()
+     }
+ }
+ 
+-int Table::readNetLinkSock(int sockFd, std::array<char, BUFSIZE>& buf)
++int Table::readNetLinkSock(int sockFd, std::array<char, BUFSIZE>& buf, uint8_t seqNum)
+ {
+     struct nlmsghdr* nlHdr = nullptr;
+     int readLen{};
+     int msgLen{};
+-    uint8_t seqNum = 1;
+     uint8_t pID = getpid();
+     char* bufPtr = buf.data();
+ 
+@@ -154,6 +153,7 @@ void Table::parseRoutes(const nlmsghdr* nlHdr)
+         if (rtMsg->rtm_family == AF_INET)
+         {
+             defaultGateway = gatewayStr;
++            gatewayIpValid = true;
+         }
+         else if (rtMsg->rtm_family == AF_INET6)
+         {
+@@ -173,6 +173,48 @@ void Table::parseRoutes(const nlmsghdr* nlHdr)
+     }
+ }
+ 
++bool Table::parseNeighbors(const nlmsghdr* nlHdr)
++{
++    struct ndmsg *ndmsg = nullptr;
++    struct rtattr *attr = nullptr;
++    size_t len = 0;
++    ether_addr mac = {0};
++    std::optional<InAddrAny> neighborAddr;
++
++    ndmsg = reinterpret_cast<struct ndmsg *>(NLMSG_DATA(nlHdr));
++
++    if (ndmsg->ndm_family != AF_INET)
++    {
++        return false;
++    }
++
++    attr = reinterpret_cast<struct rtattr *>(RTM_RTA(ndmsg));
++    len = RTM_PAYLOAD(nlHdr);
++
++    for (; RTA_OK(attr, len); attr = RTA_NEXT(attr, len)) 
++    {
++        if (attr->rta_type == NDA_LLADDR)
++        {
++            memcpy(mac.ether_addr_octet, RTA_DATA(attr), ETH_ALEN);
++        }
++
++        if (attr->rta_type == NDA_DST)
++        {
++            std::string_view attrData(reinterpret_cast<char*>(RTA_DATA(attr)), RTA_PAYLOAD(attr));
++            neighborAddr = addrFromBuf(ndmsg->ndm_family, attrData);
++        }
++    }
++
++    if (defaultGateway == toString(*neighborAddr))
++    {
++        gatewayMac = mac_address::toString(mac);
++        gatewayMacValid = true;
++        return true;
++    }
++    
++    return false;
++}
++
+ Map Table::getRoutes()
+ {
+     nlmsghdr* nlMsg = nullptr;
+@@ -180,6 +222,7 @@ Map Table::getRoutes()
+ 
+     int sock = -1;
+     int len{0};
++    gatewayIpValid = false;
+ 
+     uint8_t msgSeq{0};
+ 
+@@ -204,7 +247,7 @@ Map Table::getRoutes()
+     // The message is a request for dump
+     nlMsg->nlmsg_flags = NLM_F_DUMP | NLM_F_REQUEST;
+ 
+-    nlMsg->nlmsg_seq = msgSeq;
++    nlMsg->nlmsg_seq = msgSeq++;
+     nlMsg->nlmsg_pid = getpid();
+ 
+     // Send the request
+@@ -217,16 +260,79 @@ Map Table::getRoutes()
+     }
+ 
+     // Read the response
+-    len = readNetLinkSock(smartSock(), msgBuf);
++    len = readNetLinkSock(smartSock(), msgBuf, msgSeq);
+ 
+     // Parse and print the response
+     for (; NLMSG_OK(nlMsg, len); nlMsg = NLMSG_NEXT(nlMsg, len))
+     {
+         parseRoutes(nlMsg);
+     }
++
+     return routeList;
+ }
+ 
++std::string Table::getGatewayMac()
++{
++    nlmsghdr* nlMsg = nullptr;
++    std::array<char, BUFSIZE> msgBuf = {0};
++
++    int sock = -1;
++    int len{0};
++    uint8_t msgSeq{0};
++    gatewayMac = std::string(UNSPECIFIED_MAC);
++    gatewayMacValid = false;
++
++    if (!gatewayIpValid)
++    {
++        return gatewayMac;
++    }
++
++    // Create Socket
++    if ((sock = socket(PF_NETLINK, SOCK_DGRAM, NETLINK_ROUTE)) < 0)
++    {
++        auto error = errno;
++        log<level::ERR>("Error occurred during socket creation",
++                        entry("ERRNO=%s", strerror(error)));
++        elog<InternalFailure>();
++    }
++
++    phosphor::Descriptor smartSock(sock);
++    sock = -1;
++
++    // point the header and the msg structure pointers into the buffer.
++    nlMsg = reinterpret_cast<nlmsghdr*>(msgBuf.data());
++    // Length of message
++    nlMsg->nlmsg_len = NLMSG_LENGTH(sizeof(rtmsg));
++    // Get the neighbors from kernel routing table
++    nlMsg->nlmsg_type = RTM_GETNEIGH;
++    // The message is a request for dump
++    nlMsg->nlmsg_flags = NLM_F_DUMP | NLM_F_REQUEST;
++
++    nlMsg->nlmsg_seq = msgSeq++;
++    nlMsg->nlmsg_pid = getpid();
++
++    // Send the request
++    if (send(smartSock(), nlMsg, nlMsg->nlmsg_len, 0) < 0)
++    {
++        auto error = errno;
++        log<level::ERR>("Error occurred during send on netlink socket",
++                        entry("ERRNO=%s", strerror(error)));
++        elog<InternalFailure>();
++    }
++
++    // Read the response
++    len = readNetLinkSock(smartSock(), msgBuf, msgSeq);
++
++    // Parse and print the response
++    for (; NLMSG_OK(nlMsg, len); nlMsg = NLMSG_NEXT(nlMsg, len))
++    {
++        if (parseNeighbors(nlMsg))
++            break;
++    }
++
++    return gatewayMac;
++}
++
+ } // namespace route
+ } // namespace network
+ } // namespace phosphor
+diff --git a/routing_table.hpp b/routing_table.hpp
+index 6923592..6be8533 100644
+--- a/routing_table.hpp
++++ b/routing_table.hpp
+@@ -16,6 +16,7 @@ namespace network
+ namespace route
+ {
+ constexpr auto BUFSIZE = 4096;
++constexpr auto UNSPECIFIED_MAC = "00:00:00:00:00:00";
+ 
+ struct Entry
+ {
+@@ -59,6 +60,8 @@ class Table
+      */
+     Map getRoutes();
+ 
++    std::string getGatewayMac();
++
+     /**
+      * @brief gets the default v4 gateway.
+      *
+@@ -79,6 +82,11 @@ class Table
+         return defaultGateway6;
+     };
+ 
++    bool isGatewayIpValid() const
++    {
++        return gatewayIpValid;
++    }
++
+   private:
+     /**
+      * @brief read the routing data from the socket and fill the buffer.
+@@ -86,7 +94,7 @@ class Table
+      * @param[in] bufPtr - unique pointer to confidentiality algorithm
+      *                     instance
+      */
+-    int readNetLinkSock(int sockFd, std::array<char, BUFSIZE>& buff);
++    int readNetLinkSock(int sockFd, std::array<char, BUFSIZE>& buff, uint8_t seqNum);
+     /**
+      * @brief Parse the route and add it to the route list.
+      *
+@@ -94,9 +102,15 @@ class Table
+      */
+     void parseRoutes(const struct nlmsghdr* nlHdr);
+ 
++    bool parseNeighbors(const struct nlmsghdr* nlHdr);
++
+     std::string defaultGateway;  // default gateway
+     std::string defaultGateway6; // default gateway
+     Map routeList;               // List of routes
++    bool gatewayIpValid;
++
++    std::string gatewayMac;      //mac of default gateway
++    bool gatewayMacValid;
+ };
+ 
+ } // namespace route
+diff --git a/system_configuration.cpp b/system_configuration.cpp
+index 268ea27..8703d78 100644
+--- a/system_configuration.cpp
++++ b/system_configuration.cpp
+@@ -9,6 +9,9 @@
+ #include <phosphor-logging/log.hpp>
+ #include <xyz/openbmc_project/Common/error.hpp>
+ 
++#include <unistd.h>
++#include <cstdlib>
++
+ namespace phosphor
+ {
+ namespace network
+@@ -22,6 +25,15 @@ constexpr auto PROPERTY_INTERFACE = "org.freedesktop.DBus.Properties";
+ constexpr auto METHOD_GET = "Get";
+ constexpr auto METHOD_SET = "SetStaticHostname";
+ 
++constexpr auto METHOD_MAC = "GetMac";
++constexpr auto SIGNATURE_STR = "s";
++constexpr auto SIGNATURE_NONE = "";
++
++#define MAX_RETRY 3
++#define RETURN_OK 1
++#define RETURN_FALSE 0
++#define RETRY_SLEEP_TIME 100000     //100ms
++
+ using namespace phosphor::logging;
+ using namespace sdbusplus::xyz::openbmc_project::Common::Error;
+ using InvalidArgumentMetadata = xyz::openbmc_project::Common::InvalidArgument;
+@@ -29,11 +41,56 @@ using InvalidArgumentMetadata = xyz::openbmc_project::Common::InvalidArgument;
+ using SystemConfigIntf =
+     sdbusplus::xyz::openbmc_project::Network::server::SystemConfiguration;
+ 
++const sdbusplus::vtable::vtable_t SystemConfiguration::_vtable[] = {
++    sdbusplus::vtable::start(),
++    sdbusplus::vtable::method(METHOD_MAC,
++                            SIGNATURE_NONE,
++                            SIGNATURE_STR,
++                            macCallback,
++                            0),
++    sdbusplus::vtable::end()
++};
++
++int SystemConfiguration::macCallback(sd_bus_message* msg, void* context, sd_bus_error* error)
++{
++    route::Table routeTable;
++    std::string mac = std::string(route::UNSPECIFIED_MAC);
++    
++    if (routeTable.isGatewayIpValid())
++    {
++        for (int i = 0; i < MAX_RETRY; ++i)
++        {
++            mac = routeTable.getGatewayMac();
++
++            if (mac == std::string(route::UNSPECIFIED_MAC))
++            {
++                std::string cmd("ping -c 1 ");
++                cmd += routeTable.getDefaultGateway();
++                std::system(cmd.c_str());
++            }
++            else
++            {
++                break;
++            }
++            
++            usleep(RETRY_SLEEP_TIME);
++        }
++    }    
++
++    int ret = sd_bus_reply_method_return(msg, SIGNATURE_STR, mac.c_str());
++
++    if (ret < 0)
++        return RETURN_FALSE;
++
++    return RETURN_OK;
++}
++
+ SystemConfiguration::SystemConfiguration(sdbusplus::bus::bus& bus,
+                                          const std::string& objPath,
+                                          Manager& parent) :
+     Iface(bus, objPath.c_str(), true),
+-    bus(bus), manager(parent)
++    bus(bus), manager(parent),
++    macIntf(bus, objPath.c_str(), intfName, _vtable, this)
+ {
+     auto name = getHostNameFromSystem();
+     route::Table routingTable;
+diff --git a/system_configuration.hpp b/system_configuration.hpp
+index a29309c..5104082 100644
+--- a/system_configuration.hpp
++++ b/system_configuration.hpp
+@@ -1,5 +1,6 @@
+ #pragma once
+ 
++#include "routing_table.hpp"
+ #include <sdbusplus/bus.hpp>
+ #include <sdbusplus/server/object.hpp>
+ #include <string>
+@@ -59,6 +60,8 @@ class SystemConfiguration : public Iface
+ 
+     using SystemConfigIntf::defaultGateway6;
+ 
++    static constexpr auto intfName = "xyz.openbmc_project.Network.Gateway";
++
+   private:
+     /** @brief get the hostname from the system by doing
+      *         dbus call to hostnamed service.
+@@ -70,6 +73,11 @@ class SystemConfiguration : public Iface
+ 
+     /** @brief Network Manager object. */
+     Manager& manager;
++
++    static const sdbusplus::vtable::vtable_t _vtable[];
++    sdbusplus::server::interface::interface macIntf;
++
++    static int macCallback(sd_bus_message*, void*, sd_bus_error*);
+ };
+ 
+ } // namespace network
+-- 
+2.28.0
+

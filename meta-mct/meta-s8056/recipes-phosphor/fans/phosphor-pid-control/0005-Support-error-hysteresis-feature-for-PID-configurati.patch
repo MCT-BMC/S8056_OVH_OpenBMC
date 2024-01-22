@@ -1,0 +1,94 @@
+From 8770efda3c39025e69d446da7065d5c41f2b2620 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Thu, 9 Feb 2023 10:50:12 +0800
+Subject: [PATCH] Support error hysteresis feature for PID configuration
+
+---
+ pid/buildjson.cpp |  2 ++
+ pid/ec/pid.cpp    | 13 ++++++++++++-
+ pid/ec/pid.hpp    |  4 ++++
+ pid/util.cpp      |  2 ++
+ 4 files changed, 20 insertions(+), 1 deletion(-)
+
+diff --git a/pid/buildjson.cpp b/pid/buildjson.cpp
+index e6e8765..641fb55 100755
+--- a/pid/buildjson.cpp
++++ b/pid/buildjson.cpp
+@@ -70,6 +70,8 @@ void from_json(const json& j, conf::ControllerInfo& c)
+         p.at("outLim_max").get_to(c.pidInfo.outLim.max);
+         p.at("slewNeg").get_to(c.pidInfo.slewNeg);
+         p.at("slewPos").get_to(c.pidInfo.slewPos);
++        p.at("errorPositiveHysteresis").get_to(c.pidInfo.errorPositiveHysteresis);
++        p.at("errorNegativeHysteresis").get_to(c.pidInfo.errorNegativeHysteresis);
+ 
+         c.pidInfo.positiveHysteresis = positiveHysteresisValue;
+         c.pidInfo.negativeHysteresis = negativeHysteresisValue;
+diff --git a/pid/ec/pid.cpp b/pid/ec/pid.cpp
+index db681e8..ad14fd1 100755
+--- a/pid/ec/pid.cpp
++++ b/pid/ec/pid.cpp
+@@ -59,7 +59,17 @@ double pid(pid_info_t* pidinfoptr, double input, double setpoint)
+     // calculate P, I, D, FF
+ 
+     // Pid
+-    error = setpoint - input;
++    error = 0;
++
++    if ((input - setpoint) > pidinfoptr->errorPositiveHysteresis)
++    {
++        error = setpoint - input;
++    }
++    else if ((setpoint - input) > pidinfoptr->errorNegativeHysteresis)
++    {
++        error = setpoint - input;
++    }
++
+     proportionalTerm = pidinfoptr->proportionalCoeff * error;
+ 
+     // pId
+@@ -134,6 +144,7 @@ double pid(pid_info_t* pidinfoptr, double input, double setpoint)
+                   << ", FFGain " << pidinfoptr->feedFwdGain
+                   << ", Error " << error
+                   << ", derivative " << input - pidinfoptr->lastInput
++                  << ", input " << input
+                   << std::endl;
+         std::cerr << "P (" << proportionalTerm
+                   <<") + I (" << integralTerm
+diff --git a/pid/ec/pid.hpp b/pid/ec/pid.hpp
+index c76379d..d322796 100755
+--- a/pid/ec/pid.hpp
++++ b/pid/ec/pid.hpp
+@@ -37,6 +37,8 @@ typedef struct
+     double slewPos;
+     double positiveHysteresis;
+     double negativeHysteresis;
++    double errorPositiveHysteresis;
++    double errorNegativeHysteresis;
+ } pid_info_t;
+ 
+ double pid(pid_info_t* pidinfoptr, double input, double setpoint);
+@@ -56,6 +58,8 @@ struct pidinfo
+     double slewPos;
+     double positiveHysteresis;
+     double negativeHysteresis;
++    double errorPositiveHysteresis;
++    double errorNegativeHysteresis;
+ };
+ 
+ } // namespace ec
+diff --git a/pid/util.cpp b/pid/util.cpp
+index 5b7cd5f..5713cab 100755
+--- a/pid/util.cpp
++++ b/pid/util.cpp
+@@ -42,6 +42,8 @@ void initializePIDStruct(ec::pid_info_t* info, const ec::pidinfo& initial)
+     info->slewPos = initial.slewPos;
+     info->negativeHysteresis = initial.negativeHysteresis;
+     info->positiveHysteresis = initial.positiveHysteresis;
++    info->errorNegativeHysteresis = initial.errorNegativeHysteresis;
++    info->errorPositiveHysteresis = initial.errorPositiveHysteresis;
+ }
+ 
+ void dumpPIDStruct(ec::pid_info_t* info)
+-- 
+2.25.1
+

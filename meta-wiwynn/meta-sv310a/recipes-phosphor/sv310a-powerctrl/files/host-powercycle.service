@@ -1,0 +1,10 @@
+[Unit]
+Description=Host Power Cycle
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env powercycle.sh
+SyslogIdentifier=powercycle
+
+[Install]
+WantedBy=obmc-host-reboot@0.target

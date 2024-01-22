@@ -1,0 +1,39 @@
+---
+/xyz/openbmc_project/oem/solpattern1:
+    - Interface: xyz.openbmc_project.OEM.SOLPattern
+      Properties:
+          MatchCount:
+              Default: 0
+          CriticalThreshold:
+              Default: 10
+          NonCriticalThreshold:
+              Default: 10
+/xyz/openbmc_project/oem/solpattern2:
+    - Interface: xyz.openbmc_project.OEM.SOLPattern
+      Properties:
+          MatchCount:
+              Default: 0
+          CriticalThreshold:
+              Default: 15
+          NonCriticalThreshold:
+              Default: 15
+/xyz/openbmc_project/oem/solpattern3:
+    - Interface: xyz.openbmc_project.OEM.SOLPattern
+      Properties:
+          MatchCount:
+              Default: 0
+          CriticalThreshold:
+              Default: 20
+          NonCriticalThreshold:
+              Default: 20
+
+/xyz/openbmc_project/oem/solpattern4:
+    - Interface: xyz.openbmc_project.OEM.SOLPattern
+      Properties:
+          MatchCount:
+              Default: 0
+          CriticalThreshold:
+              Default: 30
+          NonCriticalThreshold:
+              Default: 30
+

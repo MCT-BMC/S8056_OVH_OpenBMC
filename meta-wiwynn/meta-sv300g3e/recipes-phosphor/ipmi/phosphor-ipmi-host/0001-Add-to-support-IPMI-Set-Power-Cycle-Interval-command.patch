@@ -1,0 +1,71 @@
+From 780e1e4015a0517441a828090df611733f2ba93d Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Fri, 13 Mar 2020 17:59:12 +0800
+Subject: [PATCH] Add to support IPMI Set Power Cycle Interval command
+
+---
+ chassishandler.cpp | 36 ++++++++++++++++++++++++++++++++++++
+ 1 file changed, 36 insertions(+)
+
+diff --git a/chassishandler.cpp b/chassishandler.cpp
+index 734ccde..e556f05 100644
+--- a/chassishandler.cpp
++++ b/chassishandler.cpp
+@@ -115,6 +115,9 @@ static constexpr const char* resetButtonIntf =
+ static constexpr const char* resetButtonPath =
+     "/xyz/openbmc_project/Chassis/Buttons/Reset0";
+ 
++static constexpr const char* pwrCyIntConfPath =
++    "/etc/default/obmc/phosphor-reboot-host/reboot.conf";
++
+ // Phosphor Host State manager
+ namespace State = sdbusplus::xyz::openbmc_project::State::server;
+ 
+@@ -1841,6 +1844,34 @@ ipmi::RspType<uint3_t, // policy support
+     return ipmi::responseSuccess(power_policy::allSupport, reserved);
+ }
+ 
++/** @brief Set Power Cycle Interval command handler
++ */
++ipmi::RspType<> ipmiSetPowerCycleInterval(uint8_t pwrCycleInterval)
++{
++    std::fstream file;
++
++    file.open(pwrCyIntConfPath, std::ios::out | std::ios::trunc);
++    if (!file)
++    {
++        phosphor::logging::log<level::ERR>(
++            "Failed to open the power cycle interval conf file");
++        return ipmi::responseDestinationUnavailable();
++    }
++
++    file << "REBOOT_DELAY=" << static_cast<int>(pwrCycleInterval) << "\n";
++    if (file.fail())
++    {
++        phosphor::logging::log<level::ERR>(
++            "Failed to write the setting to the conf file");
++        file.close();
++        return ipmi::responseDestinationUnavailable();
++    }
++
++    file.close();
++
++    return ipmi::responseSuccess();
++}
++
+ void register_netfn_chassis_functions()
+ {
+     createIdentifyTimer();
+@@ -1889,4 +1920,9 @@ void register_netfn_chassis_functions()
+                           ipmi::chassis::cmdSetPowerRestorePolicy,
+                           ipmi::Privilege::Operator,
+                           ipmiChassisSetPowerRestorePolicy);
++
++    // <Set Power Cycle Interval>
++    ipmi::registerHandler(ipmi::prioOemBase, ipmi::netFnChassis,
++                          ipmi::chassis::cmdSetPowerCycleInterval,
++                          ipmi::Privilege::Admin, ipmiSetPowerCycleInterval);
+ }
+-- 
+2.24.1
+

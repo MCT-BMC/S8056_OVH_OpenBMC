@@ -1,0 +1,22 @@
+From ccac32b3d31e5431e3720f692098af249bf8ca84 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Wed, 4 Nov 2020 16:17:58 +0800
+Subject: [PATCH] Disable NTP time sync by default
+
+---
+ units/systemd-timesyncd.service.in | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/units/systemd-timesyncd.service.in b/units/systemd-timesyncd.service.in
+index 92ee94582c..3f04ce02ee 100644
+--- a/units/systemd-timesyncd.service.in
++++ b/units/systemd-timesyncd.service.in
+@@ -50,5 +50,4 @@ User=systemd-timesync
+ @SERVICE_WATCHDOG@
+ 
+ [Install]
+-WantedBy=sysinit.target
+ Alias=dbus-org.freedesktop.timesync1.service
+-- 
+2.28.0
+

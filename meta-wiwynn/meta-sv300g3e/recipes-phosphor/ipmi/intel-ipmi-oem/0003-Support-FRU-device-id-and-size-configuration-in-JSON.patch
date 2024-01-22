@@ -1,0 +1,184 @@
+From 70efca198413a39eb91afe7e5962158ebb22e9a7 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Mon, 14 Oct 2019 15:06:56 +0800
+Subject: [PATCH] Support FRU device id and size configuration in JSON format
+
+---
+ src/storagecommands.cpp | 91 ++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 89 insertions(+), 2 deletions(-)
+
+diff --git a/src/storagecommands.cpp b/src/storagecommands.cpp
+index 39405c5..e7b598c 100644
+--- a/src/storagecommands.cpp
++++ b/src/storagecommands.cpp
+@@ -30,6 +30,7 @@
+ #include <stdexcept>
+ #include <storagecommands.hpp>
+ #include <string_view>
++#include <nlohmann/json.hpp>
+ 
+ namespace intel_oem::ipmi::sel
+ {
+@@ -101,9 +102,14 @@ constexpr static const size_t cacheTimeoutSeconds = 10;
+ // event direction is bit[7] of eventType where 1b = Deassertion event
+ constexpr static const uint8_t deassertionEvent = 0x80;
+ 
++// JSON of FRU configuration
++constexpr const char* fruConfig =
++    "/usr/share/entity-manager/configurations/sv300g3e-MB.json";
++
+ static std::vector<uint8_t> fruCache;
+ static uint8_t cacheBus = 0xFF;
+ static uint8_t cacheAddr = 0XFF;
++static uint32_t cacheSize = 256;
+ 
+ std::unique_ptr<phosphor::Timer> cacheTimer = nullptr;
+ 
+@@ -111,6 +117,9 @@ std::unique_ptr<phosphor::Timer> cacheTimer = nullptr;
+ // collision to verify our dev-id
+ boost::container::flat_map<uint8_t, std::pair<uint8_t, uint8_t>> deviceHashes;
+ 
++// FRU inventory size
++boost::container::flat_map<uint8_t, uint32_t> deviceSizes;
++
+ void registerStorageFunctions() __attribute__((constructor));
+ 
+ bool writeFru()
+@@ -154,8 +163,14 @@ ipmi_ret_t replaceCacheFru(uint8_t devId)
+     // if timer is running, stop it and writeFru manually
+     else if (timerRunning)
+     {
++        // wiw - Check the timer running status.
++        bool timerIsRunning = cacheTimer->isRunning();
++
+         cacheTimer->stop();
+-        writeFru();
++        if(timerIsRunning)
++        {
++            writeFru();
++        }
+     }
+ 
+     std::shared_ptr<sdbusplus::asio::connection> dbus = getSdBus();
+@@ -176,6 +191,7 @@ ipmi_ret_t replaceCacheFru(uint8_t devId)
+     }
+ 
+     deviceHashes.clear();
++    deviceSizes.clear();
+ 
+     // hash the object paths to create unique device id's. increment on
+     // collision
+@@ -203,11 +219,66 @@ ipmi_ret_t replaceCacheFru(uint8_t devId)
+         uint8_t fruAddr = std::get<uint32_t>(addrFind->second);
+ 
+         uint8_t fruHash = 0;
++
++        // Set the fru default size to 256 bytes.
++        uint32_t fruSize = 256;
++
+         if (fruBus != 0 || fruAddr != 0)
+         {
+             fruHash = hasher(fru.first.str);
++            std::ifstream FruFile(fruConfig);
++
++            if(!FruFile)
++            {
++                std::cerr << "Failed to open FRU config file: " << fruConfig <<"\n";
++            }
++            else
++            {
++                auto data = nlohmann::json::parse(FruFile, nullptr, false);
++                if (data.is_discarded())
++                {
++                    std::cerr << "syntax error in " << fruConfig << "\n";
++                }
++                else
++                {
++                    int idx = 0;
++
++                    while (!data["Fru"][idx].is_null())
++                    {
++                        if (!data["Fru"][idx]["Bus"].is_null() &&
++                            !data["Fru"][idx]["Address"].is_null())
++                        {
++                            int bus = data["Fru"][idx]["Bus"];
++                            std::string addrStr = data["Fru"][idx]["Address"];
++                            int address = std::stoul(addrStr, nullptr, 16);
++
++                            if (bus == fruBus && address == fruAddr)
++                            {
++                                if (!data["Fru"][idx]["Size"].is_null())
++                                {
++                                    fruSize = static_cast<uint32_t>(data["Fru"][idx]["Size"]);
++                                }
++
++                                if (!data["Fru"][idx]["Index"].is_null())
++                                {
++                                    fruHash = static_cast<uint8_t>(data["Fru"][idx]["Index"]);
++                                }
++
++                                break;
++                            }
++
++                        }
++
++                        idx++;
++                    }
++                }
++
++                FruFile.close();
++            }
++
+             // can't be 0xFF based on spec, and 0 is reserved for baseboard
+-            if (fruHash == 0 || fruHash == 0xFF)
++            // if (fruHash == 0 || fruHash == 0xFF)
++            if (fruHash == 0xFF)
+             {
+                 fruHash = 1;
+             }
+@@ -219,6 +290,9 @@ ipmi_ret_t replaceCacheFru(uint8_t devId)
+         {
+             auto resp = deviceHashes.emplace(fruHash, newDev);
+             emplacePassed = resp.second;
++
++            deviceSizes.emplace(fruHash, fruSize);
++
+             if (!emplacePassed)
+             {
+                 fruHash++;
+@@ -231,12 +305,20 @@ ipmi_ret_t replaceCacheFru(uint8_t devId)
+             }
+         }
+     }
++
+     auto deviceFind = deviceHashes.find(devId);
+     if (deviceFind == deviceHashes.end())
+     {
+         return IPMI_CC_SENSOR_INVALID;
+     }
+ 
++    auto deviceSizeFind = deviceSizes.find(devId);
++    if (deviceSizeFind == deviceSizes.end())
++    {
++        return IPMI_CC_SENSOR_INVALID;
++    }
++    cacheSize = deviceSizeFind->second;
++
+     fruCache.clear();
+     sdbusplus::message::message getRawFru = dbus->new_method_call(
+         fruDeviceServiceName, "/xyz/openbmc_project/FruDevice",
+@@ -248,6 +330,11 @@ ipmi_ret_t replaceCacheFru(uint8_t devId)
+     {
+         sdbusplus::message::message getRawResp = dbus->call(getRawFru);
+         getRawResp.read(fruCache);
++
++        if(fruCache.size() < cacheSize)
++        {
++            fruCache.resize(cacheSize, 0xFF);
++        }
+     }
+     catch (sdbusplus::exception_t&)
+     {
+-- 
+2.22.0
+

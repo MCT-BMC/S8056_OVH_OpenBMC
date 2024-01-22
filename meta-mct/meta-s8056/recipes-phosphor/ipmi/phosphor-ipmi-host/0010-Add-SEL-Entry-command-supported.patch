@@ -1,0 +1,113 @@
+From 6b0853e3cb824d58997ad50512dd637b74c18350 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Fri, 18 Mar 2022 17:17:40 +0800
+Subject: [PATCH 10/24] Add SEL Entry command supported
+
+---
+ dbus-sdr/storagecommands.cpp | 71 +++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 70 insertions(+), 1 deletion(-)
+
+diff --git a/dbus-sdr/storagecommands.cpp b/dbus-sdr/storagecommands.cpp
+index 8087224..cd9dccb 100755
+--- a/dbus-sdr/storagecommands.cpp
++++ b/dbus-sdr/storagecommands.cpp
+@@ -1011,7 +1011,7 @@ ipmi::RspType<uint16_t, // Next Record ID
+         return ipmi::responseUnspecifiedError();
+     }
+ 
+-    if (recordType == dynamic_sensors::ipmi::sel::systemEvent)
++    if (recordType == dynamic_sensors::ipmi::sel::systemEvent && targetEntryFields.size() > 4)
+     {
+         // Get the timestamp
+         std::tm timeStruct = {};
+@@ -1079,10 +1079,51 @@ ipmi::RspType<uint16_t, // Next Record ID
+             systemEventType{timestamp, generatorID, evmRev, sensorType,
+                             sensorNum, eventType, eventDir, eventData});
+     }
++    else if ((recordType >= dynamic_sensors::ipmi::sel::oemTsEventFirst &&
++             recordType <= dynamic_sensors::ipmi::sel::oemTsEventLast) ||
++             targetEntryFields.size() == 4
++            )
++    {
++        // Get the timestamp
++        std::tm timeStruct = {};
++        std::istringstream entryStream(entryTimestamp);
++
++        uint32_t timestamp = ipmi::sel::invalidTimeStamp;
++        if (entryStream >> std::get_time(&timeStruct, "%Y-%m-%dT%H:%M:%S"))
++        {
++            timestamp = std::mktime(&timeStruct);
++        }
++
++        // Only keep the bytes that fit in the record
++        std::array<uint8_t, dynamic_sensors::ipmi::sel::oemTsEventSize> eventData{};
++        std::copy_n(eventDataBytes.begin(),
++                    std::min(eventDataBytes.size(), eventData.size()),
++                    eventData.begin());
++
++        return ipmi::responseSuccess(nextRecordID, recordID, recordType,
++                                     oemTsEventType{timestamp, eventData});
++    }
++    else if (recordType >= dynamic_sensors::ipmi::sel::oemEventFirst)
++    {
++        // Only keep the bytes that fit in the record
++        std::array<uint8_t, dynamic_sensors::ipmi::sel::oemEventSize> eventData{};
++        std::copy_n(eventDataBytes.begin(),
++                    std::min(eventDataBytes.size(), eventData.size()),
++                    eventData.begin());
++
++        return ipmi::responseSuccess(nextRecordID, recordID, recordType,
++                                     eventData);
++    }
+ 
+     return ipmi::responseUnspecifiedError();
+ }
+ 
++static constexpr char const* ipmiSELService =    "xyz.openbmc_project.Logging.IPMI";
++static constexpr char const* ipmiSELPath = "/xyz/openbmc_project/Logging/IPMI";
++static constexpr char const* ipmiSELAddInterface = "xyz.openbmc_project.Logging.IPMI";
++
++static const std::string ipmiSELAddMessage = "Add OEM SEL Entry";
++
+ ipmi::RspType<uint16_t> ipmiStorageAddSELEntry(
+     uint16_t recordID, uint8_t recordType, uint32_t timestamp,
+     uint16_t generatorID, uint8_t evmRev, uint8_t sensorType, uint8_t sensorNum,
+@@ -1093,7 +1134,35 @@ ipmi::RspType<uint16_t> ipmiStorageAddSELEntry(
+     // added
+     cancelSELReservation();
+ 
++    //mitac start: add to sel
++    std::vector<uint8_t> eventData(9, 0xFF);
++    eventData[0] = generatorID;
++    eventData[1] = generatorID >> 8;
++    eventData[2] = evmRev;
++    eventData[3] = sensorType;
++    eventData[4] = sensorNum;
++    eventData[5] = eventType;
++    eventData[6] = eventData1;
++    eventData[7] = eventData2;
++    eventData[8] = eventData3;
++
++    std::shared_ptr<sdbusplus::asio::connection> bus = getSdBus();
++    sdbusplus::message::message writeSEL = bus->new_method_call(
++        ipmiSELService, ipmiSELPath, ipmiSELAddInterface, "IpmiSelAddOem");
++    writeSEL.append(ipmiSELAddMessage,  eventData, recordType);
++
+     uint16_t responseID = 0xFFFF;
++    try
++    {
++        auto ret = bus->call(writeSEL);
++        ret.read(responseID);
++    }
++    catch (sdbusplus::exception_t& e)
++    {
++        std::cerr << "call IpmiSelAdd failed\n";
++    }
++    //mitac end
++
+     return ipmi::responseSuccess(responseID);
+ }
+ 
+-- 
+2.7.4
+

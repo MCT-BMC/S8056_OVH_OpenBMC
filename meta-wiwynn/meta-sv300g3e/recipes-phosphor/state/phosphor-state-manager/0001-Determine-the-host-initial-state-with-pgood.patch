@@ -1,0 +1,73 @@
+From 6390b3a5e16c6bde96981e8d14e2e441d272ed62 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Mon, 11 Nov 2019 13:24:11 +0800
+Subject: [PATCH] Determine the host initial state with the pgood property
+
+---
+ host_state_manager.cpp | 42 ++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 42 insertions(+)
+
+diff --git a/host_state_manager.cpp b/host_state_manager.cpp
+index 7d661dd..ae75d38 100644
+--- a/host_state_manager.cpp
++++ b/host_state_manager.cpp
+@@ -84,7 +84,48 @@ void Host::subscribeToSystemdSignals()
+ 
+ void Host::determineInitialState()
+ {
++    /*  Determine the host initial state with the pgood property.
++        Running / Off
++    */
++    sdbusplus::message::variant<int> pgood = -1;
++    auto method = this->bus.new_method_call(
++        "org.openbmc.control.Power", "/org/openbmc/control/power0",
++        "org.freedesktop.DBus.Properties", "Get");
++
++    method.append("org.openbmc.control.Power", "pgood");
++    try
++    {
++        auto reply = this->bus.call(method);
++        reply.read(pgood);
++
++        if (sdbusplus::message::variant_ns::get<int>(pgood) == 1)
++        {
++            log<level::INFO>("Initial Host State will be Running",
++                        entry("CURRENT_HOST_STATE=%s",
++                            convertForMessage(HostState::Running).c_str()));
++            server::Host::currentHostState(HostState::Running);
++            server::Host::requestedHostTransition(Transition::On);
++        }
++        else
++        {
++            log<level::INFO>("Initial Host State will be Off",
++                        entry("CURRENT_HOST_STATE=%s",
++                            convertForMessage(HostState::Off).c_str()));
++            server::Host::currentHostState(HostState::Off);
++            server::Host::requestedHostTransition(Transition::Off);
++        }
++    }
++    catch (const SdBusError& e)
++    {
++        // Only log for unexpected error types.
++        log<level::ERR>("Error performing call to get pgood",
++                        entry("ERROR=%s", e.what()));
++
++        server::Host::currentHostState(HostState::Off);
++        server::Host::requestedHostTransition(Transition::Off);
++    }
+ 
++/*
+     if (stateActive(HOST_STATE_POWERON_MIN_TGT))
+     {
+         log<level::INFO>("Initial Host State will be Running",
+@@ -101,6 +142,7 @@ void Host::determineInitialState()
+         server::Host::currentHostState(HostState::Off);
+         server::Host::requestedHostTransition(Transition::Off);
+     }
++*/
+ 
+     if (!deserialize(HOST_STATE_PERSIST_PATH))
+     {
+-- 
+2.22.0
+

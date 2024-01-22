@@ -1,0 +1,254 @@
+From 34090b75f79d639da305c0d12de245166d9fc933 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Fri, 7 May 2021 14:40:38 +0800
+Subject: [PATCH 3/7] Support tjmax adjust
+
+---
+ conf.hpp                      |  1 +
+ dbus/dbushelper.cpp           |  6 ++++++
+ dbus/dbushelper_interface.hpp |  1 +
+ dbus/dbuspassive.cpp          | 11 +++++++++++
+ dbus/dbuspassive.hpp          |  2 ++
+ interfaces.hpp                |  5 +++++
+ pid/builder.cpp               | 28 ++++++++++++++++++++++++++--
+ sensors/buildjson.cpp         | 10 ++++++++++
+ sensors/pluggable.cpp         |  5 +++++
+ sensors/pluggable.hpp         |  1 +
+ sensors/sensor.hpp            |  4 ++++
+ 11 files changed, 72 insertions(+), 2 deletions(-)
+
+diff --git a/conf.hpp b/conf.hpp
+index 89d5df1..a4e3e38 100644
+--- a/conf.hpp
++++ b/conf.hpp
+@@ -27,6 +27,7 @@ struct SensorConfig
+     int64_t max;
+     int64_t timeout;
+     bool ignoreDbusMinMax;
++    bool tjMaxAdjust;
+ };
+ 
+ /*
+diff --git a/dbus/dbushelper.cpp b/dbus/dbushelper.cpp
+index 8601733..510ebea 100644
+--- a/dbus/dbushelper.cpp
++++ b/dbus/dbushelper.cpp
+@@ -111,10 +111,12 @@ void DbusHelper::getProperties(const std::string& service,
+     auto findScale = propMap.find("Scale");
+     auto findMax = propMap.find("MaxValue");
+     auto findMin = propMap.find("MinValue");
++    auto findTjMax = propMap.find("TctlMax");
+ 
+     prop->min = 0;
+     prop->max = 0;
+     prop->scale = 0;
++    prop->tjMax = 0;
+     if (findScale != propMap.end())
+     {
+         prop->scale = std::get<int64_t>(findScale->second);
+@@ -127,6 +129,10 @@ void DbusHelper::getProperties(const std::string& service,
+     {
+         prop->min = std::visit(VariantToDoubleVisitor(), findMin->second);
+     }
++    if (findTjMax != propMap.end())
++    {
++        prop->tjMax = std::visit(VariantToDoubleVisitor(), findTjMax->second);
++    }
+ 
+     prop->value = std::visit(VariantToDoubleVisitor(), propMap["Value"]);
+ 
+diff --git a/dbus/dbushelper_interface.hpp b/dbus/dbushelper_interface.hpp
+index 3f7d744..0483fa0 100644
+--- a/dbus/dbushelper_interface.hpp
++++ b/dbus/dbushelper_interface.hpp
+@@ -13,6 +13,7 @@ struct SensorProperties
+     double min;
+     double max;
+     std::string unit;
++    double tjMax;
+ };
+ 
+ class DbusHelperInterface
+diff --git a/dbus/dbuspassive.cpp b/dbus/dbuspassive.cpp
+index 0c73db2..5d5ded3 100644
+--- a/dbus/dbuspassive.cpp
++++ b/dbus/dbuspassive.cpp
+@@ -72,6 +72,11 @@ std::unique_ptr<ReadInterface> DbusPassive::createDbusPassive(
+         settings.max = 0;
+     }
+ 
++    if (!info->tjMaxAdjust)
++    {
++        settings.tjMax = 0;
++    }
++
+     return std::make_unique<DbusPassive>(bus, type, id, std::move(helper),
+                                          settings, failed, path, redundancy);
+ }
+@@ -90,6 +95,7 @@ DbusPassive::DbusPassive(
+     _scale = settings.scale;
+     _min = settings.min * std::pow(10.0, _scale);
+     _max = settings.max * std::pow(10.0, _scale);
++    _tjMax = settings.tjMax;
+ 
+     // Cache this type knowledge, to avoid repeated string comparison
+     _typeMargin = (type == "margin");
+@@ -149,6 +155,11 @@ bool DbusPassive::getFailed(void) const
+     return _failed || !_functional;
+ }
+ 
++double DbusPassive::getTjMax(void) const
++{
++    return _tjMax;
++}
++
+ void DbusPassive::setFailed(bool value)
+ {
+     _failed = value;
+diff --git a/dbus/dbuspassive.hpp b/dbus/dbuspassive.hpp
+index 9065a29..622c023 100644
+--- a/dbus/dbuspassive.hpp
++++ b/dbus/dbuspassive.hpp
+@@ -55,6 +55,7 @@ class DbusPassive : public ReadInterface
+ 
+     ReadReturn read(void) override;
+     bool getFailed(void) const override;
++    double getTjMax(void) const override;
+ 
+     void updateValue(double value, bool force);
+     void setValue(double value);
+@@ -77,6 +78,7 @@ class DbusPassive : public ReadInterface
+     double _value = 0;
+     double _max = 0;
+     double _min = 0;
++    double _tjMax = 0;
+     bool _failed = false;
+     bool _functional = true;
+ 
+diff --git a/interfaces.hpp b/interfaces.hpp
+index 8ec474b..62b563f 100644
+--- a/interfaces.hpp
++++ b/interfaces.hpp
+@@ -35,6 +35,11 @@ class ReadInterface
+     {
+         return false;
+     }
++
++    virtual double getTjMax(void) const
++    {
++        return 0;
++    }
+ };
+ 
+ /*
+diff --git a/pid/builder.cpp b/pid/builder.cpp
+index 77cafdc..4345c45 100644
+--- a/pid/builder.cpp
++++ b/pid/builder.cpp
+@@ -69,8 +69,8 @@ std::unordered_map<int64_t, std::shared_ptr<ZoneInterface>>
+ 
+         auto zone = std::make_shared<DbusPidZone>(
+             zoneId, zoneConf->second.minThermalOutput,
+-            zoneConf->second.failsafePercent, mgr, modeControlBus,
+-            getControlPath(zoneId).c_str(), deferSignals);
++            zoneConf->second.failsafeSettings, zoneConf->second.cycleTime, mgr,
++            modeControlBus, getControlPath(zoneId).c_str(), deferSignals);
+ 
+         std::cerr << "Zone Id: " << zone->getZoneID() << "\n";
+ 
+@@ -80,6 +80,30 @@ std::unordered_map<int64_t, std::shared_ptr<ZoneInterface>>
+             std::vector<std::string> inputs;
+             std::cerr << "PID name: " << name << "\n";
+ 
++            // If tjMax is defined, adjust setpoint and stepwise reading points.
++            for (const auto& i : info.inputs)
++            {
++                auto sensor = mgr.getSensor(i);
++                double tjMax = sensor->getTjMax();
++                if (tjMax != 0)
++                {
++                    if (info.type == "temp")
++                    {
++                        *(const_cast<double*>(&info.setpoint)) += tjMax;
++                    }
++                    else if ((info.type == "stepwise") ||
++                             (info.type == "linear"))
++                    {
++                        for (auto& point : info.stepwiseInfo.reading)
++                        {
++                            *(const_cast<double*>(&point)) += tjMax;
++                        }
++                    }
++                    // Only need to adjust once.
++                    break;
++                }
++            }
++
+             /*
+              * TODO(venture): Need to check if input is known to the
+              * SensorManager.
+diff --git a/sensors/buildjson.cpp b/sensors/buildjson.cpp
+index c320fe1..eebb8f9 100644
+--- a/sensors/buildjson.cpp
++++ b/sensors/buildjson.cpp
+@@ -96,6 +96,16 @@ void from_json(const json& j, conf::SensorConfig& s)
+     {
+         j.at("timeout").get_to(s.timeout);
+     }
++
++    auto tjMaxAdjust = j.find("tjMaxAdjust");
++    if (tjMaxAdjust == j.end())
++    {
++        s.tjMaxAdjust = false;
++    }
++    else
++    {
++        j.at("tjMaxAdjust").get_to(s.tjMaxAdjust);
++    }
+ }
+ } // namespace conf
+ 
+diff --git a/sensors/pluggable.cpp b/sensors/pluggable.cpp
+index 530737d..7dc6716 100644
+--- a/sensors/pluggable.cpp
++++ b/sensors/pluggable.cpp
+@@ -39,4 +39,9 @@ bool PluggableSensor::getFailed(void)
+     return _reader->getFailed();
+ }
+ 
++double PluggableSensor::getTjMax(void)
++{
++    return _reader->getTjMax();
++}
++
+ } // namespace pid_control
+diff --git a/sensors/pluggable.hpp b/sensors/pluggable.hpp
+index 0dc1c71..63f8eec 100644
+--- a/sensors/pluggable.hpp
++++ b/sensors/pluggable.hpp
+@@ -26,6 +26,7 @@ class PluggableSensor : public Sensor
+     void write(double value) override;
+     void write(double value, bool force, int64_t* written) override;
+     bool getFailed(void) override;
++    double getTjMax(void) override;
+ 
+   private:
+     std::unique_ptr<ReadInterface> _reader;
+diff --git a/sensors/sensor.hpp b/sensors/sensor.hpp
+index f5f01c2..d0e5bee 100644
+--- a/sensors/sensor.hpp
++++ b/sensors/sensor.hpp
+@@ -36,6 +36,10 @@ class Sensor
+ 
+     virtual ReadReturn read(void) = 0;
+     virtual void write(double value) = 0;
++    virtual double getTjMax(void)
++    {
++        return 0;
++    }
+ 
+     virtual void write(double value, bool force, int64_t* written)
+     {
+-- 
+2.28.0
+

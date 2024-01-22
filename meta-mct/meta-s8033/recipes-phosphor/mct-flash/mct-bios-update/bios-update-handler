@@ -1,0 +1,22 @@
+#! /bin/sh
+IMAGE_FILE=$1
+
+BIOS_UPDATER_CMD="/usr/sbin/bios-update"
+
+PROGREE_ENABLE=$2
+
+SELECT_BIOS=$3
+
+BIOS_VERSION_ID=$(echo $IMAGE_FILE |cut -d / -f 4)
+
+if [ ! -n "$SELECT_BIOS"  ]; then
+    SELECT_BIOS=1
+fi
+
+if [  -n "$PROGREE_ENABLE"  ]; then
+    $BIOS_UPDATER_CMD -P $BIOS_VERSION_ID -p $IMAGE_FILE -s $SELECT_BIOS
+else
+    $BIOS_UPDATER_CMD -p $IMAGE_FILE -s $SELECT_BIOS
+fi
+
+exit 0

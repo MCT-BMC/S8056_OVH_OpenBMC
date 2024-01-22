@@ -1,0 +1,29 @@
+From 16bba381d9f36bbddcd04dd7d8793cb9b77044a7 Mon Sep 17 00:00:00 2001
+From: Ray Lue <ray.lue@mic.com.tw>
+Date: Fri, 20 Sep 2019 17:59:35 +0800
+Subject: [PATCH] Support IPMI system restart event
+
+---
+ include/sdrutils.hpp | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/include/sdrutils.hpp b/include/sdrutils.hpp
+index 9123de3..11ed496 100755
+--- a/include/sdrutils.hpp
++++ b/include/sdrutils.hpp
+@@ -162,6 +162,7 @@ enum class SensorTypeCodes : uint8_t
+     current = 0x3,
+     fan = 0x4,
+     processor = 0x07,
++    restart = 0x1d,
+     acpi = 0x22,
+     other = 0xB,
+ };
+@@ -173,6 +174,7 @@ const static boost::container::flat_map<const char*, SensorTypeCodes, CmpStr>
+                  {"fan_tach", SensorTypeCodes::fan},
+                  {"fan_pwm", SensorTypeCodes::fan},
+                  {"processor", SensorTypeCodes::processor},   
++                 {"restart", SensorTypeCodes::restart},  
+                  {"acpi", SensorTypeCodes::acpi},     
+                  {"power", SensorTypeCodes::other}}};
+ 

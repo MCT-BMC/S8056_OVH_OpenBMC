@@ -1,0 +1,28 @@
+From d7eeef20879348cc23601c9e7bc115f05b744303 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Tue, 15 Mar 2022 18:03:48 +0800
+Subject: [PATCH 05/11] Chanage upload image function timeout to 600 second
+
+---
+ include/image_upload.hpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+ mode change 100644 => 100755 include/image_upload.hpp
+
+diff --git a/include/image_upload.hpp b/include/image_upload.hpp
+old mode 100644
+new mode 100755
+index 1b0a09a..386e041
+--- a/include/image_upload.hpp
++++ b/include/image_upload.hpp
+@@ -33,7 +33,7 @@ inline void
+     static boost::asio::steady_timer timeout(*req.ioService,
+                                              std::chrono::seconds(5));
+ 
+-    timeout.expires_after(std::chrono::seconds(15));
++    timeout.expires_after(std::chrono::seconds(600));
+ 
+     auto timeoutHandler = [asyncResp](const boost::system::error_code& ec) {
+         fwUpdateMatcher = nullptr;
+-- 
+2.7.4
+

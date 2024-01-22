@@ -1,0 +1,15 @@
+[Unit]
+Description=MiTAC BMC booting finish
+After=xyz.openbmc_project.Logging.IPMI.service
+After=xyz.openbmc_project.Settings.service
+After=phosphor-ipmi-host.service
+After=xyz.openbmc_project.EntityManager.service
+
+[Service]
+Restart=simple
+ExecStart=/usr/bin/env touch /run/booting-finish
+SyslogIdentifier=mct-bmc-booting-finish
+TimeoutSec=infinity
+
+[Install]
+WantedBy=first-boot-complete.target

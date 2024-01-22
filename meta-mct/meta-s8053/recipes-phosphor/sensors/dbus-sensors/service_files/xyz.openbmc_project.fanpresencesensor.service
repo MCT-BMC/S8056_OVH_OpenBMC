@@ -1,0 +1,15 @@
+[Unit]
+Description=Fan Presence Sensor
+StopWhenUnneeded=false
+Requires=xyz.openbmc_project.EntityManager.service
+After=xyz.openbmc_project.EntityManager.service
+After=mct-led-manager.service
+
+[Service]
+Restart=always
+RestartSec=5
+ExecStartPre=/usr/bin/env mkdir -p /run/fanpresencesensor
+ExecStart=/usr/bin/fanpresencesensor
+
+[Install]
+WantedBy=multi-user.target

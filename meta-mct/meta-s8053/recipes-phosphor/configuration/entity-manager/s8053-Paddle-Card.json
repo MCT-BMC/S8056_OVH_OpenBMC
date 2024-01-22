@@ -1,0 +1,55 @@
+[
+    {
+       "Exposes": [
+            {
+                "Address": "0x6A",
+                "Bus": "$bus",
+                "Name": "NVME$index_Temp",
+                "Thresholds": [
+                    {
+                        "Direction": "greater than",
+                        "Name": "upper critical",
+                        "Hysteresis": 3,
+                        "Severity": 1,
+                        "Value": 70
+                    }
+                ],
+                "Type": "I2cNVMe"
+            },
+            {
+                "Address": "0x48",
+                "Bus": "$bus",
+                "Name": "PADDLE_CARD_$index",
+                "Thresholds": [
+                    {
+                        "Direction": "greater than",
+                        "Label": "PADDLE_CARD_$index",
+                        "Name": "upper critical",
+                        "Hysteresis": 3,
+                        "Severity": 1,
+                        "Value": 45,
+                        "Index": 1
+                    }
+                ],
+                "Type": "TMP75"
+            }
+       ],
+       "Name": "s8053 Paddle Card $index",
+       "Probe": [
+            "xyz.openbmc_project.FruDevice({'BUS': 17, 'ADDRESS': 80})",
+            "OR",
+            "xyz.openbmc_project.FruDevice({'BUS': 18, 'ADDRESS': 80})",
+            "OR",
+            "xyz.openbmc_project.FruDevice({'BUS': 19, 'ADDRESS': 80})",
+            "OR",
+            "xyz.openbmc_project.FruDevice({'BUS': 20, 'ADDRESS': 80})"
+        ],
+       "Type": "Panel",
+       "xyz.openbmc_project.Inventory.Decorator.Asset": {
+           "Manufacturer": "$BOARD_MANUFACTURER",
+           "Model": "$BOARD_PRODUCT_NAME",
+           "PartNumber": "$BOARD_PART_NUMBER",
+           "SerialNumber": "$BOARD_SERIAL_NUMBER"
+       }
+   }
+]

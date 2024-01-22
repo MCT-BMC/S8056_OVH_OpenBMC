@@ -1,0 +1,61 @@
+From 543ea174b67ba57d10561eb11b5d37a1a3455450 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Tue, 22 Jun 2021 16:52:23 +0800
+Subject: [PATCH] Set fan sensor value as 0 when disconnected
+
+---
+ include/sensor.hpp | 24 +++++++++++++++++++++---
+ 1 file changed, 21 insertions(+), 3 deletions(-)
+
+diff --git a/include/sensor.hpp b/include/sensor.hpp
+index e832903..e361c32 100644
+--- a/include/sensor.hpp
++++ b/include/sensor.hpp
+@@ -398,7 +398,11 @@ struct Sensor
+     {
+         if (operationalInterface)
+         {
+-            operationalInterface->set_property("Functional", isFunctional);
++            if (objectType.find("AspeedFan") == std::string::npos)
++            {
++                operationalInterface->set_property("Functional", isFunctional);
++            }
++            isSensorFailure = !isFunctional;
+         }
+         if (isFunctional)
+         {
+@@ -406,7 +410,18 @@ struct Sensor
+         }
+         else
+         {
+-            updateValue(std::numeric_limits<double>::quiet_NaN());
++            if (objectType.find("AspeedFan") == std::string::npos)
++            {
++                updateValue(std::numeric_limits<double>::quiet_NaN());
++            }
++            else
++            {
++                if (availableInterface)
++                {
++                    availableInterface->set_property("Available", true);
++                }
++                updateValue(0);
++            }
+         }
+     }
+ 
+@@ -478,7 +493,10 @@ struct Sensor
+         // which is called by checkThresholds() below,
+         // in all current implementations of sensors that have thresholds.
+         checkThresholds();
+-        if (!std::isnan(newValue))
++        if (((objectType.find("AspeedFan") == std::string::npos) &&
++             !std::isnan(newValue)) ||
++            ((objectType.find("AspeedFan") != std::string::npos) &&
++             (newValue != 0)))
+         {
+             if (isSensorFailure == true)
+             {
+-- 
+2.28.0
+

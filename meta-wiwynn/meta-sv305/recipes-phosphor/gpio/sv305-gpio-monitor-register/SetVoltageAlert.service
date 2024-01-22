@@ -1,0 +1,10 @@
+[Unit]
+Description=Set Voltage Alert
+
+[Service]
+Type=oneshot
+
+ExecStart=/usr/bin/busctl call "xyz.openbmc_project.Logging.IPMI" "/xyz/openbmc_project/Logging/IPMI" "xyz.openbmc_project.Logging.IPMI" "IpmiSelAdd" ssaybq "Prochot" "/xyz/openbmc_project/sensors/discrete/Prochot" 0x03 0x8a 0xff 0xff yes 0x20
+ExecStart=/usr/bin/busctl set-property xyz.openbmc_project.Discrete.Sensor /xyz/openbmc_project/sensors/discrete/Prochot xyz.openbmc_project.Sensor.Value Value u 138
+
+ExecStopPost=/usr/bin/busctl set-property xyz.openbmc_project.GpioMonitor /xyz/openbmc_project/gpio/event xyz.openbmc_project.GpioEvent VOLTAGE_ALERT_R_N s "Idle"

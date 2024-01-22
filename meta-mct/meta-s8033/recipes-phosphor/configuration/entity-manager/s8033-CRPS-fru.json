@@ -1,0 +1,36 @@
+{
+    "Fru":[
+        {
+            "Name": "MB_FRU",
+            "Size": 256,
+            "Index": 0,
+            "Bus": 2,
+            "Address": "0x50",
+            "ReadOnly": false
+        },
+        {
+            "Name": "PSU1_FRU",
+            "Size": 256,
+            "Index": 1,
+            "Bus": 3,
+            "Address": "0x50",
+            "ReadOnly": true
+        },
+        {
+            "Name": "PSU2_FRU",
+            "Size": 256,
+            "Index": 2,
+            "Bus": 3,
+            "Address": "0x51",
+            "ReadOnly": true
+        },
+        {
+            "Name": "NIC_FRU",
+            "Size": 256,
+            "Index": 3,
+            "Bus": 5,
+            "Address": "0x50",
+            "ReadOnly": true
+        }
+    ]
+}

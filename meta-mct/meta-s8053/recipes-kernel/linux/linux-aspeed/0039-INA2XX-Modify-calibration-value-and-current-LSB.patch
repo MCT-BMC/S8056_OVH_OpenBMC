@@ -1,0 +1,28 @@
+From dd77618ef9fda0bbc7ff7248b89c6fdfcda99aa2 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Tue, 20 Dec 2022 10:00:54 +0800
+Subject: [PATCH] INA2XX: Modify calibration value and current LSB
+
+---
+ drivers/hwmon/ina2xx.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/hwmon/ina2xx.c b/drivers/hwmon/ina2xx.c
+index 00fc70305a89..d1af5bb18ba5 100644
+--- a/drivers/hwmon/ina2xx.c
++++ b/drivers/hwmon/ina2xx.c
+@@ -135,9 +135,9 @@ static const struct ina2xx_config ina2xx_config[] = {
+ 	},
+ 	[ina226] = {
+ 		.config_default = INA226_CONFIG_DEFAULT,
+-		.calibration_value = 2048,
++		.calibration_value = 4966,
+ 		.registers = INA226_REGISTERS,
+-		.shunt_div = 400,
++		.shunt_div = 1000,
+ 		.bus_voltage_shift = 0,
+ 		.bus_voltage_lsb = 1250,
+ 		.power_lsb_factor = 25,
+-- 
+2.25.1
+

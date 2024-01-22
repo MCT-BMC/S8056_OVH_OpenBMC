@@ -1,0 +1,382 @@
+From f414df09d1ab7992d58ba67e41081206b3fe6bec Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Tue, 29 Mar 2022 14:17:44 +0800
+Subject: [PATCH] Fix SDR list abnormal issue
+
+Add function to handle mapping record ID to sensor ID.
+Remove SDR type 12 supported. Cause it would cause sensor size issue.
+Remove useless entity ID and instance function.
+Setting correct reading record ID range for BIOS sensor table.
+Move event only sensor function before sensor type 1 function.
+Move FEATURE_HYBRID_SENSORS function before sensor type 1 function.
+Add mechanism to handle SDR buffer for command completed time.
+---
+ dbus-sdr/sdrutils.cpp         |  61 +++++++++++++++++++++
+ dbus-sdr/sensorcommands.cpp   | 123 +++++++++++++++++++++---------------------
+ include/dbus-sdr/sdrutils.hpp |   2 +
+ 3 files changed, 125 insertions(+), 61 deletions(-)
+
+diff --git a/dbus-sdr/sdrutils.cpp b/dbus-sdr/sdrutils.cpp
+index bb17d8f..dccde61 100755
+--- a/dbus-sdr/sdrutils.cpp
++++ b/dbus-sdr/sdrutils.cpp
+@@ -285,6 +285,67 @@ uint8_t getSensorTypeFromPath(const std::string& path)
+     return sensorType;
+ }
+ 
++uint16_t getSensNumFromRecID(uint16_t recordID)
++{
++    uint16_t sensNum = 0x00;
++
++    static std::map<uint16_t, uint16_t> sensNumMap;
++
++    if(recordID == 0x00)
++    {
++        sensNumMap.clear();
++    }
++
++    for (auto it = sensNumMap.begin(); it != sensNumMap.end(); ++it)
++    {
++        if (it->second == recordID)
++        {
++            return it->first;
++        }
++    }
++
++    std::shared_ptr<SensorSubTree> sensorTree;
++    details::getSensorSubtree(sensorTree);
++
++    std::ifstream sdrStream(sdrFile);
++
++    if (!sdrStream.is_open())
++    {
++        std::cerr << "NO defined sensor number map found\n";
++        return sensNum;
++    }
++
++    auto data = nlohmann::json::parse(sdrStream, nullptr, false);
++    if (data.is_discarded())
++    {
++        std::cerr << "syntax error in " << sdrFile << "\n";
++    }
++    else
++    {
++        int idx = 0x00;
++        while (!data[idx].is_null())
++        {
++            sensNum=std::stoul(std::string(data[idx]["sensorNumber"]), nullptr, 16);
++            if(sensNumMap.find(sensNum) != sensNumMap.end())
++            {
++                idx++;
++                continue;
++            }
++            if (sensorTree->find(data[idx]["path"]) != sensorTree->end())
++            {
++                // std::cout << "SensorNumMap sensornum: " << data[idx]["sensorNumber"] << " path: " << data[idx]["path"] << std::endl;
++                sensNumMap.insert(std::pair<uint16_t, uint16_t>(sensNum, recordID));
++                break;
++            }
++            idx++;
++        }
++    }
++
++    sdrStream.close();
++
++    return sensNum;
++}
++
+ uint16_t getSensorNumberFromPath(const std::string& path)
+ {
+     std::shared_ptr<SensorNumMap> sensorNumMapPtr;
+diff --git a/dbus-sdr/sensorcommands.cpp b/dbus-sdr/sensorcommands.cpp
+index 5dfb15b..5ec6f78 100755
+--- a/dbus-sdr/sensorcommands.cpp
++++ b/dbus-sdr/sensorcommands.cpp
+@@ -67,6 +67,9 @@ using phosphor::logging::entry;
+ using phosphor::logging::level;
+ using phosphor::logging::log;
+ 
++using SDRObjectType =
++    boost::container::flat_map<uint16_t, std::vector<uint8_t>>;
++
+ static constexpr int sensorMapUpdatePeriod = 10;
+ static constexpr int sensorMapSdrUpdatePeriod = 60;
+ 
+@@ -94,6 +97,8 @@ static constexpr size_t lun1MaxSensorNum = 0x1fe;
+ static constexpr size_t lun3MaxSensorNum = 0x3fe;
+ static constexpr int GENERAL_ERROR = -1;
+ 
++SDRObjectType sensorDataRecords;
++
+ static boost::container::flat_map<std::string, ObjectValueTree> SensorCache;
+ 
+ // Specify the comparison required to sort and find char* map objects
+@@ -124,6 +129,7 @@ static sdbusplus::bus::match::match sensorAdded(
+     "sensors/'",
+     [](sdbusplus::message::message& m) {
+         getSensorTree().clear();
++        sensorDataRecords.clear();
+         sdrLastAdd = std::chrono::duration_cast<std::chrono::seconds>(
+                          std::chrono::system_clock::now().time_since_epoch())
+                          .count();
+@@ -135,6 +141,7 @@ static sdbusplus::bus::match::match sensorRemoved(
+     "sensors/'",
+     [](sdbusplus::message::message& m) {
+         getSensorTree().clear();
++        sensorDataRecords.clear();
+         sdrLastRemove = std::chrono::duration_cast<std::chrono::seconds>(
+                             std::chrono::system_clock::now().time_since_epoch())
+                             .count();
+@@ -1949,20 +1956,6 @@ bool constructVrSdr(ipmi::Context::ptr ctx, uint16_t sensorNum,
+     uint8_t sensornumber = static_cast<uint8_t>(sensorNum);
+     constructEventSdrHeaderKey(sensorNum, recordID, record);
+ 
+-    DbusInterfaceMap sensorMap;
+-    if (!getSensorMap(ctx, service, path, sensorMap, sensorMapSdrUpdatePeriod))
+-    {
+-        phosphor::logging::log<phosphor::logging::level::ERR>(
+-            "Failed to update sensor map for type 3 sensor",
+-            phosphor::logging::entry("SERVICE=%s", service.c_str()),
+-            phosphor::logging::entry("PATH=%s", path.c_str()));
+-        return false;
+-    }
+-    // follow the association chain to get the parent board's entityid and
+-    // entityInstance
+-    updateIpmiFromAssociation(path, sensorMap, record.body.entity_id,
+-                              record.body.entity_instance);
+-
+     // Sensor type is hardcoded as a module/board type instead of parsing from
+     // sensor path. This is because VR control is allocated in an independent
+     // path(/xyz/openbmc_project/vr/profile/...) which is not categorized by
+@@ -2011,17 +2004,20 @@ static int
+             "getSensorDataRecord: getFruSdrCount error");
+         return GENERAL_ERROR;
+     }
++    bool enableStore = true;
++
++    auto it = sensorDataRecords.find(recordID);
++    if(it != sensorDataRecords.end())
++    {
++        recordData.assign(it->second.begin(), it->second.end());
++        return 0;
++    }
+ 
+     //MCT add pre-defined SDR
+     loadSdr(getNumberOfSensors());
+ 
+-    const auto& entityRecords =
+-        ipmi::sensor::EntityInfoMapContainer::getContainer()
+-            ->getIpmiEntityRecords();
+-    size_t entityCount = entityRecords.size();
+-
+     size_t lastRecord = getNumberOfSensors() + fruCount + definedSdrlist.size() +
+-                        ipmi::storage::type12Count + entityCount - 1;
++                        ipmi::storage::type12Count - 1;
+     if (recordID == lastRecordIndex)
+     {
+         recordID = lastRecord;
+@@ -2033,23 +2029,18 @@ static int
+         return GENERAL_ERROR;
+     }
+ 
+-    if (recordID >= getNumberOfSensors())
++    if(recordID >= getNumberOfSensors() && recordID < getNumberOfSensors() + definedSdrlist.size())
++    {
++        recordData.insert(recordData.end(), (uint8_t*)&definedSdrlist.at(recordID-getNumberOfSensors()),
++                         ((uint8_t*)&definedSdrlist.at(recordID-getNumberOfSensors())) + sizeof(definedSdrlist.at(recordID-getNumberOfSensors())));
++        return 0;
++    }
++
++    if (recordID >= getNumberOfSensors() + definedSdrlist.size())
+     {
+         size_t sdrIndex = recordID - getNumberOfSensors() - definedSdrlist.size();
+ 
+-        if (sdrIndex >= fruCount + ipmi::storage::type12Count)
+-        {
+-            // handle type 8 entity map records
+-            ipmi::sensor::EntityInfoMap::const_iterator entity =
+-                entityRecords.find(static_cast<uint8_t>(
+-                    sdrIndex - fruCount - ipmi::storage::type12Count));
+-            if (entity == entityRecords.end())
+-            {
+-                return IPMI_CC_SENSOR_INVALID;
+-            }
+-            recordData = ipmi::storage::getType8SDRs(entity, recordID);
+-        }
+-        else if (sdrIndex >= fruCount)
++        if (sdrIndex >= fruCount)
+         {
+             // handle type 12 hardcoded records
+             size_t type12Index = sdrIndex - fruCount;
+@@ -2060,6 +2051,7 @@ static int
+                 return GENERAL_ERROR;
+             }
+             recordData = ipmi::storage::getType12SDRs(type12Index, recordID);
++            sensorDataRecords.insert_or_assign(recordID, recordData);
+         }
+         else
+         {
+@@ -2074,6 +2066,7 @@ static int
+             data.header.record_id_lsb = recordID & 0xFF;
+             recordData.insert(recordData.end(), (uint8_t*)&data,
+                               ((uint8_t*)&data) + sizeof(data));
++            sensorDataRecords.insert_or_assign(recordID, recordData);
+         }
+ 
+         return 0;
+@@ -2104,6 +2097,8 @@ static int
+         ctx->lun = 3;
+     }
+ 
++    sensNumFromRecID = getSensNumFromRecID(recordID);
++
+     auto status =
+         getSensorConnection(ctx, static_cast<uint8_t>(sensNumFromRecID),
+                             connection, path, &interfaces);
+@@ -2134,27 +2129,29 @@ static int
+         return GENERAL_ERROR;
+     }
+ 
+-    // Construct full record (SDR type 1) for the threshold sensors
+-    if (std::find(interfaces.begin(), interfaces.end(),
+-                  sensor::sensorInterface) != interfaces.end())
++    // Contruct SDR type 3 record for type 3 sensor
++    if (getSensorEventTypeFromPath(path) == 0x6f)
+     {
+-        get_sdr::SensorDataFullRecord record = {0};
++        get_sdr::SensorDataEventRecord record = {0};
+ 
+         // If the request doesn't read SDR body, construct only header and key
+         // part to avoid additional DBus transaction.
+         if (readBytes <= sizeof(record.header) + sizeof(record.key))
+         {
+-            constructSensorSdrHeaderKey(sensorNum, recordID, record);
++            constructEventSdrHeaderKey(sensorNum, recordID, record);
++            enableStore = false;
+         }
+-        else if (!constructSensorSdr(ctx, sensorNum, recordID, connection, path,
+-                                     record))
++        else if (!constructVrSdr(ctx, sensorNum, recordID, connection, path,
++                                 record))
+         {
+             return GENERAL_ERROR;
+         }
+-
+         recordData.insert(recordData.end(), (uint8_t*)&record,
+                           ((uint8_t*)&record) + sizeof(record));
+-
++        if(enableStore)
++        {
++            sensorDataRecords.insert_or_assign(recordID, recordData);
++        }
+         return 0;
+     }
+ 
+@@ -2171,6 +2168,7 @@ static int
+         if (readBytes <= sizeof(record.header) + sizeof(record.key))
+         {
+             constructSensorSdrHeaderKey(sensorNum, recordID, record);
++            enableStore = false;
+         }
+         else
+         {
+@@ -2179,35 +2177,41 @@ static int
+ 
+         recordData.insert(recordData.end(), (uint8_t*)&record,
+                           ((uint8_t*)&record) + sizeof(record));
+-
++        if(enableStore)
++        {
++            sensorDataRecords.insert_or_assign(recordID, recordData);
++        }
+         return 0;
+     }
+ #endif
+ 
+-    // Contruct SDR type 3 record for type 3 sensor
+-    if (getSensorEventTypeFromPath(path) == 0x6f)
++    // Construct full record (SDR type 1) for the threshold sensors
++    if (std::find(interfaces.begin(), interfaces.end(),
++                  sensor::sensorInterface) != interfaces.end())
+     {
+-        get_sdr::SensorDataEventRecord record = {0};
++        get_sdr::SensorDataFullRecord record = {0};
+ 
+         // If the request doesn't read SDR body, construct only header and key
+         // part to avoid additional DBus transaction.
+         if (readBytes <= sizeof(record.header) + sizeof(record.key))
+         {
+-            constructEventSdrHeaderKey(sensorNum, recordID, record);
++            constructSensorSdrHeaderKey(sensorNum, recordID, record);
++            enableStore = false;
+         }
+-        else if (!constructVrSdr(ctx, sensorNum, recordID, connection, path,
+-                                 record))
++        else if (!constructSensorSdr(ctx, sensorNum, recordID, connection, path,
++                                     record))
+         {
+             return GENERAL_ERROR;
+         }
+-        recordData.insert(recordData.end(), (uint8_t*)&record,
+-                          ((uint8_t*)&record) + sizeof(record));
+-    }
+ 
+-    for (auto & record : definedSdrlist) {
+-        // insert the record into the map
+         recordData.insert(recordData.end(), (uint8_t*)&record,
+                           ((uint8_t*)&record) + sizeof(record));
++        if(enableStore)
++        {
++            sensorDataRecords.insert_or_assign(recordID, recordData);
++        }
++
++        return 0;
+     }
+ 
+     return 0;
+@@ -2430,14 +2434,9 @@ ipmi::RspType<uint16_t,            // next record ID
+         return ipmi::response(ret);
+     }
+ 
+-    const auto& entityRecords =
+-        ipmi::sensor::EntityInfoMapContainer::getContainer()
+-            ->getIpmiEntityRecords();
+-    int entityCount = entityRecords.size();
+-
+     auto& sensorTree = getSensorTree();
+     size_t lastRecord = getNumberOfSensors() + definedSdrlist.size() + fruCount +
+-                        ipmi::storage::type12Count + entityCount - 1;
++                        ipmi::storage::type12Count - 1;
+     uint16_t nextRecordId = lastRecord > recordID ? recordID + 1 : 0XFFFF;
+ 
+     if (!getSensorSubtree(sensorTree) && sensorTree.empty())
+@@ -2454,11 +2453,13 @@ ipmi::RspType<uint16_t,            // next record ID
+             "ipmiStorageGetSDR: fail to get SDR");
+         return ipmi::responseInvalidFieldRequest();
+     }
++
+     get_sdr::SensorDataRecordHeader* hdr =
+         reinterpret_cast<get_sdr::SensorDataRecordHeader*>(record.data());
+     if (!hdr)
+     {
+         getSensorTree().clear();
++        sensorDataRecords.clear();
+         phosphor::logging::log<phosphor::logging::level::ERR>(
+             "ipmiStorageGetSDR: record header is null");
+         return ipmi::responseSuccess(nextRecordId, record);
+diff --git a/include/dbus-sdr/sdrutils.hpp b/include/dbus-sdr/sdrutils.hpp
+index 660fae9..e593afc 100755
+--- a/include/dbus-sdr/sdrutils.hpp
++++ b/include/dbus-sdr/sdrutils.hpp
+@@ -399,6 +399,8 @@ std::string getSensorTypeStringFromPath(const std::string& path);
+ 
+ uint8_t getSensorTypeFromPath(const std::string& path);
+ 
++uint16_t getSensNumFromRecID(uint16_t recordID);
++
+ uint16_t getSensorNumberFromPath(const std::string& path);
+ 
+ uint8_t getSensorEventTypeFromPath(const std::string& path);
+-- 
+2.7.4
+

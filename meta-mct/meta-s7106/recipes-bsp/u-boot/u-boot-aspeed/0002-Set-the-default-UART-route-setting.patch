@@ -1,0 +1,42 @@
+From f85fe2281e8e6841013c9d506a507048b15e0973 Mon Sep 17 00:00:00 2001
+From: Mirage Su <mirage.su@mic.com.tw>
+Date: Wed, 26 Dec 2018 10:27:39 +0800
+Subject: [PATCH] Set the default UART route setting
+
+UART2<->UART3 for SOL (Remote host console)
+---
+ board/aspeed/ast-g5/ast-g5.c | 15 ++++++++++++++-
+ 1 file changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/board/aspeed/ast-g5/ast-g5.c b/board/aspeed/ast-g5/ast-g5.c
+index e1d3011..9ddd18e 100755
+--- a/board/aspeed/ast-g5/ast-g5.c
++++ b/board/aspeed/ast-g5/ast-g5.c
+@@ -28,13 +28,26 @@ void Light_BMC_Heartbeat_LED(void)
+     *(volatile ulong *)(0x1E780024) |= 0x0000080 ;
+ }
+ 
++/*--------------------------------------------------------------------
++ * @fn Set_Default_UART_Route
++ * @brief Set the default UART Route
++ * Author  Mirage
++ *--------------------------------------------------------------------*/
++void Set_Default_UART_Route(void)
++{
++    puts("Set the default UART Route(UART2 <-> UART3 for SOL)...\n");
++    *(volatile ulong *)(0x1E78909C) = 0x1800000 ;
++}
++
++
+ int board_init(void)
+ {
+ 	gd->bd->bi_boot_params = CONFIG_SYS_SDRAM_BASE + 0x100;
+ 	gd->flags = 0;
+ 
+ 	Light_BMC_Heartbeat_LED();
+-
++    Set_Default_UART_Route();
++    
+ 	return 0;
+ }
+ 

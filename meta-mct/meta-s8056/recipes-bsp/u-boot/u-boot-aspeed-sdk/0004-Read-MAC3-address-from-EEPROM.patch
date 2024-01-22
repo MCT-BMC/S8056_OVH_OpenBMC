@@ -1,0 +1,44 @@
+From 800009581ef8dad139300a5eb2b46294c77f0076 Mon Sep 17 00:00:00 2001
+From: Brad Chou <brad.chou@mic.com.tw>
+Date: Wed, 6 Jul 2022 13:22:34 +0800
+Subject: [PATCH] Read MAC3 address from EEPROM
+
+Read MAC3 address from EEPROM offset 0x46, and save it to eth3addr.
+---
+ net/eth-uclass.c | 13 ++++++++++---
+ 1 file changed, 10 insertions(+), 3 deletions(-)
+
+diff --git a/net/eth-uclass.c b/net/eth-uclass.c
+index 4ce8915acb..9fc7596e31 100644
+--- a/net/eth-uclass.c
++++ b/net/eth-uclass.c
+@@ -471,19 +471,26 @@ int read_mac_from_eeprom(void)
+ {
+         int ret;
+         unsigned int bus;
+-        u_int8_t mac[6];
++        u_int8_t mac[2][6];
+         bus = i2c_get_bus_num();
+         i2c_set_bus_num(CONFIG_SYS_EEPROM_BUS_NUM);
+ 
+         i2c_read(CONFIG_SYS_I2C_EEPROM_ADDR,
+ 			CONFIG_SYS_I2C_MAC_OFFSET,
+ 			CONFIG_SYS_I2C_EEPROM_ADDR_LEN,
+-			mac,
++			mac[0],
+ 			6);
+ 
++        i2c_read(CONFIG_SYS_I2C_EEPROM_ADDR,
++                 CONFIG_SYS_I2C_MAC_OFFSET+6,
++                 CONFIG_SYS_I2C_EEPROM_ADDR_LEN,
++                 mac[1],
++                 6);
++
+         i2c_set_bus_num(bus);
+ 
+-        eth_env_set_enetaddr_by_index("eth",0,mac); //set eth0 mac address
++        eth_env_set_enetaddr_by_index("eth",0,mac[0]); //set eth0 mac address
++        eth_env_set_enetaddr_by_index("eth",3,mac[1]); //set eth3 mac address
+ 
+         return 0;
+ }

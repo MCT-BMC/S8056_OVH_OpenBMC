@@ -1,0 +1,136 @@
+From 29b0e2d7c88be830dfef1ddaef860516625d4947 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Fri, 18 Oct 2019 09:56:09 +0800
+Subject: [PATCH] Support event-only type SDR format
+
+---
+ include/sdrutils.hpp   | 32 +++++++++++++++++++++++--
+ src/sensorcommands.cpp | 54 ++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 84 insertions(+), 2 deletions(-)
+
+diff --git a/include/sdrutils.hpp b/include/sdrutils.hpp
+index 8969bd6..5ff2d76 100644
+--- a/include/sdrutils.hpp
++++ b/include/sdrutils.hpp
+@@ -161,7 +161,13 @@ enum class SensorTypeCodes : uint8_t
+     voltage = 0x2,
+     current = 0x3,
+     fan = 0x4,
++    processor = 0x7,
+     other = 0xB,
++    memory = 0xC,
++    watchdog1 = 0x11,
++    button = 0x14,
++    acpi = 0x22,
++    watchdog2 = 0x23,
+ };
+ 
+ const static boost::container::flat_map<const char*, SensorTypeCodes, CmpStr>
+@@ -170,7 +176,10 @@ const static boost::container::flat_map<const char*, SensorTypeCodes, CmpStr>
+                  {"current", SensorTypeCodes::current},
+                  {"fan_tach", SensorTypeCodes::fan},
+                  {"fan_pwm", SensorTypeCodes::fan},
+-                 {"power", SensorTypeCodes::other}}};
++                 {"processor", SensorTypeCodes::processor},
++                 {"power", SensorTypeCodes::other},
++                 {"acpi", SensorTypeCodes::acpi},
++                 {"button", SensorTypeCodes::button}}};
+ 
+ inline static std::string getSensorTypeStringFromPath(const std::string& path)
+ {
+@@ -227,7 +236,26 @@ inline static uint8_t getSensorNumberFromPath(const std::string& path)
+ inline static uint8_t getSensorEventTypeFromPath(const std::string& path)
+ {
+     // TODO: Add support for additional reading types as needed
+-    return 0x1; // reading type = threshold
++    // return 0x1; // reading type = threshold
++
++    uint8_t sensorType = getSensorTypeFromPath(path);
++    uint8_t eventRdType = 0x1;
++
++    switch(sensorType)
++    {
++        case 0x1:
++        case 0x2:
++        case 0x3:
++        case 0x4:
++        case 0xB:
++            eventRdType = 0x1; // reading type = threshold
++            break;
++
++        default:
++            eventRdType = 0x6f; // Default reading type = sensor-specific
++    }
++
++    return eventRdType;
+ }
+ 
+ inline static std::string getPathFromSensorNumber(uint8_t sensorNum)
+diff --git a/src/sensorcommands.cpp b/src/sensorcommands.cpp
+index b24ac7e..99d3910 100644
+--- a/src/sensorcommands.cpp
++++ b/src/sensorcommands.cpp
+@@ -1237,6 +1237,60 @@ ipmi::RspType<uint16_t,            // next record ID
+         return ipmi::responseResponseError();
+     }
+     uint8_t sensornumber = (recordID & 0xFF);
++    uint8_t eventRdType = getSensorEventTypeFromPath(path);
++
++    // Event-Only SDR Record
++    if(0x6f == eventRdType)
++    {
++        get_sdr::SensorDataEventOnlyRecord record = {0};
++
++        // Header
++        record.header.record_id_msb = recordID << 8;
++        record.header.record_id_lsb = recordID & 0xFF;
++        record.header.sdr_version = ipmiSdrVersion;
++        record.header.record_type = get_sdr::SENSOR_DATA_EVENT_ONLY_RECORD;
++        record.header.record_length = sizeof(get_sdr::SensorDataEventOnlyRecord) -
++                                    sizeof(get_sdr::SensorDataRecordHeader);
++
++        // Key
++        record.key.owner_id = 0x20;
++        record.key.owner_lun = 0x0;
++        record.key.sensor_number = sensornumber;
++
++        // Body
++        record.body.entity_id = 0x0;
++        record.body.entity_instance = 0x01;
++        record.body.sensor_type = getSensorTypeFromPath(path);
++        record.body.event_reading_type = eventRdType;
++
++        // populate sensor name from path
++        std::string name;
++        size_t nameStart = path.rfind("/");
++        if (nameStart != std::string::npos)
++        {
++            name = path.substr(nameStart + 1, std::string::npos - nameStart);
++        }
++
++        std::replace(name.begin(), name.end(), '_', ' ');
++        if (name.size() > EVENT_ONLY_RECORD_ID_STR_MAX_LENGTH)
++        {
++            name.resize(EVENT_ONLY_RECORD_ID_STR_MAX_LENGTH);
++        }
++        record.body.id_string_info = name.size();
++        std::strncpy(record.body.id_string, name.c_str(),
++                    sizeof(record.body.id_string));
++
++        if (sizeof(get_sdr::SensorDataEventOnlyRecord) < (offset + bytesToRead))
++        {
++            bytesToRead = sizeof(get_sdr::SensorDataEventOnlyRecord) - offset;
++        }
++
++        uint8_t *respStart = reinterpret_cast<uint8_t *>(&record) + offset;
++        std::vector<uint8_t> recordData(respStart, respStart + bytesToRead);
++
++        return ipmi::responseSuccess(nextRecordId, recordData);
++    }
++
+     get_sdr::SensorDataFullRecord record = {0};
+ 
+     record.header.record_id_msb = recordID << 8;
+-- 
+2.22.0
+

@@ -1,0 +1,11 @@
+[Unit]
+Description=Setting fan duty when host power on
+
+[Service]
+Restart=simple
+ExecStart=/usr/bin/env controlFan.sh power-on
+SyslogIdentifier=setting-fan-poweron
+TimeoutSec=infinity
+
+[Install]
+WantedBy=obmc-chassis-poweron.target

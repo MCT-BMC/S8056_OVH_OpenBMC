@@ -1,0 +1,16 @@
+[Unit]
+Description=Register D-bus object for Discrete Sensor
+StopWhenUnneeded=false
+Requires=xyz.openbmc_project.EntityManager.service
+After=xyz.openbmc_project.EntityManager.service
+Wants=mapper-wait@-xyz-openbmc_project-inventory-done.service
+After=mapper-wait@-xyz-openbmc_project-inventory-done.service
+
+[Service]
+Restart=always
+RestartSec=5
+ExecStart=/usr/bin/discrete-sensor
+SyslogIdentifier=discretesensor
+
+[Install]
+WantedBy=multi-user.target

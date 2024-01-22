@@ -1,0 +1,212 @@
+From 7f6d73ecdd91740de053d1db5a22c586ab28a127 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Wed, 23 Mar 2022 16:30:48 +0800
+Subject: [PATCH] Add DIMM temperature sensor supported
+
+[PATCH] Add DIMM temperature sensor supported
+[PATCH] Filter out dimm temperature boundary value and retry for updating sensor reading
+---
+ include/Utils.hpp         | 11 +++++++
+ meson_options.txt         |  1 +
+ service_files/meson.build |  1 +
+ src/Utils.cpp             | 73 +++++++++++++++++++++++++++++++++++++++++++++++
+ src/meson.build           | 19 ++++++++++++
+ 5 files changed, 105 insertions(+)
+ mode change 100644 => 100755 include/Utils.hpp
+ mode change 100644 => 100755 src/Utils.cpp
+
+diff --git a/include/Utils.hpp b/include/Utils.hpp
+old mode 100644
+new mode 100755
+index 0a89d13..5adf785
+--- a/include/Utils.hpp
++++ b/include/Utils.hpp
+@@ -60,6 +60,9 @@ bool findFiles(const std::filesystem::path& dirPath,
+                int symlinkDepth = 1);
+ bool isPowerOn(void);
+ bool hasBiosPost(void);
++void setOwnerStatus(uint32_t status);
++uint32_t checkOwnerStatus(void);
++void setupOwnerMatch(const std::shared_ptr<sdbusplus::asio::connection>& conn);
+ void setupPowerMatch(const std::shared_ptr<sdbusplus::asio::connection>& conn);
+ bool getSensorConfiguration(
+     const std::string& type,
+@@ -120,6 +123,14 @@ const static constexpr char* path = "/xyz/openbmc_project/state/os";
+ const static constexpr char* property = "OperatingSystemState";
+ } // namespace post
+ 
++namespace status
++{
++const static constexpr char* busname = "xyz.openbmc_project.Settings";
++const static constexpr char* interface = "xyz.openbmc_project.OEM.SensorStatus";
++const static constexpr char* path = "/xyz/openbmc_project/oem/SensorStatus";
++const static constexpr char* property = "DIMMSensorStatus";
++} // namespace status
++
+ namespace association
+ {
+ const static constexpr char* interface =
+diff --git a/meson_options.txt b/meson_options.txt
+index ce408ce..dd8f832 100755
+--- a/meson_options.txt
++++ b/meson_options.txt
+@@ -13,6 +13,7 @@ option('external', type: 'feature', value: 'enabled', description: 'Enable Exter
+ option('event', type: 'feature', value: 'enabled', description: 'Enable Event-only sensor.',)
+ option('mos-temp', type: 'feature', value: 'enabled', description: 'Enable MOS temperature sensor.',)
+ option('fan-presence', type: 'feature', value: 'enabled', description: 'Enable FAN presence sensor.',)
++option('dimm-temp', type: 'feature', value: 'enabled', description: 'Enable DIMM temperature sensor.',)
+ option('tests', type: 'feature', value: 'enabled', description: 'Build tests.',)
+ option('validate-unsecure-feature', type : 'feature', value : 'disabled', description : 'Enables unsecure features required by validation. Note: mustbe turned off for production images.',)
+ option('insecure-sensor-override', type : 'feature', value : 'disabled', description : 'Enables Sensor override feature without any check.',)
+diff --git a/service_files/meson.build b/service_files/meson.build
+index 36be5fd..9d94f0c 100755
+--- a/service_files/meson.build
++++ b/service_files/meson.build
+@@ -13,6 +13,7 @@ unit_files = [
+     ['event', 'xyz.openbmc_project.eventsensor.service'],
+     ['mos-temp', 'xyz.openbmc_project.mostempsensor.service'],
+     ['fan-presence', 'xyz.openbmc_project.fanpresencesensor.service'],
++    ['dimm-temp', 'xyz.openbmc_project.dimmtempsensor.service'],
+ ]
+ 
+ foreach tuple : unit_files
+diff --git a/src/Utils.cpp b/src/Utils.cpp
+old mode 100644
+new mode 100755
+index 8df9a48..74d99ca
+--- a/src/Utils.cpp
++++ b/src/Utils.cpp
+@@ -38,9 +38,11 @@ namespace fs = std::filesystem;
+ static bool powerStatusOn = false;
+ static bool biosHasPost = false;
+ static bool manufacturingMode = false;
++static uint32_t ownerStatus = 0x00;
+ 
+ static std::unique_ptr<sdbusplus::bus::match::match> powerMatch = nullptr;
+ static std::unique_ptr<sdbusplus::bus::match::match> postMatch = nullptr;
++static std::unique_ptr<sdbusplus::bus::match::match> ownerMatch = nullptr;
+ 
+ /**
+  * return the contents of a file
+@@ -314,6 +316,20 @@ bool hasBiosPost(void)
+     return biosHasPost;
+ }
+ 
++void setOwnerStatus(uint32_t status)
++{
++    ownerStatus = status;
++}
++
++uint32_t checkOwnerStatus(void)
++{
++    if (!ownerMatch)
++    {
++        throw std::runtime_error("Owner Match Not Created");
++    }
++    return ownerStatus;
++}
++
+ bool readingStateGood(const PowerState& powerState)
+ {
+     if (powerState == PowerState::on && !isPowerOn())
+@@ -397,6 +413,35 @@ static void
+         post::interface, post::property);
+ }
+ 
++static void
++    getOwnerStatus(const std::shared_ptr<sdbusplus::asio::connection>& conn,
++                  size_t retries = 2)
++{
++    conn->async_method_call(
++        [conn, retries](boost::system::error_code ec,
++           const std::variant<uint32_t>& state) {
++            if (ec)
++            {
++                if (retries)
++                {
++                    auto timer = std::make_shared<boost::asio::steady_timer>(
++                        conn->get_io_context());
++                    timer->expires_after(std::chrono::seconds(15));
++                    timer->async_wait(
++                        [timer, conn, retries](boost::system::error_code) {
++                            getOwnerStatus(conn, retries - 1);
++                        });
++                    return;
++                }
++                std::cerr << "Get owner method error" << ec.message() << std::endl;
++                return;
++            }
++            ownerStatus = std::get<uint32_t>(state);
++        },
++        status::busname, status::path, properties::interface, properties::get,
++        status::interface, status::property);
++}
++
+ void setupPowerMatch(const std::shared_ptr<sdbusplus::asio::connection>& conn)
+ {
+     static boost::asio::steady_timer timer(conn->get_io_context());
+@@ -470,6 +515,34 @@ void setupPowerMatch(const std::shared_ptr<sdbusplus::asio::connection>& conn)
+     getPostStatus(conn);
+ }
+ 
++void setupOwnerMatch(const std::shared_ptr<sdbusplus::asio::connection>& conn)
++{
++    static boost::asio::steady_timer timer(conn->get_io_context());
++
++    if (ownerMatch)
++    {
++        return;
++    }
++
++    ownerMatch = std::make_unique<sdbusplus::bus::match::match>(
++        static_cast<sdbusplus::bus::bus&>(*conn),
++        "type='signal',interface='" + std::string(properties::interface) +
++            "',path='" + std::string(status::path) + "',arg0='" +
++            std::string(status::interface) + "'",
++        [](sdbusplus::message::message& message) {
++            std::string objectName;
++            boost::container::flat_map<std::string, std::variant<uint32_t>>
++                values;
++            message.read(objectName, values);
++            auto findState = values.find(status::property);
++            if (findState != values.end())
++            {
++                ownerStatus = std::get<uint32_t>(findState->second);
++            }
++        });
++    getOwnerStatus(conn);
++}
++
+ // replaces limits if MinReading and MaxReading are found.
+ void findLimits(std::pair<double, double>& limits,
+                 const SensorBaseConfiguration* data)
+diff --git a/src/meson.build b/src/meson.build
+index d5e7b2f..1eb6b9b 100755
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -246,3 +246,22 @@ if get_option('fan-presence').enabled()
+         ],
+     )
+ endif
++
++if get_option('dimm-temp').enabled()
++    executable(
++        'dimmtempsensor',
++        'DIMMTempSensor.cpp',
++        'MUXUtils.cpp',
++        dependencies: [
++            i2c, 
++            sdbusplus,
++        ],
++        implicit_include_directories: false,
++        include_directories: '../include',
++        install: true,
++        link_with: [
++            thresholds_a,
++            utils_a,
++        ],
++    )
++endif
+-- 
+2.7.4
+

@@ -1,0 +1,308 @@
+From 52d960a06fa09826a525f0542f2e00ab8c05e75f Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Tue, 22 Mar 2022 14:38:11 +0800
+Subject: [PATCH 13/24] Support FRU configuration in JSON format
+
+---
+ dbus-sdr/storagecommands.cpp         | 167 ++++++++++++++++++++++++++++++++---
+ include/dbus-sdr/storagecommands.hpp |   7 ++
+ 2 files changed, 161 insertions(+), 13 deletions(-)
+
+diff --git a/dbus-sdr/storagecommands.cpp b/dbus-sdr/storagecommands.cpp
+index 21f3a4b..07b0561 100755
+--- a/dbus-sdr/storagecommands.cpp
++++ b/dbus-sdr/storagecommands.cpp
+@@ -33,6 +33,7 @@
+ #include <sdbusplus/timer.hpp>
+ #include <stdexcept>
+ #include <string_view>
++#include <nlohmann/json.hpp>
+ 
+ static constexpr bool DEBUG = false;
+ 
+@@ -138,6 +139,7 @@ static std::vector<uint8_t> fruCache;
+ static uint8_t cacheBus = 0xFF;
+ static uint8_t cacheAddr = 0XFF;
+ static uint8_t lastDevId = 0xFF;
++static uint32_t cacheSize = 256;
+ 
+ static uint8_t writeBus = 0xFF;
+ static uint8_t writeAddr = 0XFF;
+@@ -149,7 +151,15 @@ ManagedObjectType frus;
+ 
+ // we unfortunately have to build a map of hashes in case there is a
+ // collision to verify our dev-id
+-boost::container::flat_map<uint8_t, std::pair<uint8_t, uint8_t>> deviceHashes;
++boost::container::flat_map<uint8_t, std::tuple<uint8_t, uint8_t, std::string>> deviceHashes;
++boost::container::flat_map<uint8_t, struct deviceInfo> deviceMap;
++
++// JSON of FRU configuration
++constexpr const char* fruConfig =
++    "/usr/share/entity-manager/configurations/fru.json";
++
++// FRU inventory size
++boost::container::flat_map<uint8_t, uint32_t> deviceSizes;
+ 
+ void registerStorageFunctions() __attribute__((constructor));
+ 
+@@ -218,6 +228,8 @@ void recalculateHashes()
+ {
+ 
+     deviceHashes.clear();
++    deviceSizes.clear();
++    deviceMap.clear();
+     // hash the object paths to create unique device id's. increment on
+     // collision
+     std::hash<std::string> hasher;
+@@ -231,17 +243,44 @@ void recalculateHashes()
+ 
+         auto busFind = fruIface->second.find("BUS");
+         auto addrFind = fruIface->second.find("ADDRESS");
++        auto indexFind = fruIface->second.find("INDEX");
+         if (busFind == fruIface->second.end() ||
+-            addrFind == fruIface->second.end())
++            addrFind == fruIface->second.end() ||
++            indexFind == fruIface->second.end())
+         {
+             phosphor::logging::log<phosphor::logging::level::INFO>(
+-                "fru device missing Bus or Address",
++                "fru device missing Bus, Address or Index.",
+                 phosphor::logging::entry("FRU=%s", fru.first.str.c_str()));
+             continue;
+         }
+ 
+         uint8_t fruBus = std::get<uint32_t>(busFind->second);
+         uint8_t fruAddr = std::get<uint32_t>(addrFind->second);
++        uint8_t fruIndex = std::get<uint32_t>(indexFind->second);
++
++        bool readOnly = false;
++        auto readOnlyFind = fruIface->second.find("READONLY");
++        if (readOnlyFind != fruIface->second.end())
++        {
++            readOnly = std::get<bool>(readOnlyFind->second);
++        }
++
++        struct deviceInfo newDevice = {fruBus, fruAddr, readOnly};
++
++        auto deviceFind = deviceMap.find(fruIndex);
++        if (deviceFind == deviceMap.end())
++        {
++            deviceMap.emplace(fruIndex, newDevice);
++        }
++        else
++        {
++            std::cerr << "Fru devices have the same index. Index: "
++                      << static_cast<uint32_t>(fruIndex)
++                      << ", Bus: " << static_cast<uint32_t>(fruBus)
++                      << ", Address: " << static_cast<uint32_t>(fruAddr)
++                      << "\n";
++        }
++
+         auto chassisFind = fruIface->second.find("CHASSIS_TYPE");
+         std::string chassisType;
+         if (chassisFind != fruIface->second.end())
+@@ -250,23 +289,85 @@ void recalculateHashes()
+         }
+ 
+         uint8_t fruHash = 0;
+-        if (chassisType.compare(chassisTypeRackMount) != 0 &&
+-            chassisType.compare(chassisTypeMainServer) != 0)
++        // Set the fru default size to 256 bytes.
++        uint32_t fruSize = 256;
++        std::string deviceID = "";
++        if ((chassisType.compare(chassisTypeRackMount) != 0 &&
++            chassisType.compare(chassisTypeMainServer) != 0 ) || true)
+         {
+             fruHash = hasher(fru.first.str);
++
++            std::ifstream FruFile(fruConfig);
++
++            if(!FruFile)
++            {
++                std::cerr << "Failed to open FRU config file: " << fruConfig <<"\n";
++            }
++            else
++            {
++                auto data = nlohmann::json::parse(FruFile, nullptr, false);
++                if (data.is_discarded())
++                {
++                    std::cerr << "syntax error in " << fruConfig << "\n";
++                }
++                else
++                {
++                    int index = 0;
++
++                    while (!data["Fru"][index].is_null())
++                    {
++                        if (!data["Fru"][index]["Bus"].is_null() &&
++                            !data["Fru"][index]["Address"].is_null())
++                        {
++                            int bus = data["Fru"][index]["Bus"];
++                            std::string addrStr = data["Fru"][index]["Address"];
++                            int address = std::stoul(addrStr, nullptr, 16);
++                            // int address = atoi(addrStr.substr(addrStr.find("x", 0)+1).c_str());
++
++                            if (bus == fruBus && address == fruAddr)
++                            {
++                                if (!data["Fru"][index]["Size"].is_null())
++                                {
++                                    fruSize = static_cast<uint32_t>(data["Fru"][index]["Size"]);
++                                }
++
++                                if (!data["Fru"][index]["Index"].is_null())
++                                {
++                                    fruHash = static_cast<uint8_t>(data["Fru"][index]["Index"]);
++                                }
++
++                                if(!data["Fru"][index]["Name"].is_null())
++                                {
++                                    deviceID = static_cast<std::string>(data["Fru"][index]["Name"]);
++                                }
++
++                                break;
++                            }
++
++                        }
++                        index++;
++                    }
++                }
++
++                FruFile.close();
++            }
++
+             // can't be 0xFF based on spec, and 0 is reserved for baseboard
+-            if (fruHash == 0 || fruHash == 0xFF)
++            if (fruHash == 0xFF)
+             {
+                 fruHash = 1;
+             }
+         }
+-        std::pair<uint8_t, uint8_t> newDev(fruBus, fruAddr);
++        std::tuple<uint8_t, uint8_t, std::string> newDev(fruBus, fruAddr, deviceID);
+ 
+         bool emplacePassed = false;
+         while (!emplacePassed)
+         {
+             auto resp = deviceHashes.emplace(fruHash, newDev);
+             emplacePassed = resp.second;
++
++            deviceSizes.emplace(fruHash, fruSize);
++
+             if (!emplacePassed)
+             {
+                 fruHash++;
+@@ -316,8 +417,15 @@ ipmi::Cc getFru(ipmi::Context::ptr ctx, uint8_t devId)
+ 
+     fruCache.clear();
+ 
+-    cacheBus = deviceFind->second.first;
+-    cacheAddr = deviceFind->second.second;
++    auto deviceSizeFind = deviceSizes.find(devId);
++    if (deviceSizeFind == deviceSizes.end())
++    {
++        return IPMI_CC_SENSOR_INVALID;
++    }
++    cacheSize = deviceSizeFind->second;
++
++    cacheBus = std::get<0>(deviceFind->second);
++    cacheAddr = std::get<1>(deviceFind->second);
+ 
+     boost::system::error_code ec;
+ 
+@@ -336,6 +444,11 @@ ipmi::Cc getFru(ipmi::Context::ptr ctx, uint8_t devId)
+         return ipmi::ccResponseError;
+     }
+ 
++    if(fruCache.size() < cacheSize)
++    {
++        fruCache.resize(cacheSize, 0xFF);
++    }
++
+     lastDevId = devId;
+     return ipmi::ccSuccess;
+ }
+@@ -493,6 +606,21 @@ ipmi::RspType<uint8_t>
+     {
+         return ipmi::response(status);
+     }
++
++    auto deviceFind = deviceMap.find(fruDeviceId);
++    if (deviceFind == deviceMap.end())
++    {
++        return ipmi::responseSensorInvalid();
++    }
++    auto& device = deviceFind->second;
++
++    if (device.readOnly == true)
++    {
++        std::cerr << "Fru " << static_cast<int>(fruDeviceId)
++                  << " is read only device\n";
++        return ipmi::responseInvalidFieldRequest();
++    }
++
+     size_t lastWriteAddr = fruInventoryOffset + writeLen;
+     if (fruCache.size() < lastWriteAddr)
+     {
+@@ -619,8 +747,8 @@ ipmi_ret_t getFruSdrs(ipmi::Context::ptr ctx, size_t index,
+         return IPMI_CC_INVALID_FIELD_REQUEST;
+     }
+     auto device = deviceHashes.begin() + index;
+-    uint8_t& bus = device->second.first;
+-    uint8_t& address = device->second.second;
++    uint8_t& bus = std::get<0>(device->second);
++    uint8_t& address = std::get<1>(device->second);
+ 
+     boost::container::flat_map<std::string, Value>* fruData = nullptr;
+     auto fru =
+@@ -655,7 +783,7 @@ ipmi_ret_t getFruSdrs(ipmi::Context::ptr ctx, size_t index,
+     {
+         return IPMI_CC_RESPONSE_ERROR;
+     }
+-    std::string name;
++    std::string name = std::get<2>(device->second);
+ 
+ #ifdef USING_ENTITY_MANAGER_DECORATORS
+ 
+@@ -733,7 +861,20 @@ ipmi_ret_t getFruSdrs(ipmi::Context::ptr ctx, size_t index,
+ 
+     if (name.empty())
+     {
+-        name = "UNKNOWN";
++        auto findProductName = fruData->find("BOARD_PRODUCT_NAME");
++        auto findBoardName = fruData->find("PRODUCT_PRODUCT_NAME");
++        if (findProductName != fruData->end())
++        {
++            name = std::get<std::string>(findProductName->second);
++        }
++        else if (findBoardName != fruData->end())
++        {
++            name = std::get<std::string>(findBoardName->second);
++        }
++        else
++        {
++            name = "UNKNOWN";
++        }
+     }
+     if (name.size() > maxFruSdrNameSize)
+     {
+diff --git a/include/dbus-sdr/storagecommands.hpp b/include/dbus-sdr/storagecommands.hpp
+index 03a6a58..12541e7 100755
+--- a/include/dbus-sdr/storagecommands.hpp
++++ b/include/dbus-sdr/storagecommands.hpp
+@@ -37,6 +37,13 @@ static constexpr size_t oemEventSize = 13;
+ static constexpr uint8_t eventMsgRev = 0x04;
+ } // namespace dynamic_sensors::ipmi::sel
+ 
++struct deviceInfo
++{
++    uint8_t bus;
++    uint8_t address;
++    bool readOnly;
++};
++
+ enum class SdrRepositoryInfoOps : uint8_t
+ {
+     allocCommandSupported = 0x1,
+-- 
+2.7.4
+

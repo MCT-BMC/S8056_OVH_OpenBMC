@@ -1,0 +1,85 @@
+From 3c91b01303b7c23b5a8e93deb7cbb69f094f3027 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Tue, 27 Apr 2021 15:44:54 +0800
+Subject: [PATCH] Fix ipmitool sol coredump issue
+
+---
+ sol/sol_context.cpp | 26 +++++++++++++++++---------
+ sol/sol_context.hpp |  3 +--
+ 2 files changed, 18 insertions(+), 11 deletions(-)
+
+diff --git a/sol/sol_context.cpp b/sol/sol_context.cpp
+index 3b2b892..4aafa4b 100644
+--- a/sol/sol_context.cpp
++++ b/sol/sol_context.cpp
+@@ -65,13 +65,15 @@ void Context::enableRetryTimer(bool enable)
+             std::get<sol::Manager&>(singletonPool).retryInterval;
+         retryTimer.expires_after(interval);
+         std::weak_ptr<Context> weakRef = weak_from_this();
+-        retryTimer.async_wait([weakRef](const boost::system::error_code& ec) {
+-            std::shared_ptr<Context> self = weakRef.lock();
+-            if (!ec && self)
+-            {
+-                self->retryTimerHandler();
+-            }
+-        });
++        uint8_t outSeqNum = seqNums.get(false);
++        retryTimer.async_wait(
++            [weakRef, outSeqNum](const boost::system::error_code& ec) {
++                std::shared_ptr<Context> self = weakRef.lock();
++                if (!ec && self && (outSeqNum == self->seqNums.get(false)))
++                {
++                    self->retryTimerHandler();
++                }
++            });
+     }
+     else
+     {
+@@ -132,6 +134,12 @@ void Context::processInboundPayload(uint8_t seqNum, uint8_t ackSeqNum,
+      */
+     else if ((count == expectedCharCount) && ackSeqNum)
+     {
++        /** Increase outbound sequence number after receiving ack sequence
++         *  number to prevent from sending empty payload to ipmitool and this
++         *  wiil cause ipmitool coredump.
++         */
++        seqNums.incOutboundSeqNum();
++
+         // Clear the Host Console Buffer
+         std::get<sol::Manager&>(singletonPool).dataBuffer.erase(count);
+ 
+@@ -205,7 +213,7 @@ void Context::prepareResponse(uint8_t ackSeqNum, uint8_t count, bool ack)
+     response->packetAckSeqNum = ackSeqNum;
+     response->acceptedCharCount = count;
+     response->outOperation.ack = ack;
+-    response->packetSeqNum = seqNums.incOutboundSeqNum();
++    response->packetSeqNum = seqNums.get(false);
+ 
+     auto handle = std::get<sol::Manager&>(singletonPool).dataBuffer.read();
+     std::copy_n(handle, readSize, payloadCache.data() + sizeof(Payload));
+@@ -233,7 +241,7 @@ int Context::sendOutboundPayload()
+     response->packetAckSeqNum = 0;
+     response->acceptedCharCount = 0;
+     response->outOperation.ack = false;
+-    response->packetSeqNum = seqNums.incOutboundSeqNum();
++    response->packetSeqNum = seqNums.get(false);
+ 
+     auto handle = std::get<sol::Manager&>(singletonPool).dataBuffer.read();
+     std::copy_n(handle, readSize, payloadCache.data() + sizeof(Payload));
+diff --git a/sol/sol_context.hpp b/sol/sol_context.hpp
+index a071892..7de8ec1 100644
+--- a/sol/sol_context.hpp
++++ b/sol/sol_context.hpp
+@@ -137,8 +137,7 @@ struct SequenceNumbers
+ 
+   private:
+     uint8_t in = 1;  //!< Inbound sequence number.
+-    uint8_t out = 0; //!< Outbound sequence number, since the first
+-                     //!< operation is increment, it is initialised to 0
++    uint8_t out = 1; //!< Outbound sequence number.
+ };
+ 
+ } // namespace internal
+-- 
+2.32.0
+

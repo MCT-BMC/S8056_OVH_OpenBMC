@@ -1,0 +1,11 @@
+[Unit]
+Description= Setting default dual BIOS timer
+
+[Service]
+RemainAfterExit=no
+Type=oneshot
+ExecStart=/usr/bin/env setting-dual-bios.sh enableBiosStartTimer
+SyslogIdentifier=setting-dual-bios
+
+[Install]
+WantedBy=obmc-host-poweron.target

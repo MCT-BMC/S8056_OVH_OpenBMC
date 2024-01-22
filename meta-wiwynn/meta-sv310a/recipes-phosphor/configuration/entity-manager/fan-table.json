@@ -1,0 +1,1186 @@
+{
+    "sensors": [
+        {
+            "name": "SYS_FAN_R0",
+            "type": "fan",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/SYS_FAN_R0",
+            "writePath": "/sys/bus/i2c/devices/14-0020/hwmon/**/pwm1",
+            "pwmNumber": 0,
+            "min": 0,
+            "max": 255,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "SYS_FAN_F0",
+            "type": "fan",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/SYS_FAN_F0",
+            "pwmNumber": 0,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "SYS_FAN_R1",
+            "type": "fan",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/SYS_FAN_R1",
+            "writePath": "/sys/bus/i2c/devices/14-0020/hwmon/**/pwm2",
+            "pwmNumber": 1,
+            "min": 0,
+            "max": 255,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "SYS_FAN_F1",
+            "type": "fan",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/SYS_FAN_F1",
+            "pwmNumber": 1,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "SYS_FAN_R2",
+            "type": "fan",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/SYS_FAN_R2",
+            "writePath": "/sys/bus/i2c/devices/14-0020/hwmon/**/pwm3",
+            "pwmNumber": 2,
+            "min": 0,
+            "max": 255,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "SYS_FAN_F2",
+            "type": "fan",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/SYS_FAN_F2",
+            "pwmNumber": 2,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "SYS_FAN_R3",
+            "type": "fan",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/SYS_FAN_R3",
+            "writePath": "/sys/bus/i2c/devices/14-0023/hwmon/**/pwm1",
+            "pwmNumber": 3,
+            "min": 0,
+            "max": 255,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "SYS_FAN_F3",
+            "type": "fan",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/SYS_FAN_F3",
+            "pwmNumber": 3,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "SYS_FAN_R4",
+            "type": "fan",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/SYS_FAN_R4",
+            "writePath": "/sys/bus/i2c/devices/14-0023/hwmon/**/pwm2",
+            "pwmNumber": 4,
+            "min": 0,
+            "max": 255,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "SYS_FAN_F4",
+            "type": "fan",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/SYS_FAN_F4",
+            "pwmNumber": 4,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "SYS_FAN_R5",
+            "type": "fan",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/SYS_FAN_R5",
+            "writePath": "/sys/bus/i2c/devices/14-0023/hwmon/**/pwm3",
+            "pwmNumber": 5,
+            "min": 0,
+            "max": 255,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "SYS_FAN_F5",
+            "type": "fan",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/SYS_FAN_F5",
+            "pwmNumber": 5,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "SYS_Inlet_Temp",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/SYS_Inlet_Temp",
+            "timeout": 0,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "CPU_Temp",
+            "type": "temp",
+            "tjMaxAdjust": true,
+            "readPath": "/xyz/openbmc_project/sensors/temperature/CPU_Temp",
+            "timeout": 0,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "NIC_Temp",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/NIC_Temp",
+            "timeout": 0,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "SSD0_Temp",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/SSD0_Temp",
+            "timeout": 0,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "SSD1_Temp",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/SSD1_Temp",
+            "timeout": 0,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "DIMM_A0_Temp",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/DIMM_A0_Temp",
+            "timeout": 0,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "DIMM_B0_Temp",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/DIMM_B0_Temp",
+            "timeout": 0,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "DIMM_C0_Temp",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/DIMM_C0_Temp",
+            "timeout": 0,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "DIMM_D0_Temp",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/DIMM_D0_Temp",
+            "timeout": 0,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "DIMM_E0_Temp",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/DIMM_E0_Temp",
+            "timeout": 0,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "DIMM_F0_Temp",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/DIMM_F0_Temp",
+            "timeout": 0,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "DIMM_G0_Temp",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/DIMM_G0_Temp",
+            "timeout": 0,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "DIMM_H0_Temp",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/DIMM_H0_Temp",
+            "timeout": 0,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "M2_Temp",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/M2_Temp",
+            "timeout": 0,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "PDB_REAR_Temp",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/PDB_REAR_Temp",
+            "timeout": 0,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "PDB_48V_HSC_Temp",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/PDB_48V_HSC_Temp",
+            "timeout": 0,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "PDB_12V_INT_Temp",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/PDB_12V_INT_Temp",
+            "timeout": 0,
+            "ignoreDbusMinMax": true
+        }
+    ],
+    "zones" : [
+        {
+            "id": 1,
+            "sensorFailsafeProfiles": [
+                {
+                    "sensorNames": [
+                        "CPU_Temp",
+                        "NIC_Temp",
+                        "SYS_Inlet_Temp"
+                    ],
+                    "outputType": "value",
+                    "failsafePercent": 100.0
+                }
+            ],
+            "minThermalOutput": 0.0,
+            "cycleTimeBase": 1000,
+            "checkFanFailuresTime": 30000,
+            "updateThermalsTime": 1000,
+            "keepManualAfterReset": false,
+            "pids": [
+                {
+                    "name": "Rear Fan",
+                    "type": "fan",
+                    "inputs": [
+                        "SYS_FAN_R0",
+                        "SYS_FAN_R1",
+                        "SYS_FAN_R2"
+                    ],
+                    "failureSelSensor": "Low R Fan Speed",
+                    "setpoint": 0.0,
+                    "pid": {
+                        "samplePeriod": 1,
+                        "proportionalCoeff": 0.0,
+                        "integralCoeff": 0.0,
+                        "derivativeCoeff": 0.0,
+                        "feedFwdOffsetCoeff": 0.0,
+                        "feedFwdGainCoeff": 1.0,
+                        "integralLimit_min": 0.0,
+                        "integralLimit_max": 0.0,
+                        "outLim_min": 0.0,
+                        "outLim_max": 100.0,
+                        "slewNeg": 0.0,
+                        "slewPos": 0.0,
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 0
+                    }
+                },
+                {
+                    "name": "Front Fan",
+                    "type": "fan",
+                    "inputs": [
+                        "SYS_FAN_F0",
+                        "SYS_FAN_F1",
+                        "SYS_FAN_F2"
+                    ],
+                    "failureSelSensor": "Low F Fan Speed",
+                    "setpoint": 0.0,
+                    "pid": {
+                        "samplePeriod": 1,
+                        "proportionalCoeff": 0.0,
+                        "integralCoeff": 0.0,
+                        "derivativeCoeff": 0.0,
+                        "feedFwdOffsetCoeff": 0.0,
+                        "feedFwdGainCoeff": 1.0,
+                        "integralLimit_min": 0.0,
+                        "integralLimit_max": 0.0,
+                        "outLim_min": 0.0,
+                        "outLim_max": 100.0,
+                        "slewNeg": 0.0,
+                        "slewPos": 0.0,
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 0
+                    }
+                },
+                {
+                    "name": "Linear_SYS_Inlet_Temp",
+                    "type": "linear",
+                    "inputs": ["SYS_Inlet_Temp"],
+                    "setpoint": 0.0,
+                    "pid": {
+                        "samplePeriod": 1,
+                        "isCeiling": false,
+                        "reading": {
+                            "0": 1.0,
+                            "1": 20.0,
+                            "2": 22.0,
+                            "3": 24.0,
+                            "4": 26.0,
+                            "5": 28.0,
+                            "6": 30.0,
+                            "7": 32.0,
+                            "8": 34.0,
+                            "9": 36.0,
+                            "10": 38.0,
+                            "11": 40.0
+                        },
+                        "output": {
+                            "0": 20.0,
+                            "1": 20.0,
+                            "2": 21.0,
+                            "3": 21.0,
+                            "4": 22.0,
+                            "5": 22.0,
+                            "6": 23.0,
+                            "7": 23.0,
+                            "8": 24.0,
+                            "9": 24.0,
+                            "10": 25.0,
+                            "11": 25.0
+                        },
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 1
+                    }
+                },
+                {
+                    "name": "Linear_CPU_Temp",
+                    "type": "linear",
+                    "inputs": ["CPU_Temp"],
+                    "setpoint": 0.0,
+                    "pid": {
+                        "samplePeriod": 1,
+                        "isCeiling": false,
+                        "reading": {
+                            "0": -99.0,
+                            "1": -28.0,
+                            "2": -26.0,
+                            "3": -24.0,
+                            "4": -3.0,
+                            "5": -2.0
+                        },
+                        "output": {
+                            "0": 20.0,
+                            "1": 20.0,
+                            "2": 22.0,
+                            "3": 24.0,
+                            "4": 24.0,
+                            "5": 100.0
+                        },
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 2
+                    }
+                },
+                {
+                    "name": "PID_CPU_Temp",
+                    "type": "temp",
+                    "inputs": ["CPU_Temp"],
+                    "setpoint": -20.0,
+                    "pid": {
+                        "samplePeriod": 1,
+                        "proportionalCoeff": 8.0,
+                        "integralCoeff": 0.03,
+                        "derivativeCoeff": 0.0,
+                        "feedFwdOffsetCoeff": 0.0,
+                        "feedFwdGainCoeff": 0.0,
+                        "integralLimit_min": 0.0,
+                        "integralLimit_max": 100.0,
+                        "outLim_min": 0.0,
+                        "outLim_max": 100.0,
+                        "slewNeg": 0.0,
+                        "slewPos": 0.0,
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 3
+                    }
+                },
+                {
+                    "name": "Linear_NIC_Temp",
+                    "type": "linear",
+                    "inputs": [
+                        "NIC_Temp"
+                    ],
+                    "setpoint": 0.0,
+                    "pid": {
+                        "samplePeriod": 1,
+                        "isCeiling": false,
+                        "reading": {
+                            "0": 1.0,
+                            "1": 84.0,
+                            "2": 87.0,
+                            "3": 90.0,
+                            "4": 102.0,
+                            "5": 103.0
+
+                        },
+                        "output": {
+                            "0": 20.0,
+                            "1": 20.0,
+                            "2": 22.0,
+                            "3": 24.0,
+                            "4": 24.0,
+                            "5": 100.0
+                        },
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 2
+                    }
+                },
+                {
+                    "name": "PID_NIC_Temp",
+                    "type": "temp",
+                    "inputs": [
+                        "NIC_Temp"
+                    ],
+                    "setpoint": 93.0,
+                    "pid": {
+                        "samplePeriod": 1,
+                        "proportionalCoeff": 8.0,
+                        "integralCoeff": 0.03,
+                        "derivativeCoeff": 0.0,
+                        "feedFwdOffsetCoeff": 0.0,
+                        "feedFwdGainCoeff": 0.0,
+                        "integralLimit_min": 0.0,
+                        "integralLimit_max": 100.0,
+                        "outLim_min": 0.0,
+                        "outLim_max": 100.0,
+                        "slewNeg": 0.0,
+                        "slewPos": 0.0,
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 2
+                    }
+                },
+                {
+                    "name": "Linear_SSD_Temp",
+                    "type": "linear",
+                    "inputs": [
+                        "SSD0_Temp",
+                        "SSD1_Temp"
+                    ],
+                    "setpoint": 0.0,
+                    "pid": {
+                        "samplePeriod": 1,
+                        "isCeiling": false,
+                        "reading": {
+                            "0": 1.0,
+                            "1": 59.0,
+                            "2": 61.0,
+                            "3": 63.0,
+                            "4": 68.0,
+                            "5": 69.0
+                        },
+                        "output": {
+                            "0": 20.0,
+                            "1": 20.0,
+                            "2": 22.0,
+                            "3": 24.0,
+                            "4": 24.0,
+                            "5": 100.0
+                        },
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 2
+                    }
+                },
+                {
+                    "name": "PID_SSD_Temp",
+                    "type": "temp",
+                    "inputs": [
+                        "SSD0_Temp",
+                        "SSD1_Temp"
+                    ],
+                    "setpoint": 65.0,
+                    "pid": {
+                        "samplePeriod": 1,
+                        "proportionalCoeff": 8.0,
+                        "integralCoeff": 0.03,
+                        "derivativeCoeff": 0.0,
+                        "feedFwdOffsetCoeff": 0.0,
+                        "feedFwdGainCoeff": 0.0,
+                        "integralLimit_min": 0.0,
+                        "integralLimit_max": 100.0,
+                        "outLim_min": 0.0,
+                        "outLim_max": 100.0,
+                        "slewNeg": 0.0,
+                        "slewPos": 0.0,
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 2
+                    }
+                },
+                {
+                    "name": "Linear_DIMM_Temp",
+                    "type": "linear",
+                    "inputs": [
+                        "DIMM_A0_Temp",
+                        "DIMM_B0_Temp",
+                        "DIMM_C0_Temp",
+                        "DIMM_D0_Temp",
+                        "DIMM_E0_Temp",
+                        "DIMM_F0_Temp",
+                        "DIMM_G0_Temp",
+                        "DIMM_H0_Temp"
+                    ],
+                    "setpoint": 0.0,
+                    "pid": {
+                        "samplePeriod": 1,
+                        "isCeiling": false,
+                        "reading": {
+                            "0": 1.0,
+                            "1": 62.0,
+                            "2": 65.0,
+                            "3": 68.0,
+                            "4": 77.0,
+                            "5": 78.0
+                        },
+                        "output": {
+                            "0": 20.0,
+                            "1": 20.0,
+                            "2": 22.0,
+                            "3": 24.0,
+                            "4": 24.0,
+                            "5": 100.0
+                        },
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 2
+                    }
+                },
+                {
+                    "name": "PID_DIMM_Temp",
+                    "type": "temp",
+                    "inputs": [
+                        "DIMM_A0_Temp",
+                        "DIMM_B0_Temp",
+                        "DIMM_C0_Temp",
+                        "DIMM_D0_Temp",
+                        "DIMM_E0_Temp",
+                        "DIMM_F0_Temp",
+                        "DIMM_G0_Temp",
+                        "DIMM_H0_Temp"
+                    ],
+                    "setpoint": 70.0,
+                    "pid": {
+                        "samplePeriod": 1,
+                        "proportionalCoeff": 8.0,
+                        "integralCoeff": 0.03,
+                        "derivativeCoeff": 0.0,
+                        "feedFwdOffsetCoeff": 0.0,
+                        "feedFwdGainCoeff": 0.0,
+                        "integralLimit_min": 0.0,
+                        "integralLimit_max": 100.0,
+                        "outLim_min": 0.0,
+                        "outLim_max": 100.0,
+                        "slewNeg": 0.0,
+                        "slewPos": 0.0,
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 2
+                    }
+                },
+                {
+                    "name": "Linear_M2_Temp",
+                    "type": "linear",
+                    "inputs": [
+                        "M2_Temp"
+                    ],
+                    "setpoint": 0.0,
+                    "pid": {
+                        "samplePeriod": 1,
+                        "isCeiling": false,
+                        "reading": {
+                            "0": 1.0,
+                            "1": 64.0,
+                            "2": 67.0,
+                            "3": 70.0,
+                            "4": 75.0,
+                            "5": 76.0
+                        },
+                        "output": {
+                            "0": 20.0,
+                            "1": 20.0,
+                            "2": 22.0,
+                            "3": 24.0,
+                            "4": 24.0,
+                            "5": 100.0
+                        },
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 2
+                    }
+                },
+                {
+                    "name": "PID_M2_Temp",
+                    "type": "temp",
+                    "inputs": [
+                        "M2_Temp"
+                    ],
+                    "setpoint": 72.0,
+                    "pid": {
+                        "samplePeriod": 1,
+                        "proportionalCoeff": 8.0,
+                        "integralCoeff": 0.03,
+                        "derivativeCoeff": 0.0,
+                        "feedFwdOffsetCoeff": 0.0,
+                        "feedFwdGainCoeff": 0.0,
+                        "integralLimit_min": 0.0,
+                        "integralLimit_max": 100.0,
+                        "outLim_min": 0.0,
+                        "outLim_max": 100.0,
+                        "slewNeg": 0.0,
+                        "slewPos": 0.0,
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 2
+                    }
+                }
+            ]
+        },
+        {
+            "id": 2,
+            "sensorFailsafeProfiles": [
+                {
+                    "sensorNames": [
+                        "CPU_Temp",
+                        "NIC_Temp",
+                        "SYS_Inlet_Temp"
+                    ],
+                    "outputType": "value",
+                    "failsafePercent": 100.0
+                }
+            ],
+            "minThermalOutput": 0.0,
+            "cycleTimeBase": 1000,
+            "checkFanFailuresTime": 30000,
+            "updateThermalsTime": 1000,
+            "keepManualAfterReset": false,
+            "pids": [
+                {
+                    "name": "Rear Fan",
+                    "type": "fan",
+                    "inputs": [
+                        "SYS_FAN_R3",
+                        "SYS_FAN_R4",
+                        "SYS_FAN_R5"
+                    ],
+                    "failureSelSensor": "Low R Fan Speed",
+                    "setpoint": 0.0,
+                    "pid": {
+                        "samplePeriod": 1,
+                        "proportionalCoeff": 0.0,
+                        "integralCoeff": 0.0,
+                        "derivativeCoeff": 0.0,
+                        "feedFwdOffsetCoeff": 0.0,
+                        "feedFwdGainCoeff": 1.0,
+                        "integralLimit_min": 0.0,
+                        "integralLimit_max": 0.0,
+                        "outLim_min": 0.0,
+                        "outLim_max": 100.0,
+                        "slewNeg": 0.0,
+                        "slewPos": 0.0,
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 0
+                    }
+                },
+                {
+                    "name": "Front Fan",
+                    "type": "fan",
+                    "inputs": [
+                        "SYS_FAN_F3",
+                        "SYS_FAN_F4",
+                        "SYS_FAN_F5"
+                    ],
+                    "setpoint": 0.0,
+                    "failureSelSensor": "Low F Fan Speed",
+                    "pid": {
+                        "samplePeriod": 1,
+                        "proportionalCoeff": 0.0,
+                        "integralCoeff": 0.0,
+                        "derivativeCoeff": 0.0,
+                        "feedFwdOffsetCoeff": 0.0,
+                        "feedFwdGainCoeff": 1.0,
+                        "integralLimit_min": 0.0,
+                        "integralLimit_max": 0.0,
+                        "outLim_min": 0.0,
+                        "outLim_max": 100.0,
+                        "slewNeg": 0.0,
+                        "slewPos": 0.0,
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 0
+                    }
+                },
+                {
+                    "name": "Linear_SYS_Inlet_Temp",
+                    "type": "linear",
+                    "inputs": ["SYS_Inlet_Temp"],
+                    "setpoint": 0.0,
+                    "pid": {
+                        "samplePeriod": 1,
+                        "isCeiling": false,
+                        "reading": {
+                            "0": 1.0,
+                            "1": 20.0,
+                            "2": 22.0,
+                            "3": 24.0,
+                            "4": 26.0,
+                            "5": 28.0,
+                            "6": 30.0,
+                            "7": 32.0,
+                            "8": 34.0,
+                            "9": 36.0,
+                            "10": 38.0,
+                            "11": 40.0
+                        },
+                        "output": {
+                            "0": 20.0,
+                            "1": 20.0,
+                            "2": 21.0,
+                            "3": 21.0,
+                            "4": 22.0,
+                            "5": 22.0,
+                            "6": 23.0,
+                            "7": 23.0,
+                            "8": 24.0,
+                            "9": 24.0,
+                            "10": 25.0,
+                            "11": 25.0
+                        },
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 1
+                    }
+                },
+                {
+                    "name": "Linear_CPU_Temp",
+                    "type": "linear",
+                    "inputs": ["CPU_Temp"],
+                    "setpoint": 0.0,
+                    "pid": {
+                        "samplePeriod": 1,
+                        "isCeiling": false,
+                        "reading": {
+                            "0": -99.0,
+                            "1": -28.0,
+                            "2": -26.0,
+                            "3": -24.0,
+                            "4": -3.0,
+                            "5": -2.0
+                        },
+                        "output": {
+                            "0": 20.0,
+                            "1": 20.0,
+                            "2": 22.0,
+                            "3": 24.0,
+                            "4": 24.0,
+                            "5": 100.0
+                        },
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 2
+                    }
+                },
+                {
+                    "name": "PID_CPU_Temp",
+                    "type": "temp",
+                    "inputs": ["CPU_Temp"],
+                    "setpoint": -20.0,
+                    "pid": {
+                        "samplePeriod": 1,
+                        "proportionalCoeff": 8.0,
+                        "integralCoeff": 0.03,
+                        "derivativeCoeff": 0.0,
+                        "feedFwdOffsetCoeff": 0.0,
+                        "feedFwdGainCoeff": 0.0,
+                        "integralLimit_min": 0.0,
+                        "integralLimit_max": 100.0,
+                        "outLim_min": 0.0,
+                        "outLim_max": 100.0,
+                        "slewNeg": 0.0,
+                        "slewPos": 0.0,
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 3
+                    }
+                },
+                {
+                    "name": "Linear_NIC_Temp",
+                    "type": "linear",
+                    "inputs": [
+                        "NIC_Temp"
+                    ],
+                    "setpoint": 0.0,
+                    "pid": {
+                        "samplePeriod": 1,
+                        "isCeiling": false,
+                        "reading": {
+                            "0": 1.0,
+                            "1": 84.0,
+                            "2": 87.0,
+                            "3": 90.0,
+                            "4": 102.0,
+                            "5": 103.0
+
+                        },
+                        "output": {
+                            "0": 20.0,
+                            "1": 20.0,
+                            "2": 22.0,
+                            "3": 24.0,
+                            "4": 24.0,
+                            "5": 100.0
+                        },
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 2
+                    }
+                },
+                {
+                    "name": "PID_NIC_Temp",
+                    "type": "temp",
+                    "inputs": [
+                        "NIC_Temp"
+                    ],
+                    "setpoint": 93.0,
+                    "pid": {
+                        "samplePeriod": 1,
+                        "proportionalCoeff": 8.0,
+                        "integralCoeff": 0.03,
+                        "derivativeCoeff": 0.0,
+                        "feedFwdOffsetCoeff": 0.0,
+                        "feedFwdGainCoeff": 0.0,
+                        "integralLimit_min": 0.0,
+                        "integralLimit_max": 100.0,
+                        "outLim_min": 0.0,
+                        "outLim_max": 100.0,
+                        "slewNeg": 0.0,
+                        "slewPos": 0.0,
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 2
+                    }
+                },
+                {
+                    "name": "Linear_SSD_Temp",
+                    "type": "linear",
+                    "inputs": [
+                        "SSD0_Temp",
+                        "SSD1_Temp"
+                    ],
+                    "setpoint": 0.0,
+                    "pid": {
+                        "samplePeriod": 1,
+                        "isCeiling": false,
+                        "reading": {
+                            "0": 1.0,
+                            "1": 59.0,
+                            "2": 61.0,
+                            "3": 63.0,
+                            "4": 68.0,
+                            "5": 69.0
+                        },
+                        "output": {
+                            "0": 20.0,
+                            "1": 20.0,
+                            "2": 22.0,
+                            "3": 24.0,
+                            "4": 24.0,
+                            "5": 100.0
+                        },
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 2
+                    }
+                },
+                {
+                    "name": "PID_SSD_Temp",
+                    "type": "temp",
+                    "inputs": [
+                        "SSD0_Temp",
+                        "SSD1_Temp"
+                    ],
+                    "setpoint": 65.0,
+                    "pid": {
+                        "samplePeriod": 1,
+                        "proportionalCoeff": 8.0,
+                        "integralCoeff": 0.03,
+                        "derivativeCoeff": 0.0,
+                        "feedFwdOffsetCoeff": 0.0,
+                        "feedFwdGainCoeff": 0.0,
+                        "integralLimit_min": 0.0,
+                        "integralLimit_max": 100.0,
+                        "outLim_min": 0.0,
+                        "outLim_max": 100.0,
+                        "slewNeg": 0.0,
+                        "slewPos": 0.0,
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 2
+                    }
+                },
+                {
+                    "name": "Linear_DIMM_Temp",
+                    "type": "linear",
+                    "inputs": [
+                        "DIMM_A0_Temp",
+                        "DIMM_B0_Temp",
+                        "DIMM_C0_Temp",
+                        "DIMM_D0_Temp",
+                        "DIMM_E0_Temp",
+                        "DIMM_F0_Temp",
+                        "DIMM_G0_Temp",
+                        "DIMM_H0_Temp"
+                    ],
+                    "setpoint": 0.0,
+                    "pid": {
+                        "samplePeriod": 1,
+                        "isCeiling": false,
+                        "reading": {
+                            "0": 1.0,
+                            "1": 62.0,
+                            "2": 65.0,
+                            "3": 68.0,
+                            "4": 77.0,
+                            "5": 78.0
+                        },
+                        "output": {
+                            "0": 20.0,
+                            "1": 20.0,
+                            "2": 22.0,
+                            "3": 24.0,
+                            "4": 24.0,
+                            "5": 100.0
+                        },
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 2
+                    }
+                },
+                {
+                    "name": "PID_DIMM_Temp",
+                    "type": "temp",
+                    "inputs": [
+                        "DIMM_A0_Temp",
+                        "DIMM_B0_Temp",
+                        "DIMM_C0_Temp",
+                        "DIMM_D0_Temp",
+                        "DIMM_E0_Temp",
+                        "DIMM_F0_Temp",
+                        "DIMM_G0_Temp",
+                        "DIMM_H0_Temp"
+                    ],
+                    "setpoint": 70.0,
+                    "pid": {
+                        "samplePeriod": 1,
+                        "proportionalCoeff": 8.0,
+                        "integralCoeff": 0.03,
+                        "derivativeCoeff": 0.0,
+                        "feedFwdOffsetCoeff": 0.0,
+                        "feedFwdGainCoeff": 0.0,
+                        "integralLimit_min": 0.0,
+                        "integralLimit_max": 100.0,
+                        "outLim_min": 0.0,
+                        "outLim_max": 100.0,
+                        "slewNeg": 0.0,
+                        "slewPos": 0.0,
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 2
+                    }
+                },
+                {
+                    "name": "Linear_M2_Temp",
+                    "type": "linear",
+                    "inputs": [
+                        "M2_Temp"
+                    ],
+                    "setpoint": 0.0,
+                    "pid": {
+                        "samplePeriod": 1,
+                        "isCeiling": false,
+                        "reading": {
+                            "0": 1.0,
+                            "1": 64.0,
+                            "2": 67.0,
+                            "3": 70.0,
+                            "4": 75.0,
+                            "5": 76.0
+                        },
+                        "output": {
+                            "0": 20.0,
+                            "1": 20.0,
+                            "2": 22.0,
+                            "3": 24.0,
+                            "4": 24.0,
+                            "5": 100.0
+                        },
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 2
+                    }
+                },
+                {
+                    "name": "PID_M2_Temp",
+                    "type": "temp",
+                    "inputs": [
+                        "M2_Temp"
+                    ],
+                    "setpoint": 72.0,
+                    "pid": {
+                        "samplePeriod": 1,
+                        "proportionalCoeff": 8.0,
+                        "integralCoeff": 0.03,
+                        "derivativeCoeff": 0.0,
+                        "feedFwdOffsetCoeff": 0.0,
+                        "feedFwdGainCoeff": 0.0,
+                        "integralLimit_min": 0.0,
+                        "integralLimit_max": 100.0,
+                        "outLim_min": 0.0,
+                        "outLim_max": 100.0,
+                        "slewNeg": 0.0,
+                        "slewPos": 0.0,
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 2
+                    }
+                },
+                {
+                    "name": "Linear_PDB_REAR_Temp",
+                    "type": "linear",
+                    "inputs": [
+                        "PDB_REAR_Temp"
+                    ],
+                    "setpoint": 0.0,
+                    "pid": {
+                        "samplePeriod": 1,
+                        "isCeiling": false,
+                        "reading": {
+                            "0": 1.0,
+                            "1": 78.0,
+                            "2": 82.0,
+                            "3": 87.0,
+                            "4": 102.0,
+                            "5": 103.0
+                        },
+                        "output": {
+                            "0": 20.0,
+                            "1": 20.0,
+                            "2": 22.0,
+                            "3": 24.0,
+                            "4": 24.0,
+                            "5": 100.0
+                        },
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 2
+                    }
+                },
+                {
+                    "name": "PID_PDB_REAR_Temp",
+                    "type": "temp",
+                    "inputs": [
+                        "PDB_REAR_Temp"
+                    ],
+                    "setpoint": 90.0,
+                    "pid": {
+                        "samplePeriod": 1,
+                        "proportionalCoeff": 8.0,
+                        "integralCoeff": 0.03,
+                        "derivativeCoeff": 0.0,
+                        "feedFwdOffsetCoeff": 0.0,
+                        "feedFwdGainCoeff": 0.0,
+                        "integralLimit_min": 0.0,
+                        "integralLimit_max": 100.0,
+                        "outLim_min": 0.0,
+                        "outLim_max": 100.0,
+                        "slewNeg": 0.0,
+                        "slewPos": 0.0,
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 2
+                    }
+                },
+                {
+                    "name": "Linear_PDB_48V_HSC_Temp",
+                    "type": "linear",
+                    "inputs": [
+                        "PDB_48V_HSC_Temp"
+                    ],
+                    "setpoint": 0.0,
+                    "pid": {
+                        "samplePeriod": 1,
+                        "isCeiling": false,
+                        "reading": {
+                            "0": 1.0,
+                            "1": 78.0,
+                            "2": 82.0,
+                            "3": 87.0,
+                            "4": 107.0,
+                            "5": 108.0
+                        },
+                        "output": {
+                            "0": 20.0,
+                            "1": 20.0,
+                            "2": 22.0,
+                            "3": 24.0,
+                            "4": 24.0,
+                            "5": 100.0
+                        },
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 2
+                    }
+                },
+                {
+                    "name": "PID_PDB_48V_HSC_Temp",
+                    "type": "temp",
+                    "inputs": [
+                        "PDB_48V_HSC_Temp"
+                    ],
+                    "setpoint": 90.0,
+                    "pid": {
+                        "samplePeriod": 1,
+                        "proportionalCoeff": 8.0,
+                        "integralCoeff": 0.03,
+                        "derivativeCoeff": 0.0,
+                        "feedFwdOffsetCoeff": 0.0,
+                        "feedFwdGainCoeff": 0.0,
+                        "integralLimit_min": 0.0,
+                        "integralLimit_max": 100.0,
+                        "outLim_min": 0.0,
+                        "outLim_max": 100.0,
+                        "slewNeg": 0.0,
+                        "slewPos": 0.0,
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 2
+                    }
+                },
+                {
+                    "name": "Linear_PDB_12V_INT_Temp",
+                    "type": "linear",
+                    "inputs": [
+                        "PDB_12V_INT_Temp"
+                    ],
+                    "setpoint": 0.0,
+                    "pid": {
+                        "samplePeriod": 1,
+                        "isCeiling": false,
+                        "reading": {
+                            "0": 1.0,
+                            "1": 78.0,
+                            "2": 82.0,
+                            "3": 87.0,
+                            "4": 107.0,
+                            "5": 108.0
+                        },
+                        "output": {
+                            "0": 20.0,
+                            "1": 20.0,
+                            "2": 22.0,
+                            "3": 24.0,
+                            "4": 24.0,
+                            "5": 100.0
+                        },
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 2
+                    }
+                },
+                {
+                    "name": "PID_PDB_12V_INT_Temp",
+                    "type": "temp",
+                    "inputs": [
+                        "PDB_12V_INT_Temp"
+                    ],
+                    "setpoint": 90.0,
+                    "pid": {
+                        "samplePeriod": 1,
+                        "proportionalCoeff": 8.0,
+                        "integralCoeff": 0.03,
+                        "derivativeCoeff": 0.0,
+                        "feedFwdOffsetCoeff": 0.0,
+                        "feedFwdGainCoeff": 0.0,
+                        "integralLimit_min": 0.0,
+                        "integralLimit_max": 100.0,
+                        "outLim_min": 0.0,
+                        "outLim_max": 100.0,
+                        "slewNeg": 0.0,
+                        "slewPos": 0.0,
+                        "positiveHysteresis": 0,
+                        "negativeHysteresis": 2
+                    }
+                }
+            ]
+        }
+    ]
+}

@@ -1,0 +1,28 @@
+From f3f5db0df8e89552c374b884487e65e0327d9180 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Wed, 16 Mar 2022 16:44:28 +0800
+Subject: [PATCH 08/24] Change ipmi_sel location to persistent folder
+
+---
+ dbus-sdr/storagecommands.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+ mode change 100644 => 100755 dbus-sdr/storagecommands.cpp
+
+diff --git a/dbus-sdr/storagecommands.cpp b/dbus-sdr/storagecommands.cpp
+old mode 100644
+new mode 100755
+index 09d71d0..5de08af
+--- a/dbus-sdr/storagecommands.cpp
++++ b/dbus-sdr/storagecommands.cpp
+@@ -38,7 +38,7 @@ static constexpr bool DEBUG = false;
+ 
+ namespace dynamic_sensors::ipmi::sel
+ {
+-static const std::filesystem::path selLogDir = "/var/log";
++static const std::filesystem::path selLogDir = "/var/lib/ipmi";
+ static const std::string selLogFilename = "ipmi_sel";
+ 
+ static int getFileTimestamp(const std::filesystem::path& file)
+-- 
+2.7.4
+

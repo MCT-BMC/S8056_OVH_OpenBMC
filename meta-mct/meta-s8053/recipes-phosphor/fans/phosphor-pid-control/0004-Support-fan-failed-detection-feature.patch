@@ -1,0 +1,566 @@
+From a47f7b2f7f767a2c4a5d96bcb4c4857d75cc329e Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Mon, 9 Jan 2023 16:35:40 +0800
+Subject: [PATCH] Support fan failed detection feature
+
+example json format:
+"fanFailsafeProfiles": [
+    {
+        "fanFailCount": 10,
+        "fanFailPerformanceCount": 1,
+        "fanFailDamageCount": 1,
+        "fanFailPerformance": 0.70,
+        "fanFailRpm": 100,
+        "outputType": "value",
+        "failsafePercent": 70
+    }
+],
+
+Disable fan damage detection feature with setting fanFailRpm 0.
+Disable fan performance detection feature with setting fanFailPerformance 0.
+
+%% original patch: 0004-Support-fan-failed-detection-feature.patch
+---
+ conf.hpp               |   7 ++
+ pid/builder.cpp        |   2 +-
+ pid/buildjson.cpp      |  60 +++++++++++++-
+ pid/pidloop.cpp        |   3 +-
+ pid/zone.cpp           | 183 +++++++++++++++++++++++++++++++++--------
+ pid/zone.hpp           |  15 ++--
+ pid/zone_interface.hpp |   3 +-
+ 7 files changed, 228 insertions(+), 45 deletions(-)
+
+diff --git a/conf.hpp b/conf.hpp
+index adf1447..8df2c64 100755
+--- a/conf.hpp
++++ b/conf.hpp
+@@ -24,6 +24,10 @@ struct FailsafeProfile
+     std::vector<double> reading;          // sensor reading for stepwise/linear.
+     std::vector<double> output;           // output for stepwise/linear.
+     double failsafePercent;               // failsafe percent value.
++    double fanFailRpm;                    // fan fail checking RPM
++    double fanFailPerformance;            // fan fail checking performance
++    uint64_t fanFailDamageCount;          // fan damage fail count.
++    uint64_t fanFailPerformanceCount;     // fan performance fail count.
+ };
+ 
+ struct FailsafeSetting
+@@ -94,6 +98,9 @@ struct ZoneConfig
+ 
+     /* Customize time settings for every cycle */
+     CycleTime cycleTime;
++
++    /* The maximum vector size for sensor value cached */
++    double maxSensorCacheSize = 10;
+ };
+ 
+ using PIDConf = std::map<std::string, ControllerInfo>;
+diff --git a/pid/builder.cpp b/pid/builder.cpp
+index 95d1659..40d80ff 100755
+--- a/pid/builder.cpp
++++ b/pid/builder.cpp
+@@ -68,7 +68,7 @@ std::unordered_map<int64_t, std::shared_ptr<ZoneInterface>>
+         }
+ 
+         auto zone = std::make_shared<DbusPidZone>(
+-            zoneId, zoneConf->second.minThermalOutput,
++            zoneId, zoneConf->second.minThermalOutput, zoneConf->second.maxSensorCacheSize,
+             zoneConf->second.failsafeSettings, zoneConf->second.cycleTime, mgr,
+             modeControlBus, getControlPath(zoneId).c_str(), deferSignals);
+ 
+diff --git a/pid/buildjson.cpp b/pid/buildjson.cpp
+index 9bcd575..e6e8765 100755
+--- a/pid/buildjson.cpp
++++ b/pid/buildjson.cpp
+@@ -173,7 +173,54 @@ void parsingFailsafeProfiles(const json& profiles,
+         {
+             std::cerr << "Unknown outputType " << tmp.outputType
+                       << " in failsafe profiles\n";
+-            continue;
++        }
++
++        auto findFanFailRpm = profile.find("fanFailRpm");
++        if (findFanFailRpm != profile.end())
++        {
++            findFanFailRpm->get_to(tmp.fanFailRpm);
++        }
++        else
++        {
++            std::cerr << "Missing fanFailRpm"
++                      << " in failsafe profiles\n";
++            tmp.fanFailRpm = 0;
++        }
++
++        auto findFanFailPerformance = profile.find("fanFailPerformance");
++        if (findFanFailPerformance != profile.end())
++        {
++            findFanFailPerformance->get_to(tmp.fanFailPerformance);
++        }
++        else
++        {
++            std::cerr << "Missing findFanFailPerformance"
++                      << " in failsafe profiles\n";
++            tmp.fanFailPerformance = 0;
++        }
++
++        auto findFanFailPerformanceCount= profile.find("fanFailPerformanceCount");
++        if (findFanFailPerformanceCount != profile.end())
++        {
++            findFanFailPerformanceCount->get_to(tmp.fanFailPerformanceCount);
++        }
++        else
++        {
++            std::cerr << "Missing fanFailPerformanceCount"
++                      << " in failsafe profiles\n";
++            tmp.fanFailPerformanceCount = 1;
++        }
++
++        auto findFanFailDamageCount = profile.find("fanFailDamageCount");
++        if (findFanFailDamageCount != profile.end())
++        {
++            findFanFailDamageCount->get_to(tmp.fanFailDamageCount);
++        }
++        else
++        {
++            std::cerr << "Missing fanFailDamageCount"
++                      << " in failsafe profiles\n";
++            tmp.fanFailDamageCount = 1;
+         }
+ 
+         inputProfiles.emplace_back(std::move(tmp));
+@@ -258,6 +305,17 @@ std::pair<std::map<int64_t, conf::PIDConf>, std::map<int64_t, conf::ZoneConfig>>
+             std::ceil(thisZoneConfig.cycleTime.updateThermalsTime /
+                       thisZoneConfig.cycleTime.cycleTimeBase);
+ 
++        auto findMaxCacheSize = zone.find("maxSensorCacheSize");
++        if (findMaxCacheSize != zone.end())
++        {
++            double tmp;
++            findMaxCacheSize->get_to(tmp);
++            if (tmp != 0)
++            {
++                thisZoneConfig.maxSensorCacheSize = tmp;
++            }
++        }
++
+         auto pids = zone["pids"];
+         for (const auto& pid : pids)
+         {
+diff --git a/pid/pidloop.cpp b/pid/pidloop.cpp
+index 376bf92..438a41f 100755
+--- a/pid/pidloop.cpp
++++ b/pid/pidloop.cpp
+@@ -117,7 +117,8 @@ void pidControlLoop(std::shared_ptr<ZoneInterface> zone,
+             {
+                 checkFanFailuresCount = 0;
+ 
+-                zone->checkFanFailures();
++                zone->checkFanDamageFailures();
++                zone->checkFanPerformanceFailures();
+             }
+ 
+             if (zone->getUpdateThermalsCycle() <= ms100cnt)
+diff --git a/pid/zone.cpp b/pid/zone.cpp
+index c712553..a9e4c3b 100755
+--- a/pid/zone.cpp
++++ b/pid/zone.cpp
+@@ -92,13 +92,17 @@ void DbusPidZone::setManualMode(bool mode)
+ 
+ bool DbusPidZone::getFailSafe(double& failsafePercent, bool needPrint) const
+ {
++    static bool printFanFailsafePercent = false;
++    static bool printsensorFailsafePercent = false;
++
+     double fanFailsafePercent = 0;
+-    if (!_failSafeFans.empty() || !_failureFans.empty())
++    if (!_failSafeFans.empty() || !_failurePerformanceFans.empty()|| !_failureDamageFans.empty())
+     {
+         for (const auto& profile : _failsafeSettings.fanFailsafeProfiles)
+         {
+             if ((_failSafeFans.size() >= profile.fanFailCount) ||
+-                (_failureFans.size() >= profile.fanFailCount))
++                (_failurePerformanceFans.size() >= profile.fanFailPerformanceCount) ||
++                (_failureDamageFans.size() >= profile.fanFailDamageCount))
+             {
+                 if (profile.outputType == "value")
+                 {
+@@ -134,14 +138,31 @@ bool DbusPidZone::getFailSafe(double& failsafePercent, bool needPrint) const
+ 
+     if ((fanFailsafePercent != 0) && (needPrint || debugModeEnabled))
+     {
+-        std::cerr << "Zone " << getZoneID()
+-                  << " enter failsafe mode: fan failures\n";
++        if(!printFanFailsafePercent)
++        {
++            std::cerr << "Zone " << getZoneID()
++                      << " enter failsafe mode: fan failures\n";
++            printFanFailsafePercent = true;
++        }
++
++    }
++    else
++    {
++        printFanFailsafePercent = false;
+     }
+ 
+     if ((sensorFailsafePercent != 0) && (needPrint || debugModeEnabled))
+     {
+-        std::cerr << "Zone " << getZoneID()
+-                  << " enter failsafe mode: sensor failures\n";
++        if(!printsensorFailsafePercent)
++        {
++            std::cerr << "Zone " << getZoneID()
++                    << " enter failsafe mode: sensor failures\n";
++            printsensorFailsafePercent = true;
++        }
++    }
++    else
++    {
++        printsensorFailsafePercent = false;
+     }
+ 
+     if ((fanFailsafePercent != 0) || (sensorFailsafePercent != 0))
+@@ -222,9 +243,23 @@ void DbusPidZone::addThermalPID(std::unique_ptr<Controller> pid)
+ 
+ double DbusPidZone::getCachedValue(const std::string& name)
+ {
+-    return _cachedValuesByName.at(name);
++    return _cachedValuesByName[name].at(_cachedValuesByName[name].size()-1);
++}
++
++void DbusPidZone::addCachedValue(const std::string& name,double value)
++{
++    if(_cachedValuesByName[name].size() >= _maxSensorCacheSize)
++    {
++        _cachedValuesByName[name].erase(_cachedValuesByName[name].begin());
++        _cachedValuesByName[name].push_back(value);
++    }
++    else
++    {
++        _cachedValuesByName[name].push_back(value);
++    }
+ }
+ 
++
+ void DbusPidZone::addFanInput(const std::string& fan)
+ {
+     _fanInputs.push_back(fan);
+@@ -408,7 +443,7 @@ void DbusPidZone::updateFanTelemetry(void)
+         {
+             std::cerr << f << " fan sensor reading: " << r.value << "\n";
+         }
+-        _cachedValuesByName[f] = r.value;
++        addCachedValue(f,r.value);
+         int64_t timeout = sensor->getTimeout();
+         tstamp then = r.updated;
+ 
+@@ -427,14 +462,14 @@ void DbusPidZone::updateFanTelemetry(void)
+         }
+ 
+         // check if fan fail.
+-        auto findFailSafeFan = _failSafeFans.find(f);
++        auto findFailSafeFan = std::find(_failSafeFans.begin(), _failSafeFans.end(),f);
+         if (sensor->getFailed())
+         {
+-            if ((findFailSafeFan == _failSafeFans.end()) || debugModeEnabled)
++            if (findFailSafeFan == _failSafeFans.end() || debugModeEnabled)
+             {
+                 std::cerr << f << " fan sensor get failed\n";
+-                _failSafeFans.insert(f);
+             }
++            _failSafeFans.push_back(f);
+         }
+         else if (timeout != 0 && duration >= period)
+         {
+@@ -452,11 +487,11 @@ void DbusPidZone::updateFanTelemetry(void)
+             }
+             catch (...)
+             {
+-                if ((findFailSafeFan == _failSafeFans.end()) || debugModeEnabled)
++                if (findFailSafeFan == _failSafeFans.end() || debugModeEnabled)
+                 {
+-                    std::cerr << f << " fan sensor timeout\n";
+-                    _failSafeFans.insert(f);
++                    std::cerr << f << " fan sensor get failed\n";
+                 }
++                _failSafeFans.push_back(f);
+             }
+         }
+         else
+@@ -465,7 +500,7 @@ void DbusPidZone::updateFanTelemetry(void)
+             if (findFailSafeFan != _failSafeFans.end())
+             {
+                 std::cerr << f << " is erased from failsafe sensor set\n";
+-                _failSafeFans.erase(findFailSafeFan);
++                _failSafeFans.clear();
+             }
+         }
+     }
+@@ -474,61 +509,132 @@ void DbusPidZone::updateFanTelemetry(void)
+     {
+         for (const auto& t : _thermalInputs)
+         {
+-            _log << "," << _cachedValuesByName[t];
++            _log << "," << getCachedValue(t);
+         }
+     }
+ 
+     return;
+ }
+ 
+-void DbusPidZone::checkFanFailures(void)
++void DbusPidZone::checkFanPerformanceFailures(void)
+ {
+     std::map<std::string, double> fanSpeeds;
+     double firstLargestFanTach = 0;
+     double secondLargestFanTach = 0;
+-    double value = 0;
+     double twoLargestAverage = 0;
+ 
++    // Disable checking fan performance feature
++    // Disable checking fan performance feature when intput fan less than three
++    if(_failsafeSettings.fanFailsafeProfiles.at(0).fanFailPerformance == 0 ||
++       _fanInputs.size() < 3)
++    {
++        return;
++    }
++
+     // Get the fan speeds.
+     for (const auto& name : _fanInputs)
+     {
+-        value = _cachedValuesByName[name];
+-        fanSpeeds[name] = value;
++        double averageValue = 0;
++
++        if(_cachedValuesByName[name].size() < _maxSensorCacheSize)
++        {
++            return;
++        }
++
++        for (double value: _cachedValuesByName[name])
++        {
++            averageValue += value/_cachedValuesByName[name].size();
++        }
+ 
+         // Find the two largest fan speeds.
+-        if (value > secondLargestFanTach)
++        fanSpeeds[name] = averageValue;
++
++        if (averageValue > secondLargestFanTach)
+         {
+-            if (value > firstLargestFanTach)
++            if (averageValue > firstLargestFanTach)
+             {
+                 secondLargestFanTach = firstLargestFanTach;
+-                firstLargestFanTach = value;
++                firstLargestFanTach = averageValue;
+             }
+             else
+             {
+-                secondLargestFanTach = value;
++                secondLargestFanTach = averageValue;
+             }
+         }
+     }
+ 
+     twoLargestAverage = (firstLargestFanTach + secondLargestFanTach) / 2;
+ 
+-   // If a fan tachometer value is 25% below the twoLargestAverage
++   // If a fan tachometer value is specified percent below the twoLargestAverage
+     for (const auto& [name, tachometer] : fanSpeeds)
+     {
+-        if (tachometer < (twoLargestAverage * 0.75))
++        if (tachometer < (twoLargestAverage * _failsafeSettings.fanFailsafeProfiles.at(0).fanFailPerformance))
+         {
+-            if ((_failureFans.find(name) == _failureFans.end()) ||
++            if ((_failurePerformanceFans.find(name) == _failurePerformanceFans.end()) ||
+                 debugModeEnabled)
+             {
+                 // TODO: log a SEL to indicate a suspected failure on this fan.
+-                std::cerr << name << " is 25% below the average\n";
+-                _failureFans.insert(name);
++                std::cerr << name << " is "
++                          << (1 - _failsafeSettings.fanFailsafeProfiles.at(0).fanFailPerformance)*100
++                          << "% below the average\n";
++                _failurePerformanceFans.insert(name);
+             }
+         }
+-        else if (_failureFans.find(name) != _failureFans.end())
++        else if (_failurePerformanceFans.find(name) != _failurePerformanceFans.end())
+         {
+-            std::cerr << name << " is erased from failure fans\n";
+-            _failureFans.erase(name);
++            std::cerr << name << " is erased from failure fans (performance)\n";
++            _failurePerformanceFans.erase(name);
++        }
++    }
++}
++
++void DbusPidZone::checkFanDamageFailures(void)
++{
++    std::map<std::string, double> fanSpeeds;
++
++    // Disable checking fan damage feature
++    if(_failsafeSettings.fanFailsafeProfiles.at(0).fanFailRpm == 0)
++    {
++        return;
++    }
++
++    // Get the fan speeds.
++    for (const auto& name : _fanInputs)
++    {
++        double failCount = 0;
++
++        if(_cachedValuesByName[name].size() < _maxSensorCacheSize)
++        {
++            return;
++        }
++
++        for (double value: _cachedValuesByName[name])
++        {
++            if(value < _failsafeSettings.fanFailsafeProfiles.at(0).fanFailRpm)
++            {
++                failCount++;
++            }
++        }
++        fanSpeeds[name] = failCount;
++    }
++
++    for (const auto& [name, count] : fanSpeeds)
++    {
++        if (count >= _failsafeSettings.fanFailsafeProfiles.at(0).fanFailCount)
++        {
++            if ((_failureDamageFans.find(name) == _failureDamageFans.end()) ||
++                debugModeEnabled)
++            {
++                std::cerr << name << " speed is below "
++                          << _failsafeSettings.fanFailsafeProfiles.at(0).fanFailRpm
++                          << " RPM\n";
++                _failureDamageFans.insert(name);
++            }
++        }
++        else if (_failureDamageFans.find(name) != _failureDamageFans.end())
++        {
++            std::cerr << name << " is erased from failure fans (damage)\n";
++            _failureDamageFans.erase(name);
+         }
+     }
+ }
+@@ -551,7 +657,7 @@ void DbusPidZone::updateSensors(void)
+         }
+         int64_t timeout = sensor->getTimeout();
+ 
+-        _cachedValuesByName[t] = r.value;
++        addCachedValue(t,r.value);
+         tstamp then = r.updated;
+ 
+         auto duration = duration_cast<std::chrono::seconds>(now - then).count();
+@@ -608,12 +714,14 @@ void DbusPidZone::initializeCache(void)
+ {
+     for (const auto& f : _fanInputs)
+     {
+-        _cachedValuesByName[f] = 0;
++        _cachedValuesByName[f].clear();
++        _cachedValuesByName[f].push_back(0);
+     }
+ 
+     for (const auto& t : _thermalInputs)
+     {
+-        _cachedValuesByName[t] = std::numeric_limits<double>::quiet_NaN();
++        _cachedValuesByName[t].clear();
++        _cachedValuesByName[t].push_back(std::numeric_limits<double>::quiet_NaN());
+     }
+ }
+ 
+@@ -622,7 +730,10 @@ void DbusPidZone::dumpCache(void)
+     std::cerr << "Cache values now: \n";
+     for (const auto& [name, value] : _cachedValuesByName)
+     {
+-        std::cerr << name << ": " << value << "\n";
++        for (double index: value)
++        {
++            std::cerr << name << ": " << index << "\n";
++        }
+     }
+ }
+ 
+diff --git a/pid/zone.hpp b/pid/zone.hpp
+index 3d086d9..decceda 100755
+--- a/pid/zone.hpp
++++ b/pid/zone.hpp
+@@ -35,13 +35,14 @@ namespace pid_control
+ class DbusPidZone : public ZoneInterface, public ModeObject
+ {
+   public:
+-    DbusPidZone(int64_t zone, double minThermalOutput,
++    DbusPidZone(int64_t zone, double minThermalOutput, double maxSensorCacheSize,
+                 conf::FailsafeSetting& failsafeSettings,
+                 conf::CycleTime cycleTime, const SensorManager& mgr,
+                 sdbusplus::bus::bus& bus, const char* objPath, bool defer) :
+         ModeObject(bus, objPath, defer),
+         _zoneId(zone), _maximumSetPoint(),
+         _minThermalOutputSetPt(minThermalOutput),
++        _maxSensorCacheSize(maxSensorCacheSize),
+         _failsafeSettings(failsafeSettings), _cycleTime(cycleTime), _mgr(mgr)
+     {
+         if (loggingEnabled)
+@@ -76,7 +77,8 @@ class DbusPidZone : public ZoneInterface, public ModeObject
+     Sensor* getSensor(const std::string& name) override;
+     void determineMaxSetPointRequest(void) override;
+     void updateFanTelemetry(void) override;
+-    void checkFanFailures(void) override;
++    void checkFanPerformanceFailures(void) override;
++    void checkFanDamageFailures(void) override;
+     void updateSensors(void) override;
+     void initializeCache(void) override;
+     void dumpCache(void);
+@@ -87,6 +89,7 @@ class DbusPidZone : public ZoneInterface, public ModeObject
+     void addFanPID(std::unique_ptr<Controller> pid);
+     void addThermalPID(std::unique_ptr<Controller> pid);
+     double getCachedValue(const std::string& name) override;
++    void addCachedValue(const std::string& name,double value);
+     void addFanInput(const std::string& fan);
+     void addThermalInput(const std::string& therm);
+ 
+@@ -106,19 +109,21 @@ class DbusPidZone : public ZoneInterface, public ModeObject
+     bool _manualMode = false;
+     bool _redundantWrite = false;
+     const double _minThermalOutputSetPt;
++    const double _maxSensorCacheSize;
+     const conf::FailsafeSetting _failsafeSettings;
+     const conf::CycleTime _cycleTime;
+     bool _checkFanFailuresFlag = false;
+ 
+-    std::set<std::string> _failSafeFans;
+-    std::set<std::string> _failureFans;
++    std::vector<std::string> _failSafeFans;
++    std::set<std::string> _failurePerformanceFans;
++    std::set<std::string> _failureDamageFans;
+     std::set<std::string> _failSafeTemps;
+ 
+     std::map<std::string, double> _SetPoints;
+     std::vector<double> _RPMCeilings;
+     std::vector<std::string> _fanInputs;
+     std::vector<std::string> _thermalInputs;
+-    std::map<std::string, double> _cachedValuesByName;
++    std::map<std::string, std::vector<double>> _cachedValuesByName;
+     const SensorManager& _mgr;
+ 
+     std::vector<std::unique_ptr<Controller>> _fans;
+diff --git a/pid/zone_interface.hpp b/pid/zone_interface.hpp
+index 6a77446..4a29623 100755
+--- a/pid/zone_interface.hpp
++++ b/pid/zone_interface.hpp
+@@ -29,7 +29,8 @@ class ZoneInterface
+     virtual bool getCheckFanFailuresFlag() const = 0;
+ 
+     /** Method for checking fan failures. */
+-    virtual void checkFanFailures(void) = 0;
++    virtual void checkFanPerformanceFailures(void) = 0;
++    virtual void checkFanDamageFailures(void) = 0;
+ 
+     /* updateFanTelemetry() and updateSensors() both clear the failsafe state
+      * for a sensor if it's no longer in that state.
+-- 
+2.25.1
+

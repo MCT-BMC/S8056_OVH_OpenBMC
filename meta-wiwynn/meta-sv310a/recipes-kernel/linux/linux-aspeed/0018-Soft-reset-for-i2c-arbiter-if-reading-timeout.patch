@@ -1,0 +1,115 @@
+From 6e5921b0f1ff60042ffa0d1f8abe0330642284c2 Mon Sep 17 00:00:00 2001
+From: Eli Huang <Eli_Huang@wiwynn.com>
+Date: Wed, 13 Oct 2021 10:26:21 +0800
+Subject: [PATCH] Soft reset for i2c arbiter if reading timeout
+
+---
+ drivers/i2c/muxes/i2c-mux-pca9541.c | 61 +++++++++++++++++++++++++++--
+ 1 file changed, 58 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/i2c/muxes/i2c-mux-pca9541.c b/drivers/i2c/muxes/i2c-mux-pca9541.c
+index 3dc50c43ae20..fbebb780ff04 100644
+--- a/drivers/i2c/muxes/i2c-mux-pca9541.c
++++ b/drivers/i2c/muxes/i2c-mux-pca9541.c
+@@ -96,12 +96,13 @@
+ #define lock_grant(x)  ((x) & PCA9641_CTL_LOCK_GRANT)
+ 
+ /* arbitration timeouts, in jiffies */
+-#define ARB_TIMEOUT	(HZ / 8)	/* 125 ms until forcing bus ownership */
+-#define ARB2_TIMEOUT	(HZ / 4)	/* 250 ms until acquisition failure */
++#define ARB_TIMEOUT	(HZ / 5)	/* 200 ms until forcing bus ownership */
++#define ARB2_TIMEOUT	(HZ / 10) * 3	/* 300 ms until acquisition failure */
+ 
+ /* arbitration retry delays, in us */
+ #define SELECT_DELAY_SHORT	50
+ #define SELECT_DELAY_LONG	1000
++#define SELECT_DELAY_RESET  35000
+ 
+ struct pca9541 {
+ 	struct i2c_client *client;
+@@ -390,14 +391,53 @@ static int pca9641_arbitrate(struct i2c_client *client)
+ 	return 0;
+ }
+ 
++static int i2cArbiterSoftReset(struct i2c_client *client)
++{
++	u8 i2c_arbiter_bus = 10;
++	u8 i2c_arbiter_addr = 0x0;
++	u8 i2c_arbiter_offset = 0x6;
++
++	u8 tx_buf[1] = {i2c_arbiter_offset};
++
++	struct i2c_adapter *i2c_adap;
++	struct i2c_msg msg[1];
++	int ret;
++
++	i2c_adap = i2c_get_adapter(i2c_arbiter_bus);
++	if (!i2c_adap)
++	{
++		dev_err(&client->dev, "Fail to get adapter\n");
++		return -1;
++	}
++
++	msg[0].addr = i2c_arbiter_addr;
++	msg[0].flags = 0;
++	msg[0].len = 1;
++	msg[0].buf = tx_buf;
++
++	ret = __i2c_transfer(i2c_adap, msg, 1);
++	if (ret < 0)
++	{
++		dev_err(&client->dev, "i2c transfer error\n");
++		i2c_put_adapter(i2c_adap);
++		return -1;
++	}
++
++exit:
++	i2c_put_adapter(i2c_adap);
++	return 0;
++
++	return ret;
++}
++
+ static int pca9641_select_chan(struct i2c_mux_core *muxc, u32 chan)
+ {
+ 	struct pca9541 *data = i2c_mux_priv(muxc);
+ 	struct i2c_client *client = data->client;
+ 	int ret;
+ 	unsigned long timeout = jiffies + ARB2_TIMEOUT;
++	bool force_reset = false;
+ 	/* give up after this time */
+-
+ 	data->arb_timeout = jiffies + ARB_TIMEOUT;
+ 	/* force bus ownership after this time */
+ 
+@@ -407,12 +447,27 @@ static int pca9641_select_chan(struct i2c_mux_core *muxc, u32 chan)
+ 			return ret < 0 ? ret : 0;
+ 		}
+ 
++		if (!force_reset && time_is_before_eq_jiffies(data->arb_timeout))
++		{
++			dev_info(&client->dev, "Soft reset selector for I2C %s\n", client->name);
++			force_reset = true;
++			ret = i2cArbiterSoftReset(client);
++			if (ret < 0)
++			{
++				dev_dbg(&client->dev, "Soft reset fail\n", client->name);
++				return ret;
++			}
++
++			data->select_timeout = SELECT_DELAY_RESET;
++		}
++
+ 		if (data->select_timeout == SELECT_DELAY_SHORT) {
+ 			udelay(data->select_timeout);
+ 		}
+ 		else {
+ 			msleep(data->select_timeout / 1000);
+ 		}
++
+ 	} while (time_is_after_eq_jiffies(timeout));
+ 
+ 	return -ETIMEDOUT;
+-- 
+2.32.0
+

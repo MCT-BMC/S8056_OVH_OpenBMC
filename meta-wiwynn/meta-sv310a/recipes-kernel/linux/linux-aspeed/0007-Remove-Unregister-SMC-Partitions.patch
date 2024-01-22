@@ -1,0 +1,102 @@
+From 646ec55f66738f8f606888d8ec989a82012fe7d2 Mon Sep 17 00:00:00 2001
+From: JarvisWang <Jarvis_Wang@wiwynn.com>
+Date: Thu, 10 Dec 2020 09:34:40 +0800
+Subject: Fix the issue that kernel will panic if second flash is absent but it
+ is enabled in dts
+
+---
+ drivers/mtd/spi-nor/controllers/aspeed-smc.c | 28 +++++++++++++++++---
+ 1 file changed, 25 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/mtd/spi-nor/controllers/aspeed-smc.c b/drivers/mtd/spi-nor/controllers/aspeed-smc.c
+index a591ce1d24c5..d67defeb19dc 100644
+--- a/drivers/mtd/spi-nor/controllers/aspeed-smc.c
++++ b/drivers/mtd/spi-nor/controllers/aspeed-smc.c
+@@ -24,6 +24,8 @@
+ 
+ #define SNOR_F_4B_OPCODES       BIT(6)
+ 
++#define FSC_BASE_ADDRESS 0x1e620000
++
+ /*
+  * The driver only support SPI flash
+  */
+@@ -1235,7 +1237,7 @@ static const struct spi_nor_controller_ops aspeed_smc_controller_ops = {
+ };
+ 
+ static int aspeed_smc_setup_flash(struct aspeed_smc_controller *controller,
+-				  struct device_node *np, struct resource *r)
++				  struct device_node *np, struct resource *r, resource_size_t baseAddr)
+ {
+ 	const struct spi_nor_hwcaps hwcaps = {
+ 		.mask = SNOR_HWCAPS_READ |
+@@ -1248,6 +1250,7 @@ static int aspeed_smc_setup_flash(struct aspeed_smc_controller *controller,
+ 	struct device_node *child;
+ 	unsigned int cs;
+ 	int ret = -ENODEV;
++	int flashSkip = 0;
+ 
+ 	for_each_available_child_of_node(np, child) {
+ 		struct aspeed_smc_chip *chip;
+@@ -1314,7 +1317,14 @@ static int aspeed_smc_setup_flash(struct aspeed_smc_controller *controller,
+ 		 */
+ 		ret = spi_nor_scan(nor, NULL, &hwcaps);
+ 		if (ret)
++		{
++			if ((ret == -ENOENT) && (baseAddr == FSC_BASE_ADDRESS))	//fsc flash not found
++			{
++				flashSkip = 1;
++			}
++
+ 			break;
++		}
+ 
+ 		ret = aspeed_smc_chip_setup_finish(chip);
+ 		if (ret)
+@@ -1329,7 +1339,16 @@ static int aspeed_smc_setup_flash(struct aspeed_smc_controller *controller,
+ 
+ 	if (ret) {
+ 		of_node_put(child);
+-		aspeed_smc_unregister(controller);
++
++		if (1 == flashSkip)
++		{
++			dev_info(dev, "cs:%u skipped\n", cs);
++			return 0;
++		}
++		else
++		{
++			aspeed_smc_unregister(controller);
++		}
+ 	}
+ 
+ 	return ret;
+@@ -1345,6 +1364,7 @@ static int aspeed_smc_probe(struct platform_device *pdev)
+ 	struct clk *clk;
+ 	struct resource *res;
+ 	int ret;
++	resource_size_t baseAddr = 0;
+ 
+ 	match = of_match_device(aspeed_smc_matches, &pdev->dev);
+ 	if (!match || !match->data)
+@@ -1367,6 +1387,8 @@ static int aspeed_smc_probe(struct platform_device *pdev)
+ 	if (IS_ERR(controller->regs))
+ 		return PTR_ERR(controller->regs);
+ 
++	baseAddr = res->start;	//smc control register
++
+ 	res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
+ 	controller->ahb_base_phy = res->start;
+ 	controller->ahb_base = devm_ioremap_resource(dev, res);
+@@ -1381,7 +1403,7 @@ static int aspeed_smc_probe(struct platform_device *pdev)
+ 	controller->clk_frequency = clk_get_rate(clk);
+ 	devm_clk_put(&pdev->dev, clk);
+ 
+-	ret = aspeed_smc_setup_flash(controller, np, res);
++	ret = aspeed_smc_setup_flash(controller, np, res, baseAddr);
+ 	if (ret)
+ 		dev_err(dev, "Aspeed SMC probe failed %d\n", ret);
+ 
+-- 
+2.28.0
+

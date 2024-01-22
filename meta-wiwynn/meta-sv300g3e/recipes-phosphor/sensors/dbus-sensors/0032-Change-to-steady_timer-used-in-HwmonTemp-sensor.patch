@@ -1,0 +1,87 @@
+From af720b39037fb445210c68735084c09371d9e646 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Mon, 20 Apr 2020 10:54:30 +0800
+Subject: [PATCH 05/11] Change to steady_timer used in HwmonTemp sensor
+
+---
+ include/HwmonTempSensor.hpp | 3 ++-
+ src/HwmonTempMain.cpp       | 4 ++--
+ src/HwmonTempSensor.cpp     | 5 ++---
+ 3 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/include/HwmonTempSensor.hpp b/include/HwmonTempSensor.hpp
+index e041085..a267376 100644
+--- a/include/HwmonTempSensor.hpp
++++ b/include/HwmonTempSensor.hpp
+@@ -6,6 +6,7 @@
+ #include <sdbusplus/asio/object_server.hpp>
+ #include <string>
+ #include <vector>
++#include <boost/asio/steady_timer.hpp>
+ 
+ class HwmonTempSensor : public Sensor
+ {
+@@ -22,7 +23,7 @@ class HwmonTempSensor : public Sensor
+   private:
+     sdbusplus::asio::object_server& objServer;
+     boost::asio::posix::stream_descriptor inputDev;
+-    boost::asio::deadline_timer waitTimer;
++    boost::asio::steady_timer waitTimer;
+     boost::asio::streambuf readBuf;
+     std::string path;
+     PowerState readState;
+diff --git a/src/HwmonTempMain.cpp b/src/HwmonTempMain.cpp
+index 55d4508..e003bd9 100644
+--- a/src/HwmonTempMain.cpp
++++ b/src/HwmonTempMain.cpp
+@@ -262,7 +262,7 @@ int main()
+         createSensors(io, objectServer, sensors, systemBus, nullptr);
+     });
+ 
+-    boost::asio::deadline_timer filterTimer(io);
++    boost::asio::steady_timer filterTimer(io);
+     std::function<void(sdbusplus::message::message&)> eventHandler =
+         [&](sdbusplus::message::message& message) {
+             if (message.is_method_error())
+@@ -272,7 +272,7 @@ int main()
+             }
+             sensorsChanged->insert(message.get_path());
+             // this implicitly cancels the timer
+-            filterTimer.expires_from_now(boost::posix_time::seconds(1));
++            filterTimer.expires_from_now(boost::asio::chrono::seconds(1));
+ 
+             filterTimer.async_wait([&](const boost::system::error_code& ec) {
+                 if (ec == boost::asio::error::operation_aborted)
+diff --git a/src/HwmonTempSensor.cpp b/src/HwmonTempSensor.cpp
+index cf8ee10..b42ce55 100644
+--- a/src/HwmonTempSensor.cpp
++++ b/src/HwmonTempSensor.cpp
+@@ -20,7 +20,6 @@
+ 
+ #include <boost/algorithm/string/predicate.hpp>
+ #include <boost/algorithm/string/replace.hpp>
+-#include <boost/date_time/posix_time/posix_time.hpp>
+ #include <iostream>
+ #include <istream>
+ #include <limits>
+@@ -30,7 +29,7 @@
+ #include <string>
+ #include <vector>
+ 
+-static constexpr unsigned int sensorPollMs = 500;
++static constexpr unsigned int sensorPollMs = 1000;
+ static constexpr unsigned int sensorScaleFactor = 1000;
+ static constexpr size_t warnAfterErrorCount = 10;
+ 
+@@ -148,7 +147,7 @@ void HwmonTempSensor::handleResponse(const boost::system::error_code& err)
+         return; // we're no longer valid
+     }
+     inputDev.assign(fd);
+-    waitTimer.expires_from_now(boost::posix_time::milliseconds(sensorPollMs));
++    waitTimer.expires_from_now(boost::asio::chrono::milliseconds(sensorPollMs));
+     waitTimer.async_wait([&](const boost::system::error_code& ec) {
+         if (ec == boost::asio::error::operation_aborted)
+         {
+-- 
+2.24.1
+

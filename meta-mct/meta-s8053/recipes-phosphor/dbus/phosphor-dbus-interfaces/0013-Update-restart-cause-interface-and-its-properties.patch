@@ -1,0 +1,62 @@
+From 5f9b4b70eb9e81d298b4bf75bc28d01cf1ea876f Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Fri, 11 Mar 2022 18:09:52 +0800
+Subject: [PATCH] Update restart cause interface and its properties.
+
+---
+ yaml/xyz/openbmc_project/State/Host.interface.yaml | 22 ++++++++++++++++++++--
+ 1 file changed, 20 insertions(+), 2 deletions(-)
+
+diff --git a/yaml/xyz/openbmc_project/State/Host.interface.yaml b/yaml/xyz/openbmc_project/State/Host.interface.yaml
+index 149869b..45e7c95 100755
+--- a/yaml/xyz/openbmc_project/State/Host.interface.yaml
++++ b/yaml/xyz/openbmc_project/State/Host.interface.yaml
+@@ -94,9 +94,9 @@ enumerations:
+         - name: 'Unknown'
+           description: >
+             Reason Unknown
+-        - name: 'RemoteCommand'
++        - name: 'ChassisCommandPowerOn'
+           description: >
+-            Remote command issued
++            Host is restarted by "Chassis Control command - ipmitool power on".
+         - name: 'ResetButton'
+           description: >
+             Reset button pressed
+@@ -106,15 +106,33 @@ enumerations:
+         - name: 'WatchdogTimer'
+           description: >
+             Watchdog Timer expired
++        - name: 'OEM'
++          description: >
++            Host is restarted by "OEM reason".
+         - name: 'PowerPolicyAlwaysOn'
+           description: >
+             Power Policy Host Always on
+         - name: 'PowerPolicyPreviousState'
+           description: >
+             Power Policy Previous State of Host
++        - name: 'PEFReset'
++          description: >
++            Host is restarted by "PEF reset".
++        - name: 'PEFCycle'
++          description: >
++            Host is restarted by "PEF power cycle".
+         - name: 'SoftReset'
+           description: >
+             Soft reset of Host
++        - name: 'RTCPowerUp'
++          description: >
++            Host is restarted by "power-up via RTC wakeup".
++        - name: 'ChassisCommandPowerCycle'
++          description: >
++            Host is restarted by "Chassis Control command - ipmitool power cycle".
++        - name: 'ChassisCommandPowerReset'
++          description: >
++            Host is restarted by "Chassis Control command - ipmitool power reset".
+         - name: 'ScheduledPowerOn'
+           description: >
+             The restart was scheduled via the
+-- 
+2.7.4
+

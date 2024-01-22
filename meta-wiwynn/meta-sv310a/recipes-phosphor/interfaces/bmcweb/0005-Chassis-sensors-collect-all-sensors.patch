@@ -1,0 +1,28 @@
+From 49f52dde0af85db148d36513a8a71ad1a5f5c030 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Wed, 13 Oct 2021 08:52:42 +0800
+Subject: [PATCH] Chassis sensors collect all sensors
+
+---
+ redfish-core/lib/sensors.hpp | 5 +----
+ 1 file changed, 1 insertion(+), 4 deletions(-)
+
+diff --git a/redfish-core/lib/sensors.hpp b/redfish-core/lib/sensors.hpp
+index b476d32..568d272 100644
+--- a/redfish-core/lib/sensors.hpp
++++ b/redfish-core/lib/sensors.hpp
+@@ -59,10 +59,7 @@ static const boost::container::flat_map<std::string_view,
+     paths = {{node::power,
+               {"/xyz/openbmc_project/sensors/voltage",
+                "/xyz/openbmc_project/sensors/power"}},
+-             {node::sensors,
+-              {"/xyz/openbmc_project/sensors/power",
+-               "/xyz/openbmc_project/sensors/current",
+-               "/xyz/openbmc_project/sensors/utilization"}},
++             {node::sensors, {"/xyz/openbmc_project/sensors"}},
+              {node::thermal,
+               {"/xyz/openbmc_project/sensors/fan_tach",
+                "/xyz/openbmc_project/sensors/temperature",
+-- 
+2.32.0
+

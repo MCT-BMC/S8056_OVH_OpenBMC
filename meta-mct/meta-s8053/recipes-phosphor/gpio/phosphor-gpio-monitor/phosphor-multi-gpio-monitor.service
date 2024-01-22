@@ -1,0 +1,23 @@
+[Unit]
+Description=Phosphor Multi GPIO monitor
+Before=phosphor-discover-system-state@0.service
+After=org.openbmc.control.Power@0.service
+After=xyz.openbmc_project.Logging.IPMI.service
+Before=xyz.openbmc_project.adcsensor.service
+Before=xyz.openbmc_project.cpusensor.service
+Before=xyz.openbmc_project.hwmontempsensor.service
+Before=xyz.openbmc_project.ipmbsensor.service
+Before=xyz.openbmc_project.psusensor.service
+Before=xyz.openbmc_project.fansensor.service
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+StartLimitInterval=0
+ExecStartPre=/bin/bash -c 'while [ ! -e /run/sel-logger-ready ]; do sleep 1; done;sleep 5'
+ExecStart=/usr/bin/phosphor-multi-gpio-monitor --config /usr/share/phosphor-gpio-monitor/phosphor-multi-gpio-monitor.json
+SyslogIdentifier=phosphor-multi-gpio-monitor
+
+[Install]
+WantedBy=multi-user.target

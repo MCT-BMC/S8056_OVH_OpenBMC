@@ -1,0 +1,15 @@
+[Unit]
+Description=Check and generate PSU SEL
+StopWhenUnneeded=false
+After=xyz.openbmc_project.Logging.IPMI.service
+After=mct-led-manager.service
+
+[Service]
+ExecStartPre=/bin/bash -c 'while [ ! -e /run/sel-logger-ready ]; do sleep 1; done;sleep 5'
+ExecStartPre=/usr/bin/env get-default-psu-voltage.sh
+ExecStart=/usr/sbin/psu-status-sel.sh 3 88
+SyslogIdentifier=psu-status-sel
+TimeoutSec=infinity
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,25 @@
+From 3f1f6da607e6f539dfe58dcafe4be64243b4a4b7 Mon Sep 17 00:00:00 2001
+From: Ray Lue <ray.lue@mic.com.tw>
+Date: Mon, 5 Aug 2019 14:07:11 +0800
+Subject: [PATCH] add supported pmbus name : cffps1
+
+---
+ src/PSUSensorMain.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+ mode change 100644 => 100755 src/PSUSensorMain.cpp
+
+diff --git a/src/PSUSensorMain.cpp b/src/PSUSensorMain.cpp
+old mode 100644
+new mode 100755
+index 93d88d0..afde15d
+--- a/src/PSUSensorMain.cpp
++++ b/src/PSUSensorMain.cpp
+@@ -31,7 +31,7 @@ static constexpr std::array<const char*, 1> sensorTypes = {
+     "xyz.openbmc_project.Configuration.pmbus"};
+ 
+ static std::vector<std::string> pmbusNames = {"pmbus", "pxe1610", "ina219",
+-                                              "ina230"};
++                                              "ina230", "cffps1"};
+ namespace fs = std::filesystem;
+ 
+ static boost::container::flat_map<std::string, std::unique_ptr<PSUSensor>>

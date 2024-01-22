@@ -1,0 +1,26 @@
+From 57d96f394653e1fdcdf2395bdc392bebd8ddf0de Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Wed, 16 Mar 2022 09:42:13 +0800
+Subject: [PATCH 4/5] Add chassis association for health monitoring sensors
+
+---
+ healthMonitor.cpp | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/healthMonitor.cpp b/healthMonitor.cpp
+index a712b08..5e4c29b 100755
+--- a/healthMonitor.cpp
++++ b/healthMonitor.cpp
+@@ -306,6 +306,9 @@ void HealthSensor::initHealthSensor(const std::vector<std::string>& chassisIds)
+     {
+         associationTuples.push_back({"bmc", "all_sensors", chassisId});
+     }
++
++    associationTuples.push_back({"chassis", "all_sensors", "/xyz/openbmc_project/inventory/system/chassis"});
++
+     AssociationDefinitionInterface::associations(associationTuples);
+ 
+     /* Start the timer for reading sensor data at regular interval */
+-- 
+2.7.4
+

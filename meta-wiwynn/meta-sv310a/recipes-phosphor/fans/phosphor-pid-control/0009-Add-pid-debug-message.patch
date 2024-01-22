@@ -1,0 +1,122 @@
+From 88b9286d74da505b6b75a80efc1d8a0b7320fe23 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Wed, 12 Jan 2022 15:30:57 +0800
+Subject: [PATCH] Add pid debug message
+
+---
+ pid/ec/pid.cpp            | 17 ++++++++++++++++-
+ pid/ec/pid.hpp            |  2 +-
+ pid/fancontroller.cpp     |  2 +-
+ pid/pidcontroller.cpp     |  3 ++-
+ pid/thermalcontroller.cpp |  6 ++++++
+ 5 files changed, 26 insertions(+), 4 deletions(-)
+
+diff --git a/pid/ec/pid.cpp b/pid/ec/pid.cpp
+index dd2ebaf..65af6a5 100644
+--- a/pid/ec/pid.cpp
++++ b/pid/ec/pid.cpp
+@@ -17,6 +17,7 @@
+ #include "pid.hpp"
+ 
+ #include <cmath>
++#include <iostream>
+ 
+ namespace pid_control
+ {
+@@ -44,7 +45,7 @@ static double clamp(double x, double min, double max)
+  *  pid code
+  *  Note: Codes assumes the ts field is non-zero
+  */
+-double pid(pid_info_t* pidinfoptr, double input, double setpoint)
++double pid(pid_info_t* pidinfoptr, double input, double setpoint, bool debug)
+ {
+     double error;
+ 
+@@ -120,6 +121,20 @@ double pid(pid_info_t* pidinfoptr, double input, double setpoint)
+     // larger integral term
+     integralTerm = clamp(integralTerm, pidinfoptr->integralLimit.min,
+                          pidinfoptr->integralLimit.max);
++
++    if (debug)
++    {
++        std::cerr << "Kp: " << pidinfoptr->proportionalCoeff
++                  << ", Ki: " << pidinfoptr->integralCoeff
++                  << ", Kd: " << pidinfoptr->derivativeCoeff
++                  << ", FFOffset: " << pidinfoptr->feedFwdOffset
++                  << ", FFGain: " << pidinfoptr->feedFwdGain
++                  << ", Error: " << error << "\n";
++        std::cerr << "P (" << proportionalTerm << ") + I (" << integralTerm
++                  << ") + D (" << derivativeTerm << ") + FF (" << feedFwdTerm
++                  << ") = Output (" << output << ")\n";
++    }
++
+     pidinfoptr->integral = integralTerm;
+     pidinfoptr->initialized = true;
+ 
+diff --git a/pid/ec/pid.hpp b/pid/ec/pid.hpp
+index c76379d..d465c11 100644
+--- a/pid/ec/pid.hpp
++++ b/pid/ec/pid.hpp
+@@ -39,7 +39,7 @@ typedef struct
+     double negativeHysteresis;
+ } pid_info_t;
+ 
+-double pid(pid_info_t* pidinfoptr, double input, double setpoint);
++double pid(pid_info_t* pidinfoptr, double input, double setpoint, bool debug);
+ 
+ /* Condensed version for use by the configuration. */
+ struct pidinfo
+diff --git a/pid/fancontroller.cpp b/pid/fancontroller.cpp
+index 4eb9ae7..bcd781f 100644
+--- a/pid/fancontroller.cpp
++++ b/pid/fancontroller.cpp
+@@ -127,7 +127,7 @@ double FanController::setptProc(void)
+ 
+ void FanController::outputProc(double value)
+ {
+-    double percent = value;
++    double percent = static_cast<int>(value + 0.5);
+ 
+     /* If doing tuning, don't go into failsafe mode. */
+     if (!tuningEnabled)
+diff --git a/pid/pidcontroller.cpp b/pid/pidcontroller.cpp
+index fea95b1..05f0cb4 100644
+--- a/pid/pidcontroller.cpp
++++ b/pid/pidcontroller.cpp
+@@ -17,6 +17,7 @@
+ #include "pidcontroller.hpp"
+ 
+ #include "ec/pid.hpp"
++#include "pid/zone_interface.hpp"
+ 
+ #include <algorithm>
+ #include <chrono>
+@@ -54,7 +55,7 @@ void PIDController::process(void)
+     // over the hysteresis bounds, keep counting pid
+     if (input > (setpt + info->positiveHysteresis))
+     {
+-        output = ec::pid(info, input, setpt);
++        output = ec::pid(info, input, setpt, _owner->getDebugMode());
+         info->lastInput = input;
+     }
+     // under the hysteresis bounds, initialize pid
+diff --git a/pid/thermalcontroller.cpp b/pid/thermalcontroller.cpp
+index bc3db0a..e188519 100644
+--- a/pid/thermalcontroller.cpp
++++ b/pid/thermalcontroller.cpp
+@@ -118,6 +118,12 @@ double ThermalController::setptProc(void)
+         return setpoint;
+     }
+ #endif
++
++    if (_owner->getDebugMode())
++    {
++        std::cerr << getID() << " setpoint: " << setpoint << "\n";
++    }
++
+     return setpoint;
+ }
+ 
+-- 
+2.32.0
+

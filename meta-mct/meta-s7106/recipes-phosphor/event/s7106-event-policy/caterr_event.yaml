@@ -1,0 +1,50 @@
+- name: processor path
+  description: >
+    'processor error status path'
+  class: group
+  group: path
+  members:
+    - meta: STATE
+      path: /xyz/openbmc_project/sensors/gpio/CATERR
+
+- name: processor status
+  description: >
+    'Monitor processor status'
+  class: group
+  group: property
+  type: string
+  members:
+    - interface: xyz.openbmc_project.Control.Processor
+      meta: PROPERTY
+      property: ProcessorStatus
+    
+- name: watch processor status
+  description: >
+    'Trigger logic if processor status is updated'
+  class: watch
+  watch: property
+  paths: processor path
+  properties: processor status
+  callback: check processor status
+
+- name: check processor status
+  description: >
+    'If the Processor State is CATERR, need add CATERR log.'
+  class: condition
+  condition: count
+  paths: processor path
+  properties: processor status
+  callback: create caterr log
+  countop: '>'
+  countbound: 0
+  op: '=='
+  bound: xyz.openbmc_project.Control.Processor.State.CATERR
+
+- name: create caterr log
+  description: >
+    'Create a CATERR log.'
+  class: callback
+  callback: elog
+  paths: processor path
+  properties: processor status
+  error: xyz::openbmc_project::Control::Processor::Error::CATERR

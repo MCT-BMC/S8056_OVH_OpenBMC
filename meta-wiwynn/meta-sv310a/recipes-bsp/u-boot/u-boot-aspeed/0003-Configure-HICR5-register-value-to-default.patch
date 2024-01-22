@@ -1,0 +1,50 @@
+From 87713940196d715cdc1477dfe96c15a5f3e31657 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Tue, 18 Feb 2020 13:44:59 +0800
+Subject: [PATCH] Configure HICR5 register value to default
+
+---
+ board/aspeed/ast-g5/ast-g5.c | 20 ++++++++++++++++++++
+ 1 file changed, 20 insertions(+)
+
+diff --git a/board/aspeed/ast-g5/ast-g5.c b/board/aspeed/ast-g5/ast-g5.c
+index 4720e8a717..9952d4a38b 100644
+--- a/board/aspeed/ast-g5/ast-g5.c
++++ b/board/aspeed/ast-g5/ast-g5.c
+@@ -16,6 +16,25 @@
+ 
+ DECLARE_GLOBAL_DATA_PTR;
+ 
++#define LPC_REG_BASE              0x1e789000
++#define HOST_INTERFACE_CTL_5      0x80
++
++/* --------------------------------------------------------------------
++ * @fn Chip_Register_Init
++ * @brief Initialize the BMC chip registers if needed
++ *
++ *--------------------------------------------------------------------*/
++void Chip_Register_Init()
++{
++    ulong reg_addr = 0;
++
++    // printf("Initialize the BMC chip registers\n");
++
++    /*  Set HICR5 to 0x00000400 as default */
++    reg_addr = LPC_REG_BASE + HOST_INTERFACE_CTL_5;
++    *((volatile ulong *) reg_addr) = 0x00000400;
++}
++
+ /*--------------------------------------------------------------------
+  * @fn Set_Default_UART_Route
+  * @brief Set the default UART Route
+@@ -32,6 +51,7 @@ int board_init(void)
+ 	gd->bd->bi_boot_params = CONFIG_SYS_SDRAM_BASE + 0x100;
+ 	gd->flags = 0;
+ 
++	Chip_Register_Init();
+ 	Set_Default_UART_Route();
+ 
+ 	return 0;
+-- 
+2.32.0
+

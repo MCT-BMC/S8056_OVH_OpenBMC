@@ -1,0 +1,29 @@
+From 0cbda2d26d20609a1755e61ffb1be4af28c7cd25 Mon Sep 17 00:00:00 2001
+From: JPChang <JP_Chang@wiwynn.com>
+Date: Mon, 22 Jul 2019 11:25:07 +0800
+Subject: [PATCH] Force set default scanned FRU ID as 0
+
+- To fix ipmitool sdr command failed
+- Because Intel set FRU ID 0 dedicated for built-in baseboard FRU image,
+  all the other scanned FRU ID will be hashed.
+  If there's no baseboard FRU image, the SDR commands can't response correctly.
+---
+ src/storagecommands.cpp | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/src/storagecommands.cpp b/src/storagecommands.cpp
+index 22a9dcd..ad526e3 100644
+--- a/src/storagecommands.cpp
++++ b/src/storagecommands.cpp
+@@ -215,6 +215,8 @@ ipmi_ret_t replaceCacheFru(uint8_t devId)
+         }
+         std::pair<uint8_t, uint8_t> newDev(fruBus, fruAddr);
+ 
++        fruHash = 0; // force hash = 0
++
+         bool emplacePassed = false;
+         while (!emplacePassed)
+         {
+-- 
+1.9.1
+

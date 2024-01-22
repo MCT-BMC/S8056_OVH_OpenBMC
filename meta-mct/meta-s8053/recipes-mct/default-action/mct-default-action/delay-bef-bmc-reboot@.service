@@ -1,0 +1,8 @@
+[Unit]
+Description=Reboot BMC with delay time %I seconds.
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+ExecStart=/bin/bash -c 'sleep %i;reboot'
+SyslogIdentifier=delay-bef-bmc-reboot

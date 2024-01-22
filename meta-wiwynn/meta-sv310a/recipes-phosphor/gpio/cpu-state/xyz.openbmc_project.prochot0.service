@@ -1,0 +1,8 @@
+[Unit]
+Description=assert Prochot0 
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env prochot_thermtrip_update.sh assert CPU0_State prochot 
+SyslogIdentifier=prochot0_assert
+

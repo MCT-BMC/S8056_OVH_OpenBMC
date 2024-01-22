@@ -1,0 +1,653 @@
+From 84436b08cfde78ad42011f4d3d6fb67c62dbde5b Mon Sep 17 00:00:00 2001
+From: jeannie <jeannie@localhost.localdomain>
+Date: Fri, 3 May 2019 11:17:59 +0800
+Subject: [PATCH] Add gpio dbus sensor for caterr feature
+
+---
+ CMakeLists.txt                                |  17 ++
+ include/GPIOSensor.hpp                        |  51 ++++
+ .../xyz.openbmc_project.gpiosensor.service    |  12 +
+ src/GPIOSensor.cpp                            | 225 +++++++++++++++
+ src/GPIOSensorMain.cpp                        | 268 ++++++++++++++++++
+ 5 files changed, 573 insertions(+)
+ create mode 100755 include/GPIOSensor.hpp
+ create mode 100644 service_files/xyz.openbmc_project.gpiosensor.service
+ create mode 100755 src/GPIOSensor.cpp
+ create mode 100755 src/GPIOSensorMain.cpp
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 60a608b..2cbd069 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -42,6 +42,7 @@ option (DISABLE_EXIT_AIR "Disable installing Exit Air Temp sensor" OFF)
+ option (DISABLE_FAN "Disable installing fan sensor" OFF)
+ option (DISABLE_HWMON_TEMP "Disable installing hwmon temp sensor" OFF)
+ option (DISABLE_INTRUSION "Disable installing intrusion sensor" OFF)
++option (DISABLE_GPIO "Disable installing gpio sensor" OFF)
+ option (DISABLE_IPMB "Disable installing IPMB sensor" OFF)
+ option (DISABLE_MCUTEMP "Disable installing MCU temperature sensor" OFF)
+ option (DISABLE_PSU "Disable installing PSU sensor" OFF)
+@@ -67,6 +68,8 @@ set (HWMON_TEMP_SRC_FILES src/Utils.cpp src/HwmonTempSensor.cpp
+ 
+ set (INTRUSION_SRC_FILES src/Utils.cpp src/ChassisIntrusionSensor.cpp)
+ 
++set (GPIO_SRC_FILES src/Utils.cpp src/GPIOSensor.cpp)
++
+ set (IPMB_SRC_FILES src/Utils.cpp src/Thresholds.cpp)
+ 
+ set (MCUTEMP_SRC_FILES src/Utils.cpp src/Thresholds.cpp)
+@@ -177,6 +180,10 @@ add_dependencies (intrusionsensor sdbusplus-project)
+ target_link_libraries (intrusionsensor ${SENSOR_LINK_LIBS})
+ target_link_libraries (intrusionsensor i2c)
+ 
++add_executable (gpiosensor src/GPIOSensorMain.cpp ${GPIO_SRC_FILES})
++add_dependencies (gpiosensor sdbusplus-project)
++target_link_libraries (gpiosensor ${SENSOR_LINK_LIBS})
++
+ add_executable (ipmbsensor src/IpmbSensor.cpp ${IPMB_SRC_FILES})
+ add_dependencies (ipmbsensor sdbusplus-project)
+ target_link_libraries (ipmbsensor ${SENSOR_LINK_LIBS})
+@@ -197,6 +204,7 @@ if (NOT YOCTO)
+     add_dependencies (fansensor ${EXTERNAL_PACKAGES})
+     add_dependencies (hwmontempsensor ${EXTERNAL_PACKAGES})
+     add_dependencies (intrusionsensor ${EXTERNAL_PACKAGES})
++    add_dependencies (gpiosensor ${EXTERNAL_PACKAGES})
+     add_dependencies (ipmbsensor ${EXTERNAL_PACKAGES})
+     add_dependencies (mcutempsensor ${EXTERNAL_PACKAGES})
+     add_dependencies (psusensor ${EXTERNAL_PACKAGES})
+@@ -252,6 +260,15 @@ if (NOT DISABLE_INTRUSION)
+     )
+ endif ()
+ 
++if (NOT DISABLE_GPIO)
++    install (TARGETS gpiosensor DESTINATION bin)
++    install (
++        FILES
++            ${SERVICE_FILE_SRC_DIR}/xyz.openbmc_project.gpiosensor.service
++            DESTINATION ${SERVICE_FILE_INSTALL_DIR}
++    )
++endif ()
++
+ if (NOT DISABLE_IPMB)
+     install (TARGETS ipmbsensor DESTINATION bin)
+     install (FILES
+diff --git a/include/GPIOSensor.hpp b/include/GPIOSensor.hpp
+new file mode 100755
+index 0000000..b460845
+--- /dev/null
++++ b/include/GPIOSensor.hpp
+@@ -0,0 +1,51 @@
++#pragma once
++
++#include <sdbusplus/asio/object_server.hpp>
++
++class GPIOSensor
++{
++  public:
++    GPIOSensor(
++        boost::asio::io_service& io,
++        std::shared_ptr<sdbusplus::asio::dbus_interface> iface,
++        std::string sensorStateNormal,
++        std::string sensorStateActive,
++        std::string sensorProperty,
++		uint16_t sensorNumber);
++
++    ~GPIOSensor();
++
++    void start(int gpioIndex, bool gpioInverted);
++
++  private:
++    std::shared_ptr<sdbusplus::asio::dbus_interface> mIface;
++    std::shared_ptr<sdbusplus::asio::connection> mDbusConn;
++
++
++    // intrusion status. 0: not intruded, 1: intruded
++    std::string mValue = "unknown";
++    std::string mOldValue = "unknown";
++
++    std::string mStateNormal;
++    std::string mStateActive;
++    std::string mProperty;
++	uint16_t mSensorNumber;
++
++    // valid if it is via GPIO
++    int mGpioIndex;
++    bool mGpioInverted;
++    boost::asio::ip::tcp::socket mInputDev;
++    int mFd;
++
++    // common members
++    bool mOverridenState = false;
++    bool mInternalSet = false;
++
++    bool mInitialized = false;
++
++    void updateValue(const std::string newValue);
++    void readGpio();
++    void pollSensorStatusByGpio();
++    void initGpioDeviceFile(const int index);
++    int setSensorValue(const std::string& req, std::string& propertyValue);
++};
+diff --git a/service_files/xyz.openbmc_project.gpiosensor.service b/service_files/xyz.openbmc_project.gpiosensor.service
+new file mode 100644
+index 0000000..f2c6e80
+--- /dev/null
++++ b/service_files/xyz.openbmc_project.gpiosensor.service
+@@ -0,0 +1,12 @@
++[Unit]
++Description=GPIO Sensor
++StopWhenUnneeded=false
++After=xyz.openbmc_project.EntityManager.service
++[Service]
++Restart=always
++RestartSec=5
++ExecStart=/usr/bin/env gpiosensor
++SyslogIdentifier=gpio-sensor
++
++[Install]
++WantedBy=multi-user.target
+diff --git a/src/GPIOSensor.cpp b/src/GPIOSensor.cpp
+new file mode 100755
+index 0000000..9e1e5bf
+--- /dev/null
++++ b/src/GPIOSensor.cpp
+@@ -0,0 +1,225 @@
++/*
++// Copyright (c) 2018 Intel Corporation
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//      http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++*/
++
++#include <errno.h>
++#include <fcntl.h>
++#include <sys/ioctl.h>
++#include <unistd.h>
++
++#include <GPIOSensor.hpp>
++#include <boost/asio.hpp>
++#include <boost/bind.hpp>
++#include <chrono>
++#include <iostream>
++#include <sdbusplus/asio/object_server.hpp>
++#include <string>
++#include <thread>
++
++
++static constexpr bool DEBUG = true;
++
++#define DBUSMONITOR = false;
++
++// gpio sysfs path
++constexpr const char* gpioPath = "/sys/class/gpio/";
++
++void GPIOSensor::updateValue(const std::string newValue)
++{
++    std::cerr << "updateValue\n";
++    // indicate that it is internal set call
++    mInternalSet = true;
++    mIface->set_property(mProperty.c_str(), newValue);
++    mInternalSet = false;
++
++    mValue = newValue;
++
++    if (mOldValue == mStateNormal && mValue != mStateNormal)
++    {
++        std::cerr << "save to SEL for gpio assert event \n";
++        mOldValue = mValue;
++    }
++    else if (mOldValue != mStateNormal && mValue == mStateNormal)
++    {
++        std::cerr << "save to SEL for gpio de-assert event \n";
++        mOldValue = mValue;
++    }
++}
++
++void GPIOSensor::readGpio()
++{
++    std::cerr << "readGpio\n";
++    constexpr size_t readSize = sizeof("0");
++    std::string readBuf;
++    readBuf.resize(readSize);
++    lseek(mFd, 0, SEEK_SET);
++    size_t r = ::read(mFd, readBuf.data(), readSize);
++    if (r != readSize)
++    {
++        std::cerr << "Error reading gpio\n";
++    }
++    else
++    {
++        bool value = std::stoi(readBuf);
++        if (mGpioInverted)
++        {
++            value = !value;
++        }
++
++        // set string defined in chassis redfish schema
++        std::string newValue = value ? mStateActive : mStateNormal;
++
++        if (DEBUG)
++        {
++            std::cout << "\nGPIO value is " << value << "\n";
++            std::cout << "Intrusion sensor value is " << newValue << "\n";
++        }
++
++        if (newValue != "unknown" && mValue != newValue)
++        {
++            std::cout << "update value from " << mValue << " to " << newValue
++                      << "\n";
++            updateValue(newValue);
++        }
++    }
++}
++
++void GPIOSensor::pollSensorStatusByGpio(void)
++{
++    std::cerr << "pollSensorStatusByGpio\n";
++    mInputDev.async_wait(
++        boost::asio::ip::tcp::socket::wait_error,
++        [this](const boost::system::error_code& ec) {
++            if (ec == boost::system::errc::bad_file_descriptor)
++            {
++                std::cerr << "boost::system::errc::bad_file_descriptor\n";
++                return; // we're being destroyed
++            }
++            else if (ec)
++            {
++                std::cerr << "Error on GPIO based intrusion sensor socket\n";
++            }
++            else
++            {
++                readGpio();
++            }
++    pollSensorStatusByGpio();
++        });
++}
++
++void GPIOSensor::initGpioDeviceFile(const int index)
++{
++    std::cerr << "init gpio device\n";
++    std::string device = gpioPath + std::string("gpio") + std::to_string(index);
++    mFd = open((device + "/value").c_str(), O_RDONLY);
++    if (mFd < 0)
++    {
++        std::cerr << "Error opening gpio " << index << "\n";
++        return;
++    }
++    mInputDev.assign(boost::asio::ip::tcp::v4(), mFd);
++}
++
++int GPIOSensor::setSensorValue(const std::string& req,
++                                           std::string& propertyValue)
++{
++    if (!mInternalSet)
++    {
++        propertyValue = req;
++        mOverridenState = true;
++    }
++    else if (!mOverridenState)
++    {
++        propertyValue = req;
++    }
++    return 1;
++}
++
++void GPIOSensor::start(int gpioIndex, bool gpioInverted)
++{
++    std::cerr << "start gpio sensor\n";
++    if (DEBUG)
++    {
++            std::cerr << "gpioIndex = " << gpioIndex
++                      << ", gpioInverted = " << gpioInverted << "\n";
++    }
++
++    if(gpioIndex == mGpioIndex &&  gpioInverted == mGpioInverted)
++    {
++        return;
++    }
++
++    mGpioIndex = gpioIndex;
++    mGpioInverted = gpioInverted;
++
++    if(mGpioIndex > 0)
++    {
++        // initialize first if not initialized before
++        if (!mInitialized)
++        {
++            mIface->register_property(
++                mProperty.c_str(), mValue,
++                [&](const std::string& req, std::string& propertyValue) {
++                    return setSensorValue(req, propertyValue);
++                });
++
++            mIface->register_property("SensorNumber", mSensorNumber);
++				
++            mIface->initialize();
++
++#if DEBUSMONITOR
++            //use phosphor-gpio-monitor feature to monitor gpio pin 
++            initGpioDeviceFile(mGpioIndex);
++#endif
++            mInitialized = true;
++        }
++#if DEBUSMONITOR
++            pollSensorStatusByGpio();
++#endif
++    }
++
++    // invalid para, release resource
++    else
++    {
++        if (mInitialized)
++        {
++                mInputDev.close();
++                close(mFd);
++                mInitialized = false;
++        }
++    }
++}
++
++GPIOSensor::GPIOSensor(
++    boost::asio::io_service& io,
++    std::shared_ptr<sdbusplus::asio::dbus_interface> iface,
++    std::string sensorStateNormal,
++    std::string sensorStateActive,
++    std::string sensorProperty,
++	uint16_t sensorNumber) :
++    mIface(iface), mInputDev(io),
++    mStateNormal(sensorStateNormal), mStateActive(sensorStateActive), mProperty(sensorProperty), 
++    mGpioIndex(-1), mGpioInverted(false), mValue(sensorStateNormal),
++    mOldValue(sensorStateNormal),mSensorNumber(sensorNumber)
++{
++    std::cerr << "enter gpio sensor\n";
++}
++
++GPIOSensor::~GPIOSensor()
++{
++        std::cerr << "leave gpio sensor\n";
++        mInputDev.close();
++        close(mFd);
++}
+diff --git a/src/GPIOSensorMain.cpp b/src/GPIOSensorMain.cpp
+new file mode 100755
+index 0000000..0b656c2
+--- /dev/null
++++ b/src/GPIOSensorMain.cpp
+@@ -0,0 +1,268 @@
++/*
++// Copyright (c) 2018 Intel Corporation
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//      http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++*/
++
++#include <GPIOSensor.hpp>
++#include <Utils.hpp>
++#include <boost/algorithm/string/predicate.hpp>
++#include <boost/asio.hpp>
++#include <chrono>
++#include <ctime>
++#include <iostream>
++#include <sdbusplus/asio/connection.hpp>
++#include <sdbusplus/asio/object_server.hpp>
++#include <sdbusplus/asio/sd_event.hpp>
++#include <sdbusplus/bus.hpp>
++#include <sdbusplus/exception.hpp>
++#include <sdbusplus/server.hpp>
++#include <sdbusplus/timer.hpp>
++
++static constexpr bool DEBUG = true;
++
++static constexpr const char* sensorType =
++    "xyz.openbmc_project.Configuration.Gpio";
++
++static bool getGPIOSensorConfig(
++    std::shared_ptr<sdbusplus::asio::connection>& dbusConnection,
++    int* pGpioIndex,	
++    bool* pGpioInverted,
++	uint64_t* sensorNumber,
++    std::string &sensorName,
++    std::string &sensorInterface,
++    std::string &sensorStateNormal,
++    std::string &sensorStateActive,
++    std::string &sensorProperty)
++{
++    // find matched configuration according to sensor type
++    ManagedObjectType sensorConfigurations;
++    bool useCache = false;
++
++    if (!getSensorConfiguration(sensorType, dbusConnection,
++                                sensorConfigurations, useCache))
++    {
++        std::cerr << "error communicating to entity manager\n";
++        return false;
++    }
++
++    const SensorData* sensorData = nullptr;
++    const std::pair<std::string,
++                    boost::container::flat_map<std::string, BasicVariantType>>*
++        baseConfiguration = nullptr;
++
++    // Get bus and addr of matched configuration
++    for (const std::pair<sdbusplus::message::object_path, SensorData>& sensor :
++         sensorConfigurations)
++    {
++        baseConfiguration = nullptr;
++        sensorData = &(sensor.second);
++
++        // match sensor type
++        auto sensorBase = sensorData->find(sensorType);
++        if (sensorBase == sensorData->end())
++        {
++            std::cerr << "error finding base configuration \n";
++            continue;
++        }
++
++        baseConfiguration = &(*sensorBase);
++
++            
++//###############################
++        auto findSensorName = baseConfiguration->second.find("Name");
++        if (findSensorName == baseConfiguration->second.end())
++        {
++            std::cerr << "could not determine configuration name \n ";
++            continue;
++        }
++        sensorName = std::get<std::string>(findSensorName->second);
++        std::cout << "find matched sensorname " << sensorName.c_str();
++      
++        auto findInterface = baseConfiguration->second.find("Interface");
++        if (findInterface == baseConfiguration->second.end())
++        {
++            std::cerr << "could not determine configuration interface \n ";
++            continue;
++        }
++        sensorInterface = std::get<std::string>(findInterface->second);
++        std::cout << "find matched sensor Interface " << sensorInterface.c_str()  << "\n";
++
++        auto findProperty = baseConfiguration->second.find("Property");
++        if (findProperty == baseConfiguration->second.end())
++        {
++            std::cerr << "could not determine configuration Property \n ";
++            continue;
++        }
++        sensorProperty = std::get<std::string>(findProperty->second);
++        std::cout << "find matched sensor Property " << sensorProperty.c_str() << "\n";
++
++		auto findSensorNumber = baseConfiguration->second.find("SensorNumber");
++        if (findSensorNumber == baseConfiguration->second.end())
++        {
++            std::cerr << "could not determine configuration sensorNumber \n ";
++            continue;
++        }
++		
++		try
++        {
++            *sensorNumber = sdbusplus::message::variant_ns::get<uint64_t>(
++                findSensorNumber->second);
++        }
++        catch (const std::bad_variant_access& e)
++        {
++                std::cerr << "invalid value for sensor number info in config. \n";
++                continue;
++        }
++		
++		
++        sensorProperty = std::get<std::string>(findProperty->second);
++        std::cout << "find matched sensor Property " << sensorProperty.c_str() << "\n";
++		
++        auto findStateActive = baseConfiguration->second.find("StateActive");
++        if (findStateActive == baseConfiguration->second.end())
++        {
++            std::cerr << "could not determine configuration Active State \n ";
++            continue;
++        }
++        sensorStateActive = std::get<std::string>(findStateActive->second);
++        std::cout << "find matched sensor Active State " << sensorStateActive.c_str() << "\n";
++
++        auto findStateNormal = baseConfiguration->second.find("StateNormal");
++        if (findStateNormal == baseConfiguration->second.end())
++        {
++            std::cerr << "could not determine configuration Normal State \n ";
++            continue;
++        }
++        sensorStateNormal = std::get<std::string>(findStateNormal->second);
++        std::cout << "find matched sensor Normal State " << sensorStateNormal.c_str()  << "\n";
++ 
++
++
++        auto findGpioIndex = baseConfiguration->second.find("Index");
++        auto findGpioPolarity = baseConfiguration->second.find("Polarity");
++
++        if (findGpioIndex == baseConfiguration->second.end() ||
++            findGpioPolarity == baseConfiguration->second.end())
++        {
++            std::cerr << "error finding gpio info in configuration \n";
++                continue;
++        }
++
++        try
++        {
++            *pGpioIndex = sdbusplus::message::variant_ns::get<uint64_t>(
++                findGpioIndex->second);
++            *pGpioInverted = (sdbusplus::message::variant_ns::get<std::string>(
++                     findGpioPolarity->second) == "Low");
++            }
++            catch (const std::bad_variant_access& e)
++            {
++                std::cerr << "invalid value for gpio info in config. \n";
++                continue;
++            }
++
++
++            if (DEBUG)
++            {
++                std::cout << "find matched GPIO index " << *pGpioIndex
++                          << ", polarity inverted flag is " << *pGpioInverted
++                          << "\n";
++            }
++
++            return true;
++        }
++
++
++   // }
++
++    std::cerr << "can't find matched I2C or GPIO configuration. \n";
++    *pGpioIndex = -1;
++    return false;
++}
++
++int main()
++{
++    int gpioIndex = -1;
++    bool gpioInverted = false;
++    int baseconfigureflag=0;
++    uint64_t sensorNumber=0;
++    std::string sensorName;
++    std::string sensorInterface;
++    std::string sensorStateNormal;
++    std::string sensorStateActive;
++    std::string sensorProperty;
++    // setup connection to dbus
++    boost::asio::io_service io;
++    auto systemBus = std::make_shared<sdbusplus::asio::connection>(io);
++    auto objServer = sdbusplus::asio::object_server(systemBus);
++
++    // setup object server, define interface
++    systemBus->request_name("xyz.openbmc_project.GpioSensor");
++
++
++    if (getGPIOSensorConfig(systemBus, &gpioIndex, &gpioInverted, &sensorNumber, sensorName, sensorInterface, sensorStateNormal, sensorStateActive, sensorProperty))
++    {
++        baseconfigureflag=1;
++    }else
++    {
++        return -1;
++    }
++
++        std::shared_ptr<sdbusplus::asio::dbus_interface> ifaceChassis =
++        objServer.add_interface(
++            "/xyz/openbmc_project/sensors/gpio/"+sensorName,
++            sensorInterface);
++        GPIOSensor gpioSensor(io, ifaceChassis, sensorStateNormal, sensorStateActive, sensorProperty,sensorNumber);
++        gpioSensor.start(gpioIndex,  gpioInverted);
++    
++
++
++    // callback to handle configuration change
++    std::function<void(sdbusplus::message::message&)> eventHandler =
++        [&](sdbusplus::message::message& message) {
++            if (message.is_method_error())
++            {
++                std::cerr << "callback method error\n";
++                return;
++            }
++
++            std::cout << "rescan due to configuration change \n";
++            if (getGPIOSensorConfig(systemBus, &gpioIndex, &gpioInverted, &sensorNumber, sensorName, sensorInterface, sensorStateNormal, sensorStateActive, sensorProperty))
++            {
++                if(!baseconfigureflag)
++                {
++                   std::shared_ptr<sdbusplus::asio::dbus_interface> ifaceChassis =
++                        objServer.add_interface(
++                        "/xyz/openbmc_project/sensors/gpio/"+sensorName,
++                        sensorInterface);
++                   GPIOSensor gpioSensor(io, ifaceChassis, sensorStateNormal, sensorStateActive, sensorProperty,sensorNumber);
++                   baseconfigureflag=1;
++                   gpioSensor.start(gpioIndex, gpioInverted);
++                }else{
++
++                   gpioSensor.start(gpioIndex, gpioInverted);
++                } 
++            }
++        };
++
++    auto match = std::make_unique<sdbusplus::bus::match::match>(
++        static_cast<sdbusplus::bus::bus&>(*systemBus),
++        "type='signal',member='PropertiesChanged',path_namespace='" +
++            std::string(inventoryPath) + "',arg0namespace='" + sensorType + "'",
++        eventHandler);
++
++    io.run();
++
++    return 0;
++}

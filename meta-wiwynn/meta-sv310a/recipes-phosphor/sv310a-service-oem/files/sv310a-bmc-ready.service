@@ -1,0 +1,12 @@
+[Unit]
+Description=BMC ready
+After=multi-user.target
+Before=phosphor-discover-system-state@0.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/touch /run/bmc-ready
+SyslogIdentifier=BMC-ready
+
+[Install]
+WantedBy=multi-user.target

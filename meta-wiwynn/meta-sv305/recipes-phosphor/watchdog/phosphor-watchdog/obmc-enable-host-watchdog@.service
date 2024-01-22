@@ -1,0 +1,18 @@
+[Unit]
+Description=Start Watchdog%i
+Wants=obmc-host-started@%i.target
+After=obmc-host-started@%i.target
+Wants=mapper-wait@-xyz-openbmc_project-watchdog-host%i.service
+After=mapper-wait@-xyz-openbmc_project-watchdog-host%i.service
+Conflicts=obmc-host-stop@%i.target
+ConditionPathExists=!/run/openbmc/host@%i-on
+
+[Service]
+Type=oneshot
+ExecStartPre=/bin/sh -c "busctl set-property `mapper get-service /xyz/openbmc_project/watchdog/host%i` /xyz/openbmc_project/watchdog/host%i xyz.openbmc_project.State.Watchdog CurrentTimerUse s xyz.openbmc_project.State.Watchdog.TimerUse.Reserved"
+ExecStartPre=/bin/sh -c "busctl set-property `mapper get-service /xyz/openbmc_project/watchdog/host%i` /xyz/openbmc_project/watchdog/host%i xyz.openbmc_project.State.Watchdog ExpireAction s xyz.openbmc_project.State.Watchdog.Action.HardReset"
+ExecStartPre=/bin/sh -c "busctl set-property `mapper get-service /xyz/openbmc_project/watchdog/host%i` /xyz/openbmc_project/watchdog/host%i xyz.openbmc_project.State.Watchdog Interval t 180000"
+ExecStart=/bin/sh -c "busctl call `mapper get-service /xyz/openbmc_project/watchdog/host%i` /xyz/openbmc_project/watchdog/host%i org.freedesktop.DBus.Properties Set ssv xyz.openbmc_project.State.Watchdog Enabled b true"
+RemainAfterExit=yes
+SyslogIdentifier=obmc-enable-host-watchdog
+

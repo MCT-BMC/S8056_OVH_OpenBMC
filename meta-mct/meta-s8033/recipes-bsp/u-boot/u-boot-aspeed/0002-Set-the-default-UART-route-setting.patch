@@ -1,0 +1,38 @@
+From b5cfc223d213b213ef746528ff868d7462781258 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Wed, 7 Apr 2021 17:21:54 +0800
+Subject: [PATCH] Set the default UART route setting
+
+---
+ board/aspeed/ast-g5/ast-g5.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/board/aspeed/ast-g5/ast-g5.c b/board/aspeed/ast-g5/ast-g5.c
+index 88f9ff9392..718083f888 100755
+--- a/board/aspeed/ast-g5/ast-g5.c
++++ b/board/aspeed/ast-g5/ast-g5.c
+@@ -28,12 +28,24 @@ void Light_BMC_Heartbeat_LED(void)
+ 	*(volatile ulong *)(0x1E780024) |= 0x0000080 ;
+ }
+ 
++/*--------------------------------------------------------------------
++ * @fn Set_Default_UART_Route
++ * @brief Set the default UART Route
++ * Author  Mirage
++ *--------------------------------------------------------------------*/
++void Set_Default_UART_Route(void)
++{
++	puts("Set the default UART Route(UART1 <-> UART3 for SOL)...\n");
++	*(volatile ulong *)(0x1E78909C) = 0x1400000 ;
++}
++
+ int board_init(void)
+ {
+ 	gd->bd->bi_boot_params = CONFIG_SYS_SDRAM_BASE + 0x100;
+ 	gd->flags = 0;
+ 
+ 	Light_BMC_Heartbeat_LED();
++	Set_Default_UART_Route();
+ 
+ 	return 0;
+ }

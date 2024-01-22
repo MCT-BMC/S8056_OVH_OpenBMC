@@ -1,0 +1,46 @@
+From 8b42822e6143750d9daf897b496688d1067d6144 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Mon, 20 Apr 2020 09:47:27 +0800
+Subject: [PATCH 01/11] Change to steady_timer used in ThresholdTimer
+
+---
+ include/Thresholds.hpp | 7 ++++---
+ 1 file changed, 4 insertions(+), 3 deletions(-)
+
+diff --git a/include/Thresholds.hpp b/include/Thresholds.hpp
+index 00df68c..42781c0 100644
+--- a/include/Thresholds.hpp
++++ b/include/Thresholds.hpp
+@@ -8,6 +8,7 @@
+ #include <string>
+ #include <utility>
+ #include <vector>
++#include <boost/asio/steady_timer.hpp>
+ 
+ struct Sensor;
+ namespace thresholds
+@@ -45,7 +46,7 @@ struct Threshold
+ void assertThresholds(Sensor* sensor, thresholds::Level level,
+                       thresholds::Direction direction, bool assert);
+ 
+-using TimerPair = std::pair<bool, boost::asio::deadline_timer>;
++using TimerPair = std::pair<bool, boost::asio::steady_timer>;
+ 
+ struct ThresholdTimer
+ {
+@@ -70,10 +71,10 @@ struct ThresholdTimer
+         }
+         if (pair == nullptr)
+         {
+-            pair = &timers.emplace_back(false, boost::asio::deadline_timer(io));
++            pair = &timers.emplace_back(false, boost::asio::steady_timer(io));
+         }
+         pair->first = true;
+-        pair->second.expires_from_now(boost::posix_time::seconds(waitTime));
++        pair->second.expires_from_now(boost::asio::chrono::seconds(waitTime));
+         pair->second.async_wait(
+             [this, pair, threshold](boost::system::error_code ec) {
+                 pair->first = false;
+-- 
+2.24.1
+

@@ -1,0 +1,67 @@
+From 89efd1016ab09a078e8e131c92de58cce5eec1a3 Mon Sep 17 00:00:00 2001
+From: Ray Lue <ray.lue@mic.com.tw>
+Date: Tue, 16 Jul 2019 21:03:48 +0800
+Subject: [PATCH] ipmbsensor: add DIMM temperature channl 4-7 support for
+ peciSensor
+
+---
+ src/IpmbSensor.cpp | 28 ++++++++++++++++++++--------
+ 1 file changed, 20 insertions(+), 8 deletions(-)
+ mode change 100644 => 100755 src/IpmbSensor.cpp
+
+diff --git a/src/IpmbSensor.cpp b/src/IpmbSensor.cpp
+old mode 100644
+new mode 100755
+index 9b1746f..c84c623
+--- a/src/IpmbSensor.cpp
++++ b/src/IpmbSensor.cpp
+@@ -203,8 +203,14 @@ void IpmbSensor::loadDefaults()
+         commandAddress = meAddress;
+         netfn = 0x2e;       // me bridge
+         command = 0x4b;     // Get CPU and Memory Temperature
+-        commandData = {0x57, 0x01, 0x00, 0x3, 0xff,  0xff, 0xff,
+-                       0xff, 0x00, 0x00, 0x00, 0x00};
++        if (deviceAddress < 0x80){ // take bit7 to indicate the channel 4-7 
++            commandData = {0x57, 0x01, 0x00, 0x3, 0xff,  0xff, 0xff,
++                        0xff, 0x00, 0x00, 0x00, 0x00};
++        }else{
++            commandData = {0x57, 0x01, 0x00, 0x43, 0xff,  0xff, 0xff,
++                        0xff, 0x00, 0x00, 0x00, 0x00};
++            cpuDimmTempScaner = true; //no buffered data for channel 4-7
++        }
+     }
+     else
+     {
+@@ -289,6 +295,7 @@ void IpmbSensor::read(void)
+                 cpuDimmTempScaner = true;
+             }else{
+                 uint16_t value = 0;
++  
+                 if(0xff == data_buffer[deviceAddress]) value = -1;
+                 else{
+                      value = deviceAddress > 1 ? data_buffer[deviceAddress]:tjmax - data_buffer[deviceAddress];
+@@ -361,13 +368,18 @@ void IpmbSensor::read(void)
+                         read();
+                         return;
+                     }
+-                    //copy data to buffer 
+-                    data_buffer.assign(data.begin()+3, data.end());
+-                    //TODO: use json config to indicate temp type
+-                    if(0xff == data_buffer[deviceAddress]) value = -1;
+-                    else 
+-                        value = deviceAddress > 1 ? data_buffer[deviceAddress]:tjmax - data_buffer[deviceAddress];
+ 
++                    if (deviceAddress < 0x80){
++                        //copy data to buffer 
++                        data_buffer.assign(data.begin()+3, data.end());
++                        //TODO: use json config to indicate temp type
++                        if(0xff == data_buffer[deviceAddress]) value = -1;
++                        else 
++                            value = deviceAddress > 1 ? data_buffer[deviceAddress]:tjmax - data_buffer[deviceAddress];
++                    }else{  //channel 4-7
++                        value = data[deviceAddress-0x80+5];
++                        if(0xff == value) value = -1;
++                    }
+                 }
+ 
+                 

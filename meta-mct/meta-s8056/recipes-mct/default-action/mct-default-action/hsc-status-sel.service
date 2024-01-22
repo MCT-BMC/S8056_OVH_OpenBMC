@@ -1,0 +1,14 @@
+[Unit]
+Description=Check and generate HSC SEL
+StopWhenUnneeded=false
+After=xyz.openbmc_project.Logging.IPMI.service
+After=xyz.openbmc_project.eventsensor.service
+
+[Service]
+ExecStartPre=/bin/bash -c 'while [ ! -e /run/sel-logger-ready ]; do sleep 1; done;sleep 5'
+ExecStart=/usr/sbin/pmbus-status-sel.sh hsc HSC_STATUS 1
+SyslogIdentifier=hsc-status-sel
+TimeoutSec=infinity
+
+[Install]
+WantedBy=multi-user.target

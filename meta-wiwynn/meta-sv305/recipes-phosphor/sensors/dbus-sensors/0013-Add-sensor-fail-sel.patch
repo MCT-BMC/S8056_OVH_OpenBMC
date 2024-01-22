@@ -1,0 +1,140 @@
+From 5e16049c488cd95b72370da5341a8f66307a3b60 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Fri, 20 Nov 2020 12:39:27 +0800
+Subject: [PATCH] Add sensor fail sel
+
+---
+ include/Utils.hpp  |  3 +++
+ include/sensor.hpp | 41 ++++++++++++++++++++++++++++++++++++++++-
+ src/Utils.cpp      | 26 ++++++++++++++++++++++++++
+ 3 files changed, 69 insertions(+), 1 deletion(-)
+
+diff --git a/include/Utils.hpp b/include/Utils.hpp
+index 950f118..5ea8c9b 100644
+--- a/include/Utils.hpp
++++ b/include/Utils.hpp
+@@ -11,6 +11,7 @@
+ #include <functional>
+ #include <iostream>
+ #include <memory>
++#include <openbmc/sensor-gen-extra.cpp>
+ #include <regex>
+ #include <string>
+ #include <tuple>
+@@ -320,3 +321,5 @@ std::optional<double> readFile(const std::string& thresholdFile,
+                                const double& scaleFactor);
+ void setupManufacturingModeMatch(sdbusplus::asio::connection& conn);
+ bool getManufacturingMode();
++
++void addSensorFailSel(const std::string& sensorPath, bool isAssert);
+diff --git a/include/sensor.hpp b/include/sensor.hpp
+index b98241b..9f39cc5 100644
+--- a/include/sensor.hpp
++++ b/include/sensor.hpp
+@@ -358,6 +358,31 @@ struct Sensor
+         return true;
+     }
+ 
++    void sendSensorFailSignal(bool isAssert)
++    {
++        const auto& sensorPath = sensorInterface->get_object_path();
++        auto findSensor = ipmi::sensor::sensorsInfo.find(sensorPath);
++        if (findSensor == ipmi::sensor::sensorsInfo.end())
++        {
++            std::cerr << "Failed to find sensor information from " << sensorPath
++                      << "\n";
++            return;
++        }
++        uint8_t sensorNumber = findSensor->second.sensorNumber;
++
++        try
++        {
++            auto msg = operationalInterface->new_signal("SensorFailAssert");
++            msg.append(name, sensorNumber, isAssert);
++            msg.signal_send();
++        }
++        catch (const sdbusplus::exception_t& e)
++        {
++            std::cerr << "Failed to send sensor fail signal. " << e.what()
++                      << "\n";
++        }
++    }
++
+     void markFunctional(bool isFunctional)
+     {
+         if (operationalInterface)
+@@ -399,8 +424,13 @@ struct Sensor
+         errCount++;
+         if (errCount == errorThreshold)
+         {
+-            std::cerr << "Sensor " << name << " reading error!\n";
+             markFunctional(false);
++
++            if ((objectType.find("NVME") == std::string::npos) &&
++                (objectType.find("DIMM") == std::string::npos))
++            {
++                sendSensorFailSignal(true);
++            }
+         }
+     }
+ 
+@@ -430,6 +460,15 @@ struct Sensor
+         checkThresholds();
+         if (!std::isnan(newValue))
+         {
++            if (errCount >= errorThreshold)
++            {
++                if ((objectType.find("NVME") == std::string::npos) &&
++                    (objectType.find("DIMM") == std::string::npos))
++                {
++                    sendSensorFailSignal(false);
++                }
++            }
++
+             markFunctional(true);
+             markAvailable(true);
+         }
+diff --git a/src/Utils.cpp b/src/Utils.cpp
+index 35b26e3..ba7471d 100644
+--- a/src/Utils.cpp
++++ b/src/Utils.cpp
+@@ -20,6 +20,7 @@
+ #include <Utils.hpp>
+ #include <boost/algorithm/string/predicate.hpp>
+ #include <boost/container/flat_map.hpp>
++#include <openbmc/libobmcdbus.hpp>
+ #include <sdbusplus/asio/connection.hpp>
+ #include <sdbusplus/asio/object_server.hpp>
+ #include <sdbusplus/bus/match.hpp>
+@@ -555,3 +556,28 @@ bool getManufacturingMode()
+ {
+     return manufacturingMode;
+ }
++
++void addSensorFailSel(const std::string& sensorPath, bool isAssert)
++{
++    auto findSensor = ipmi::sensor::sensorsInfo.find(sensorPath);
++    if (findSensor == ipmi::sensor::sensorsInfo.end())
++    {
++        std::cerr << "Failed to find sensor inforamtion from " << sensorPath
++                  << "\n";
++        return;
++    }
++    uint8_t sensorNumber = findSensor->second.sensorNumber;
++
++    /*
++     *  Sensor type: Management Subsystem Health (0x28)
++     *  Data 1: Sensor specific Offset: 04h - Sensor failure.
++     *  Data 2: Sensor Number.
++     */
++    auto namePos = sensorPath.find_last_of("/");
++    const std::string sensorName = sensorPath.substr(namePos + 1);
++    const std::string selAddMessage = sensorName + " Sensor Fail";
++    const std::string path = "/xyz/openbmc_project/sensors/discrete/BMC_Health";
++    std::vector<uint8_t> eventData = {0x04, sensorNumber, 0xFF};
++
++    ipmiSelAdd(selAddMessage, path, eventData, isAssert);
++}
+-- 
+2.28.0
+

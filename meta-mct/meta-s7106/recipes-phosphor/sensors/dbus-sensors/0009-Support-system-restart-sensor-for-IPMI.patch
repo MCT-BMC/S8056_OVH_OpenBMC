@@ -1,0 +1,147 @@
+From 217f02fd67316489cf71f6a763175dbd68602504 Mon Sep 17 00:00:00 2001
+From: Ray Lue <ray.lue@mic.com.tw>
+Date: Fri, 20 Sep 2019 18:04:30 +0800
+Subject: [PATCH] Support system-restart sensor for IPMI
+
+---
+ CMakeLists.txt                                | 14 ++++
+ ...yz.openbmc_project.hostresetsensor.service | 12 ++++
+ src/HostResetSensor.cpp                       | 67 +++++++++++++++++++
+ 3 files changed, 93 insertions(+)
+ create mode 100644 service_files/xyz.openbmc_project.hostresetsensor.service
+ create mode 100755 src/HostResetSensor.cpp
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index ee4e215..51366d6 100755
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -48,6 +48,7 @@ option (DISABLE_MCUTEMP "Disable installing MCU temperature sensor" OFF)
+ option (DISABLE_PSU "Disable installing PSU sensor" OFF)
+ option (DISABLE_PROCESSOR "Disable installing processor sensor" OFF)
+ option (DISABLE_ACPI "Disable installing acpi sensor" OFF)
++option (DISABLE_HOSTRESET "Disable installing host reset sensor" OFF)
+ 
+ include ("cmake/HunterGate.cmake")
+ 
+@@ -207,6 +208,11 @@ add_executable (acpisensor src/AcpiSensorMain.cpp)
+ add_dependencies (acpisensor sdbusplus-project)
+ target_link_libraries (acpisensor ${SENSOR_LINK_LIBS})
+ 
++add_executable (hostresetsensor src/HostResetSensor.cpp)
++add_dependencies (hostresetsensor sdbusplus-project)
++target_link_libraries (hostresetsensor ${SENSOR_LINK_LIBS})
++
++
+ if (NOT YOCTO)
+     add_dependencies (adcsensor ${EXTERNAL_PACKAGES})
+     add_dependencies (cpusensor ${EXTERNAL_PACKAGES})
+@@ -220,6 +226,7 @@ if (NOT YOCTO)
+     add_dependencies (psusensor ${EXTERNAL_PACKAGES})
+     add_dependencies (processorsensor ${EXTERNAL_PACKAGES})
+     add_dependencies (acpisensor ${EXTERNAL_PACKAGES})
++    add_dependencies (hostresetsensor ${EXTERNAL_PACKAGES})
+ endif ()
+ 
+ set (SERVICE_FILE_SRC_DIR ${PROJECT_SOURCE_DIR}/service_files)
+@@ -318,3 +325,10 @@ if (NOT DISABLE_ACPI)
+                  DESTINATION ${SERVICE_FILE_INSTALL_DIR})
+ endif ()
+ 
++if (NOT DISABLE_HOSTRESET)
++    install (TARGETS hostresetsensor DESTINATION bin)
++    install (FILES
++                 ${SERVICE_FILE_SRC_DIR}/xyz.openbmc_project.hostresetsensor.service
++                 DESTINATION ${SERVICE_FILE_INSTALL_DIR})
++endif ()
++
+diff --git a/service_files/xyz.openbmc_project.hostresetsensor.service b/service_files/xyz.openbmc_project.hostresetsensor.service
+new file mode 100644
+index 0000000..1996efb
+--- /dev/null
++++ b/service_files/xyz.openbmc_project.hostresetsensor.service
+@@ -0,0 +1,12 @@
++[Unit]
++Description=IPMI defined system reset sensor
++StopWhenUnneeded=false
++After=xyz.openbmc_project.EntityManager.service
++[Service]
++Restart=always
++RestartSec=5
++ExecStart=/usr/bin/env hostresetsensor
++SyslogIdentifier=hostreset-sensor
++
++[Install]
++WantedBy=multi-user.target
+diff --git a/src/HostResetSensor.cpp b/src/HostResetSensor.cpp
+new file mode 100755
+index 0000000..8c91b14
+--- /dev/null
++++ b/src/HostResetSensor.cpp
+@@ -0,0 +1,67 @@
++/*
++// Copyright (c) 2018 Intel Corporation
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//      http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++*/
++
++#include <Utils.hpp>
++#include <boost/algorithm/string/predicate.hpp>
++#include <boost/asio.hpp>
++#include <chrono>
++#include <ctime>
++#include <iostream>
++#include <sdbusplus/asio/connection.hpp>
++#include <sdbusplus/asio/object_server.hpp>
++#include <sdbusplus/asio/sd_event.hpp>
++#include <sdbusplus/bus.hpp>
++#include <sdbusplus/exception.hpp>
++#include <sdbusplus/server.hpp>
++#include <sdbusplus/timer.hpp>
++#include <sensor.hpp>
++#include <systemd/sd-journal.h>
++
++
++static constexpr bool DEBUG = true;
++
++static constexpr char const* ipmiSELService =    "xyz.openbmc_project.Logging.IPMI";
++static constexpr char const* ipmiSELPath = "/xyz/openbmc_project/Logging/IPMI";
++static constexpr char const* ipmiSELAddInterface = "xyz.openbmc_project.Logging.IPMI";
++
++static const std::string ipmiSELAddMessage = "SEL Entry";
++static const std::string sensorPath = "/xyz/openbmc_project/sensors/restart/SYSTEM_RESTART";
++
++static constexpr size_t selEvtDataMaxSize = 3;
++
++int main()
++{
++    // setup connection to dbus
++    boost::asio::io_service io;
++    auto systemBus = std::make_shared<sdbusplus::asio::connection>(io);
++    auto objServer = sdbusplus::asio::object_server(systemBus);
++
++    // setup object server, define interface
++    systemBus->request_name("xyz.openbmc_project.HostResetSensor");
++
++    // add acpi interface into sensor tree
++    std::shared_ptr<sdbusplus::asio::dbus_interface> iface =
++        objServer.add_interface(sensorPath,sensorValueInterface);
++
++    double value = 0;
++    //dummy value, just identifier for sdr command   
++    iface->register_property("Value", value);
++    iface->initialize();
++    
++    io.run();
++
++    return 0;
++}

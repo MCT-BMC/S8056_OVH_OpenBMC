@@ -1,0 +1,23 @@
+From 6fb23a22a6e4ed9805c8c5801dfb7ba7e5c04cc0 Mon Sep 17 00:00:00 2001
+From: Eli Huang <Eli_Huang@wiwynn.com>
+Date: Wed, 18 Nov 2020 18:05:26 +0800
+Subject: [PATCH] Add CPLD property in Software Version
+
+---
+ yaml/xyz/openbmc_project/Software/Version.interface.yaml | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/yaml/xyz/openbmc_project/Software/Version.interface.yaml b/yaml/xyz/openbmc_project/Software/Version.interface.yaml
+index 345e5b5..30066c6 100644
+--- a/yaml/xyz/openbmc_project/Software/Version.interface.yaml
++++ b/yaml/xyz/openbmc_project/Software/Version.interface.yaml
+@@ -38,3 +38,6 @@ enumerations:
+         - name: PSU
+           description: >
+             The version is a version for a PSU.
++        - name: CPLD
++          description: >
++            The version is a version for a CPLD.
+-- 
+2.28.0
+

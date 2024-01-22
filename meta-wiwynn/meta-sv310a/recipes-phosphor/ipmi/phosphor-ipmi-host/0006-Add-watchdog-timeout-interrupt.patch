@@ -1,0 +1,131 @@
+From ec0f1f2586376bc9338b2b06664439142b88454c Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Mon, 9 Nov 2020 11:36:39 +0800
+Subject: [PATCH] Add watchdog timeout interrupt
+
+---
+ app/watchdog.cpp         | 46 ++++++++++++++++++++++++++++++++++++++++
+ app/watchdog_service.cpp |  5 +++++
+ app/watchdog_service.hpp |  8 +++++++
+ 3 files changed, 59 insertions(+)
+
+diff --git a/app/watchdog.cpp b/app/watchdog.cpp
+index e92cf81..fa08148 100644
+--- a/app/watchdog.cpp
++++ b/app/watchdog.cpp
+@@ -94,6 +94,7 @@ enum class IpmiAction : uint8_t
+     HardReset = 0x1,
+     PowerOff = 0x2,
+     PowerCycle = 0x3,
++    TimerInterrupt = 0x8,
+ };
+ 
+ /** @brief Converts an IPMI Watchdog Action to DBUS defined action
+@@ -120,6 +121,10 @@ WatchdogService::Action ipmiActionToWdAction(IpmiAction ipmi_action)
+         {
+             return WatchdogService::Action::PowerCycle;
+         }
++        case IpmiAction::TimerInterrupt:
++        {
++            return WatchdogService::Action::TimerInterrupt;
++        }
+         default:
+         {
+             throw std::domain_error("IPMI Action is invalid");
+@@ -172,6 +177,42 @@ WatchdogService::TimerUse ipmiTimerUseToWdTimerUse(IpmiTimerUse ipmiTimerUse)
+     }
+ }
+ 
++enum class IpmiTimerInterruptType : uint8_t
++{
++    None = 0x0,
++    SMI = 0x1,
++    NMI = 0x2,
++    MessagingInterrupt = 0x3,
++};
++
++WatchdogService::InterruptType ipmiInterruptTypeToWdInterruptType(
++    IpmiTimerInterruptType ipmiTimerInterruptType)
++{
++    switch (ipmiTimerInterruptType)
++    {
++        case IpmiTimerInterruptType::None:
++        {
++            return WatchdogService::InterruptType::None;
++        }
++        case IpmiTimerInterruptType::SMI:
++        {
++            return WatchdogService::InterruptType::SMI;
++        }
++        case IpmiTimerInterruptType::NMI:
++        {
++            return WatchdogService::InterruptType::NMI;
++        }
++        case IpmiTimerInterruptType::MessagingInterrupt:
++        {
++            return WatchdogService::InterruptType::MessagingInterrupt;
++        }
++        default:
++        {
++            return WatchdogService::InterruptType::None;
++        }
++    }
++}
++
+ static bool timerNotLogFlags = false;
+ static std::bitset<8> timerUseExpirationFlags = 0;
+ static uint3_t timerPreTimeoutInterrupt = 0;
+@@ -237,6 +278,11 @@ ipmi::RspType<>
+         const auto ipmiTimerUse = types::enum_cast<IpmiTimerUse>(timerUse);
+         wd_service.setTimerUse(ipmiTimerUseToWdTimerUse(ipmiTimerUse));
+ 
++        const auto ipmiTimeoutInterrupt = static_cast<IpmiTimerInterruptType>(
++            static_cast<uint8_t>(preTimeoutInterrupt));
++        wd_service.setInterruptType(
++            ipmiInterruptTypeToWdInterruptType(ipmiTimeoutInterrupt));
++
+         wd_service.setExpiredTimerUse(WatchdogService::TimerUse::Reserved);
+ 
+         timerUseExpirationFlags &= ~expFlagValue;
+diff --git a/app/watchdog_service.cpp b/app/watchdog_service.cpp
+index 3534e89..08c8523 100644
+--- a/app/watchdog_service.cpp
++++ b/app/watchdog_service.cpp
+@@ -198,3 +198,8 @@ void WatchdogService::setInterval(uint64_t interval)
+ {
+     setProperty("Interval", interval);
+ }
++
++void WatchdogService::setInterruptType(InterruptType interruptType)
++{
++    setProperty("InterruptType", convertForMessage(interruptType));
++}
+diff --git a/app/watchdog_service.hpp b/app/watchdog_service.hpp
+index 141bdb7..39752c6 100644
+--- a/app/watchdog_service.hpp
++++ b/app/watchdog_service.hpp
+@@ -17,6 +17,8 @@ class WatchdogService
+         sdbusplus::xyz::openbmc_project::State::server::Watchdog::Action;
+     using TimerUse =
+         sdbusplus::xyz::openbmc_project::State::server::Watchdog::TimerUse;
++    using InterruptType =
++        sdbusplus::xyz::openbmc_project::State::server::Watchdog::InterruptType;
+ 
+     /** @brief Resets the time remaining on the watchdog.
+      *         Equivalent to setTimeRemaining(getInterval()).
+@@ -92,6 +94,12 @@ class WatchdogService
+      */
+     void setInterval(uint64_t interval);
+ 
++    /** @brief Sets the value of the InterruptType property on the host watchdog
++     *
++     *  @param[in] interval - The new interruptType value
++     */
++    void setInterruptType(InterruptType interruptType);
++
+   private:
+     /** @brief sdbusplus handle */
+     sdbusplus::bus::bus bus;
+-- 
+2.32.0
+

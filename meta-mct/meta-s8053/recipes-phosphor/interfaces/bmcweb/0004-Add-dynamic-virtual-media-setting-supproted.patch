@@ -1,0 +1,118 @@
+From 4f330e364395dd8d620b7020960bbd5dcf290175 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Tue, 15 Mar 2022 18:02:49 +0800
+Subject: [PATCH 04/11] Add dynamic virtual media setting supproted
+
+---
+ bmcweb.service.in                |  2 ++
+ redfish-core/include/redfish.hpp |  5 ++++-
+ redfish-core/lib/managers.hpp    |  8 ++++++--
+ src/webserver_main.cpp           | 11 +++++++++--
+ 4 files changed, 21 insertions(+), 5 deletions(-)
+ mode change 100644 => 100755 bmcweb.service.in
+ mode change 100644 => 100755 redfish-core/include/redfish.hpp
+ mode change 100644 => 100755 redfish-core/lib/managers.hpp
+
+diff --git a/bmcweb.service.in b/bmcweb.service.in
+old mode 100644
+new mode 100755
+index a0b6777..6fdbcca
+--- a/bmcweb.service.in
++++ b/bmcweb.service.in
+@@ -3,9 +3,11 @@ Description=Start bmcweb server
+ 
+ Wants=network.target
+ After=network.target
++After=xyz.openbmc_project.Settings.service
+ 
+ [Service]
+ ExecReload=kill -s HUP $MAINPID
++ExecStartPre=/usr/bin/env service-status-check.sh
+ ExecStart=@MESON_INSTALL_PREFIX@/bin/bmcweb
+ Type=simple
+ WorkingDirectory=/home/root
+diff --git a/redfish-core/include/redfish.hpp b/redfish-core/include/redfish.hpp
+old mode 100644
+new mode 100755
+index a9704d6..bba0246
+--- a/redfish-core/include/redfish.hpp
++++ b/redfish-core/include/redfish.hpp
+@@ -155,7 +155,10 @@ class RedfishService
+         requestRoutesBiosReset(app);
+ 
+ #ifdef BMCWEB_ENABLE_VM_NBDPROXY
+-        requestNBDVirtualMediaRoutes(app);
++        if(std::filesystem::exists("/etc/vm_enable"))
++        {
++                requestNBDVirtualMediaRoutes(app);
++        }
+ #endif // BMCWEB_ENABLE_VM_NBDPROXY
+ 
+ #ifdef BMCWEB_ENABLE_REDFISH_DBUS_LOG_ENTRIES
+diff --git a/redfish-core/lib/managers.hpp b/redfish-core/lib/managers.hpp
+old mode 100644
+new mode 100755
+index acaa40a..ef60dce
+--- a/redfish-core/lib/managers.hpp
++++ b/redfish-core/lib/managers.hpp
+@@ -30,6 +30,7 @@
+ #include <memory>
+ #include <sstream>
+ #include <variant>
++#include <filesystem>
+ 
+ namespace redfish
+ {
+@@ -1983,8 +1984,11 @@ inline void requestRoutesManager(App& app)
+                 {"@odata.id", "/redfish/v1/Managers/bmc/EthernetInterfaces"}};
+ 
+ #ifdef BMCWEB_ENABLE_VM_NBDPROXY
+-            asyncResp->res.jsonValue["VirtualMedia"] = {
+-                {"@odata.id", "/redfish/v1/Managers/bmc/VirtualMedia"}};
++            if(std::filesystem::exists("/etc/vm_enable"))
++            {
++                asyncResp->res.jsonValue["VirtualMedia"] = {
++                    {"@odata.id", "/redfish/v1/Managers/bmc/VirtualMedia"}};
++            }
+ #endif // BMCWEB_ENABLE_VM_NBDPROXY
+ 
+             // default oem data
+diff --git a/src/webserver_main.cpp b/src/webserver_main.cpp
+index 9d50530..f7e84fc 100755
+--- a/src/webserver_main.cpp
++++ b/src/webserver_main.cpp
+@@ -27,6 +27,7 @@
+ 
+ #include <memory>
+ #include <string>
++#include <filesystem>
+ 
+ #ifdef BMCWEB_ENABLE_VM_NBDPROXY
+ #include <nbd_proxy.hpp>
+@@ -102,7 +103,10 @@ static int run()
+ #endif
+ 
+ #ifdef BMCWEB_ENABLE_VM_WEBSOCKET
+-    crow::obmc_vm::requestRoutes(app);
++    if(std::filesystem::exists("/etc/vm_enable"))
++    {
++        crow::obmc_vm::requestRoutes(app);
++    }
+ #endif
+ 
+ #ifdef BMCWEB_ENABLE_MCT_OEM_REST
+@@ -128,7 +132,10 @@ static int run()
+     setupSocket(app);
+ 
+ #ifdef BMCWEB_ENABLE_VM_NBDPROXY
+-    crow::nbd_proxy::requestRoutes(app);
++    if(std::filesystem::exists("/etc/vm_enable"))
++    {
++        crow::nbd_proxy::requestRoutes(app);
++    }
+ #endif
+ 
+ #ifndef BMCWEB_ENABLE_REDFISH_DBUS_LOG_ENTRIES
+-- 
+2.7.4
+

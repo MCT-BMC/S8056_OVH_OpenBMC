@@ -1,0 +1,12 @@
+[Unit]
+Description=Set Power Good Property On
+
+[Service]
+Type=oneshot
+
+ExecStart=/usr/bin/busctl set-property "org.openbmc.control.Power" "/org/openbmc/control/power0" "org.openbmc.control.Power" "pgood" i 1
+ExecStart=/bin/sh -c 'status=$(systemctl list-jobs|grep obmc-host-start); if [ -z $status ]; then systemctl start obmc-host-start@0.target; fi'
+ExecStart=/usr/bin/controlFan.sh power-on
+ExecStart=/usr/bin/busctl call "xyz.openbmc_project.Logging.IPMI" "/xyz/openbmc_project/Logging/IPMI" "xyz.openbmc_project.Logging.IPMI" "IpmiSelAdd" ssaybq "ACPI_Power_State" "/xyz/openbmc_project/sensors/discrete/ACPI_Power_State" 0x03 0x00 0xff 0xff yes 0x20
+
+ExecStopPost=/usr/bin/busctl set-property xyz.openbmc_project.GpioMonitor /xyz/openbmc_project/gpio/event xyz.openbmc_project.GpioEvent PowerGood s "Idle"

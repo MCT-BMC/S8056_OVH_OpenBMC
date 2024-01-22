@@ -1,0 +1,25 @@
+From 44d051d2c0840e9bb08fc3716d065ff7098628fa Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Mon, 14 Mar 2022 16:51:23 +0800
+Subject: [PATCH] Fix building error with obmc 2.11
+
+---
+ src/watchdog.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/watchdog.cpp b/src/watchdog.cpp
+index fef88e3..ab0bb66 100755
+--- a/src/watchdog.cpp
++++ b/src/watchdog.cpp
+@@ -458,7 +458,7 @@ void Watchdog::addWatchdogSEL(Base::Watchdog::Action action,Base::Watchdog::Time
+                       ipmiBMCSlaveAddr);
+         bus.call_noreply(method);
+     }
+-    catch (const SdBusError& e)
++    catch (const sdbusplus::exception::SdBusError& e)
+     {
+         log<level::ERR>(e.what());
+     }
+-- 
+2.7.4
+

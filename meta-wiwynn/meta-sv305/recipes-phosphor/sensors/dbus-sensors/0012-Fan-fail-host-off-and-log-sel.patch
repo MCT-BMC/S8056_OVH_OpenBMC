@@ -1,0 +1,192 @@
+From 29c54b8ff3018017ce3be981a2e39b78f10ad398 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Thu, 5 Nov 2020 17:13:10 +0800
+Subject: [PATCH] Fan fail host off and log sel
+
+---
+ include/TachSensor.hpp |  4 +++
+ include/Utils.hpp      | 10 ++++++
+ src/TachSensor.cpp     | 81 ++++++++++++++++++++++++++++++++++++++++++
+ src/Utils.cpp          |  4 ++-
+ 4 files changed, 98 insertions(+), 1 deletion(-)
+
+diff --git a/include/TachSensor.hpp b/include/TachSensor.hpp
+index f5b56f5..023b0a0 100644
+--- a/include/TachSensor.hpp
++++ b/include/TachSensor.hpp
+@@ -76,7 +76,10 @@ class TachSensor : public Sensor
+                const std::optional<std::string>& led);
+     ~TachSensor() override;
+ 
++    inline static bool fanFailSelLogged = false;
++
+   private:
++    inline static std::set<std::string> failedFans;
+     sdbusplus::asio::object_server& objServer;
+     std::optional<RedundancySensor>* redundancy;
+     std::unique_ptr<PresenceSensor> presence;
+@@ -91,6 +94,7 @@ class TachSensor : public Sensor
+     void setupRead(void);
+     void handleResponse(const boost::system::error_code& err);
+     void checkThresholds(void) override;
++    void sendFanFailureSignal(void);
+ };
+ 
+ inline void logFanInserted(const std::string& device)
+diff --git a/include/Utils.hpp b/include/Utils.hpp
+index 16d1e1b..950f118 100644
+--- a/include/Utils.hpp
++++ b/include/Utils.hpp
+@@ -109,6 +109,16 @@ const static constexpr char* interface =
+     "xyz.openbmc_project.Association.Definitions";
+ } // namespace association
+ 
++namespace systemd
++{
++const static constexpr char* busname = "org.freedesktop.systemd1";
++const static constexpr char* path = "/org/freedesktop/systemd1";
++const static constexpr char* interface = "org.freedesktop.systemd1.Manager";
++const static constexpr char* start = "StartUnit";
++const static constexpr char* softoff = "host-powersoft.service";
++const static constexpr char* hardoff = "host-poweroff.service";
++} // namespace systemd
++
+ template <typename T>
+ inline T loadVariant(
+     const boost::container::flat_map<std::string, BasicVariantType>& data,
+diff --git a/src/TachSensor.cpp b/src/TachSensor.cpp
+index 5944b59..fdcc5a5 100644
+--- a/src/TachSensor.cpp
++++ b/src/TachSensor.cpp
+@@ -14,6 +14,7 @@
+ // limitations under the License.
+ */
+ 
++#include <systemd/sd-journal.h>
+ #include <unistd.h>
+ 
+ #include <TachSensor.hpp>
+@@ -113,6 +114,69 @@ TachSensor::~TachSensor()
+     objServer.remove_interface(itemAssoc);
+ }
+ 
++void TachSensor::sendFanFailureSignal(void)
++{
++    auto softoffMsg = dbusConnection->new_method_call(
++        systemd::busname, systemd::path, systemd::interface, systemd::start);
++    softoffMsg.append(systemd::softoff, "replace");
++    try
++    {
++        dbusConnection->call_noreply(softoffMsg);
++        sd_journal_print(LOG_ERR, "More than 2 Fans Fail, Shutdown Host!!");
++    }
++    catch (const sdbusplus::exception_t& e)
++    {
++        std::cerr << "Failed to do host soft off. " << e.what() << "\n";
++    }
++
++    // If host soft off failed, try to hard off.
++    static std::shared_ptr<boost::asio::steady_timer> checkTimer = nullptr;
++    if (!checkTimer)
++    {
++        checkTimer = std::make_shared<boost::asio::steady_timer>(
++            dbusConnection->get_io_context());
++    }
++    checkTimer->expires_from_now(std::chrono::seconds(12));
++    checkTimer->async_wait([dbusConnection = dbusConnection](
++                               const boost::system::error_code& ec) {
++        if (ec == boost::asio::error::operation_aborted)
++        {
++            return; // we're being canceled
++        }
++
++        if (isPowerOn())
++        {
++            sd_journal_print(LOG_ERR,
++                             "Failed to soft off host, Try to hard off host");
++            auto hardoffMsg = dbusConnection->new_method_call(
++                systemd::busname, systemd::path, systemd::interface,
++                systemd::start);
++            hardoffMsg.append(systemd::hardoff, "replace");
++            try
++            {
++                dbusConnection->call_noreply(hardoffMsg);
++            }
++            catch (const sdbusplus::exception_t& e)
++            {
++                std::cerr << "Failed to do host hard off. " << e.what() << "\n";
++            }
++        }
++    });
++
++    try
++    {
++        auto msg = sensorInterface->new_signal("FanFailAssert");
++        msg.signal_send();
++    }
++    catch (const sdbusplus::exception_t& e)
++    {
++        std::cerr << "Failed to send fan fail signal : " << e.what() << "\n";
++    }
++
++    failedFans.clear();
++    fanFailSelLogged = true;
++}
++
+ void TachSensor::setupRead(void)
+ {
+     boost::asio::async_read_until(
+@@ -164,6 +228,23 @@ void TachSensor::handleResponse(const boost::system::error_code& err)
+             pollTime = sensorFailedPollTimeMs;
+         }
+     }
++
++    if (errCount >= errorThreshold)
++    {
++        if (!fanFailSelLogged)
++        {
++            failedFans.insert(path);
++            if (failedFans.size() >= 2)
++            {
++                sendFanFailureSignal();
++            }
++        }
++    }
++    else
++    {
++        failedFans.erase(path);
++    }
++
+     responseStream.clear();
+     inputDev.close();
+     int fd = open(path.c_str(), O_RDONLY);
+diff --git a/src/Utils.cpp b/src/Utils.cpp
+index 3799ee4..35b26e3 100644
+--- a/src/Utils.cpp
++++ b/src/Utils.cpp
+@@ -16,6 +16,7 @@
+ 
+ #include "dbus-sensor_config.h"
+ 
++#include <TachSensor.hpp>
+ #include <Utils.hpp>
+ #include <boost/algorithm/string/predicate.hpp>
+ #include <boost/container/flat_map.hpp>
+@@ -347,6 +348,7 @@ void setupPowerMatch(const std::shared_ptr<sdbusplus::asio::connection>& conn)
+                         return;
+                     }
+                     powerStatusOn = true;
++                    TachSensor::fanFailSelLogged = false;
+                 });
+             }
+         });
+@@ -552,4 +554,4 @@ void setupManufacturingModeMatch(sdbusplus::asio::connection& conn)
+ bool getManufacturingMode()
+ {
+     return manufacturingMode;
+-}
+\ No newline at end of file
++}
+-- 
+2.28.0
+

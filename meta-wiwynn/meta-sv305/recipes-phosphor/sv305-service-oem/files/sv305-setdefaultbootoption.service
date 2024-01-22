@@ -1,0 +1,11 @@
+[Unit]
+Description=SV305 Set Default DBus Boot Option Values
+After=xyz.openbmc_project.Settings.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/busctl set-property xyz.openbmc_project.Settings /xyz/openbmc_project/control/host0/boot_option xyz.openbmc_project.Control.Boot.Option BootFlagValidClearing y 0
+ExecStart=/usr/bin/busctl set-property xyz.openbmc_project.Settings /xyz/openbmc_project/control/host0/boot_option xyz.openbmc_project.Control.Boot.Option ClearBootFlagValid b false
+
+[Install]
+WantedBy=multi-user.target

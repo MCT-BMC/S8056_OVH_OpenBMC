@@ -1,0 +1,302 @@
+From ff952116b6183e0592ce8ccce1793aba454f5f91 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Thu, 5 Nov 2020 17:13:10 +0800
+Subject: [PATCH] Fan fail host off and log sel
+
+---
+ include/TachSensor.hpp |   8 +++
+ include/Utils.hpp      |  14 +++++
+ meson.build            |   4 +-
+ src/TachSensor.cpp     | 126 +++++++++++++++++++++++++++++++++++++----
+ src/Utils.cpp          |   4 +-
+ 5 files changed, 143 insertions(+), 13 deletions(-)
+
+diff --git a/include/TachSensor.hpp b/include/TachSensor.hpp
+index f5b56f5..944e419 100644
+--- a/include/TachSensor.hpp
++++ b/include/TachSensor.hpp
+@@ -76,7 +76,11 @@ class TachSensor : public Sensor
+                const std::optional<std::string>& led);
+     ~TachSensor() override;
+ 
++    inline static bool fanFailSelLogged = false;
++    inline static std::shared_ptr<boost::asio::steady_timer> hardOffTimer;
++
+   private:
++    inline static std::set<std::string> failedFans;
+     sdbusplus::asio::object_server& objServer;
+     std::optional<RedundancySensor>* redundancy;
+     std::unique_ptr<PresenceSensor> presence;
+@@ -91,6 +95,10 @@ class TachSensor : public Sensor
+     void setupRead(void);
+     void handleResponse(const boost::system::error_code& err);
+     void checkThresholds(void) override;
++    void fanFailHostPowerOff(void);
++    static void hardOffInCaceSoftOffFail(
++        const std::shared_ptr<sdbusplus::asio::connection>& dbusConnection,
++        int count = 0);
+ };
+ 
+ inline void logFanInserted(const std::string& device)
+diff --git a/include/Utils.hpp b/include/Utils.hpp
+index 16d1e1b..7871c5c 100644
+--- a/include/Utils.hpp
++++ b/include/Utils.hpp
+@@ -6,6 +6,7 @@
+ #include <sdbusplus/asio/connection.hpp>
+ #include <sdbusplus/asio/object_server.hpp>
+ #include <sdbusplus/message/types.hpp>
++#include <xyz/openbmc_project/State/Host/server.hpp>
+ 
+ #include <filesystem>
+ #include <functional>
+@@ -18,6 +19,8 @@
+ #include <variant>
+ #include <vector>
+ 
++namespace State = sdbusplus::xyz::openbmc_project::State::server;
++
+ const constexpr char* jsonStore = "/var/configuration/flattened.json";
+ const constexpr char* inventoryPath = "/xyz/openbmc_project/inventory";
+ const constexpr char* entityManagerName = "xyz.openbmc_project.EntityManager";
+@@ -109,6 +112,17 @@ const static constexpr char* interface =
+     "xyz.openbmc_project.Association.Definitions";
+ } // namespace association
+ 
++namespace state
++{
++namespace host
++{
++const static constexpr char* busname = "xyz.openbmc_project.State.Host";
++const static constexpr char* path = "/xyz/openbmc_project/state/host0";
++const static constexpr char* interface = "xyz.openbmc_project.State.Host";
++const static constexpr char* request = "RequestedHostTransition";
++} // namespace host
++} // namespace state
++
+ template <typename T>
+ inline T loadVariant(
+     const boost::container::flat_map<std::string, BasicVariantType>& data,
+diff --git a/meson.build b/meson.build
+index dd94643..28b7e0c 100644
+--- a/meson.build
++++ b/meson.build
+@@ -28,6 +28,8 @@ gpiodcxx = dependency('libgpiodcxx')
+ # i2c-tools doesn't ship a pkg-config file for libi2c
+ i2c = meson.get_compiler('cpp').find_library('i2c')
+ 
++phosphor_dbus_interfaces = dependency('phosphor-dbus-interfaces')
++
+ sdbusplus = dependency(
+     'sdbusplus',
+     fallback: [
+@@ -57,7 +59,7 @@ thresholds_a = static_library(
+ utils_a = static_library(
+     'utils_a',
+     ['src/Utils.cpp', 'src/SensorPaths.cpp'],
+-    dependencies: [ sdbusplus ],
++    dependencies: [ sdbusplus, phosphor_dbus_interfaces ],
+     implicit_include_directories: false,
+     include_directories: 'include',
+ )
+diff --git a/src/TachSensor.cpp b/src/TachSensor.cpp
+index 5944b59..9c2c162 100644
+--- a/src/TachSensor.cpp
++++ b/src/TachSensor.cpp
+@@ -14,6 +14,7 @@
+ // limitations under the License.
+ */
+ 
++#include <systemd/sd-journal.h>
+ #include <unistd.h>
+ 
+ #include <TachSensor.hpp>
+@@ -38,6 +39,7 @@
+ 
+ static constexpr unsigned int pwmPollMs = 500;
+ static constexpr size_t warnAfterErrorCount = 10;
++static constexpr int fanFailSoftOffTimeLimit = 12;
+ 
+ TachSensor::TachSensor(const std::string& path, const std::string& objectType,
+                        sdbusplus::asio::object_server& objectServer,
+@@ -113,6 +115,83 @@ TachSensor::~TachSensor()
+     objServer.remove_interface(itemAssoc);
+ }
+ 
++void TachSensor::hardOffInCaceSoftOffFail(
++    const std::shared_ptr<sdbusplus::asio::connection>& dbusConnection,
++    int count)
++{
++    if (!hardOffTimer)
++    {
++        hardOffTimer = std::make_shared<boost::asio::steady_timer>(
++            dbusConnection->get_io_context());
++    }
++
++    hardOffTimer->expires_from_now(std::chrono::seconds(3));
++    hardOffTimer->async_wait(
++        [dbusConnection, count](const boost::system::error_code& ec) mutable {
++            if (ec == boost::asio::error::operation_aborted)
++            {
++                std::cerr << "Hard off timer was cancelled.\n";
++                return; // we're being canceled
++            }
++
++            if (isPowerOn())
++            {
++                count += 3;
++                if (count >= fanFailSoftOffTimeLimit)
++                {
++                    std::cerr << "Failed to soft off host, Try to hard off\n";
++                    try
++                    {
++                        auto bus = sdbusplus::bus::new_system();
++                        auto msg = bus.new_method_call(
++                            state::host::busname, state::host::path,
++                            properties::interface, properties::set);
++                        msg.append(
++                            state::host::interface, state::host::request,
++                            std::variant<std::string>(State::convertForMessage(
++                                State::Host::Transition::Off)));
++                        bus.call_noreply(msg);
++                    }
++                    catch (const sdbusplus::exception_t& e)
++                    {
++                        std::cerr << "Failed to do host hard off." << e.what()
++                                  << "\n";
++                    }
++                }
++                else
++                {
++                    TachSensor::hardOffInCaceSoftOffFail(dbusConnection, count);
++                }
++            }
++        });
++}
++
++void TachSensor::fanFailHostPowerOff(void)
++{
++    try
++    {
++        // Do host soft off
++        auto bus = sdbusplus::bus::new_system();
++        auto msg = bus.new_method_call(state::host::busname, state::host::path,
++                                       properties::interface, properties::set);
++        msg.append(state::host::interface, state::host::request,
++                   std::variant<std::string>(State::convertForMessage(
++                       State::Host::Transition::SoftOff)));
++        bus.call_noreply(msg);
++        std::cerr << "More than 2 Fans Fail, Shutdown Host!!\n";
++    }
++    catch (const sdbusplus::exception_t& e)
++    {
++        std::cerr << "Failed to do host soft off. " << e.what() << "\n";
++    }
++
++    // Schedule hard off timer in case of soft off fail.
++    TachSensor::hardOffInCaceSoftOffFail(dbusConnection, 0);
++
++    failedFans.clear();
++    fanFailSelLogged = true;
++}
++
+ void TachSensor::setupRead(void)
+ {
+     boost::asio::async_read_until(
+@@ -140,30 +219,55 @@ void TachSensor::handleResponse(const boost::system::error_code& err)
+         itemIface->set_property("Present", !missing);
+     }
+     std::istream responseStream(&readBuf);
+-    if (!missing)
++    if (readingStateGood())
+     {
+-        if (!err)
++        if (!missing)
+         {
+-            std::string response;
+-            try
++            if (!err)
+             {
+-                std::getline(responseStream, response);
+-                rawValue = std::stod(response);
+-                responseStream.clear();
+-                updateValue(rawValue);
++                std::string response;
++                try
++                {
++                    std::getline(responseStream, response);
++                    rawValue = std::stod(response);
++                    responseStream.clear();
++                    updateValue(rawValue);
++                }
++                catch (const std::invalid_argument&)
++                {
++                    incrementError();
++                    pollTime = sensorFailedPollTimeMs;
++                }
+             }
+-            catch (const std::invalid_argument&)
++            else
+             {
+                 incrementError();
+                 pollTime = sensorFailedPollTimeMs;
+             }
+         }
++
++        if ((errCount >= errorThreshold) || missing)
++        {
++            if (!fanFailSelLogged)
++            {
++                failedFans.insert(name);
++                if (failedFans.size() >= 2)
++                {
++                    fanFailHostPowerOff();
++                }
++            }
++        }
+         else
+         {
+-            incrementError();
+-            pollTime = sensorFailedPollTimeMs;
++            failedFans.erase(name);
+         }
+     }
++    else
++    {
++        incrementError();
++        failedFans.erase(name);
++    }
++
+     responseStream.clear();
+     inputDev.close();
+     int fd = open(path.c_str(), O_RDONLY);
+diff --git a/src/Utils.cpp b/src/Utils.cpp
+index 3799ee4..35b26e3 100644
+--- a/src/Utils.cpp
++++ b/src/Utils.cpp
+@@ -16,6 +16,7 @@
+ 
+ #include "dbus-sensor_config.h"
+ 
++#include <TachSensor.hpp>
+ #include <Utils.hpp>
+ #include <boost/algorithm/string/predicate.hpp>
+ #include <boost/container/flat_map.hpp>
+@@ -347,6 +348,7 @@ void setupPowerMatch(const std::shared_ptr<sdbusplus::asio::connection>& conn)
+                         return;
+                     }
+                     powerStatusOn = true;
++                    TachSensor::fanFailSelLogged = false;
+                 });
+             }
+         });
+@@ -552,4 +554,4 @@ void setupManufacturingModeMatch(sdbusplus::asio::connection& conn)
+ bool getManufacturingMode()
+ {
+     return manufacturingMode;
+-}
+\ No newline at end of file
++}
+-- 
+2.32.0
+

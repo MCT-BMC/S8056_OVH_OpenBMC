@@ -1,0 +1,10 @@
+[Unit]
+Description=Setting fan duty when PID service initializing
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/env controlFan.sh service-init
+SyslogIdentifier=setting-fan-init
+
+[Install]
+WantedBy=phosphor-pid-control.service

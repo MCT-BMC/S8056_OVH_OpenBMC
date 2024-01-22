@@ -1,0 +1,12 @@
+[Unit]
+Description=Host Hard Off
+Requires=host-gpio.service
+After=host-gpio.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env poweroff.sh
+SyslogIdentifier=poweroff.sh
+
+[Install]
+WantedBy=obmc-host-stop@0.target

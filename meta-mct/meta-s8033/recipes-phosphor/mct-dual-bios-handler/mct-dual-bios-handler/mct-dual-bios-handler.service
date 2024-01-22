@@ -1,0 +1,14 @@
+[Unit]
+Description=Dual BIOS handler implementation
+StopWhenUnneeded=false
+After=xyz.openbmc_project.EntityManager.service
+After=xyz.openbmc_project.Chassis.Control.Power@0.service
+
+[Service]
+Restart=always
+RestartSec=5
+ExecStart=/usr/bin/env mct-dual-bios-handler
+SyslogIdentifier=mct-dual-bios-handler
+
+[Install]
+WantedBy=multi-user.target

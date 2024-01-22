@@ -1,0 +1,69 @@
+From aa10e03118b3e8fb31e292608f6799766b688b63 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Tue, 27 Oct 2020 14:28:14 +0800
+Subject: [PATCH] Fix the page for system logs feature
+
+---
+ app/common/services/api-utils.js                     | 8 ++++++--
+ app/server-health/controllers/syslog-controller.html | 4 ++--
+ 2 files changed, 8 insertions(+), 4 deletions(-)
+ mode change 100644 => 100755 app/server-health/controllers/syslog-controller.html
+
+diff --git a/app/common/services/api-utils.js b/app/common/services/api-utils.js
+index 5f10d1d..d341607 100755
+--- a/app/common/services/api-utils.js
++++ b/app/common/services/api-utils.js
+@@ -43,7 +43,7 @@ window.angular && (function(angular) {
+               '/LogServices/EventLog/Entries';
+           if (recordType == 'Oem') {
+             var uri = '/redfish/v1/Systems/' + DataService.systemName +
+-                '/LogServices/Crashdump/Entries';
++                '/LogServices/EventLog/Entries';
+           }
+           return $http({
+                    method: 'GET',
+@@ -53,9 +53,13 @@ window.angular && (function(angular) {
+               .then(
+                   function(response) {
+                     var logEntries = [];
++
+                     angular.forEach(response.data['Members'], function(log) {
+                       if (log.hasOwnProperty('EntryType')) {
+                         if (log['EntryType'] == recordType) {
++                          if (log.hasOwnProperty('@odata.type')) {
++                            log["@odata.type"] = log["@odata.type"].replace('#', '');
++                          }
+                           logEntries.push(log);
+                         }
+                       }
+@@ -71,7 +75,7 @@ window.angular && (function(angular) {
+               '/LogServices/EventLog/Actions/LogService.ClearLog';
+           if (selectedRecordType == 'Oem') {
+             var uri = '/redfish/v1/Systems/' + DataService.systemName +
+-                '/LogServices/Crashdump/Actions/LogService.ClearLog';
++                '/LogServices/EventLog/Actions/LogService.ClearLog';
+           }
+           return $http({
+             method: 'POST',
+diff --git a/app/server-health/controllers/syslog-controller.html b/app/server-health/controllers/syslog-controller.html
+old mode 100644
+new mode 100755
+index 11918bb..2270638
+--- a/app/server-health/controllers/syslog-controller.html
++++ b/app/server-health/controllers/syslog-controller.html
+@@ -14,10 +14,10 @@
+             </ul>
+           </div>
+           <a ng-href="data:text/json;charset=utf-8,{{sysLogs}}" class="inline btn-export float-right"  download="systemLogs.json" ng-show="sysLogs.length">Export </a>
+-          <button class="inline clear-input float-right btn-secondary" ng-click="confirm = !confirm" ng-show="sysLogs.length">&#10005; Clear {{selectedRecordType}} Logs</button>
++          <button class="inline clear-input float-right btn-secondary" ng-click="confirm = !confirm" ng-show="selectedType.length">&#10005; Clear {{selectedType}} Logs</button>
+           <div class="inline__confirm sys-log__confirm" ng-show="confirm">
+             <div class="inline__confirm-message">
+-              <p class="h3">Are you sure you want to <strong class="ng-binding">clear {{selectedRecordType}} logs</strong>?
++              <p class="h3">Are you sure you want to <strong class="ng-binding">clear {{selectedType}} logs</strong>?
+               </p>
+             </div>
+             <div class="inline__confirm-buttons">
+-- 
+2.7.4
+

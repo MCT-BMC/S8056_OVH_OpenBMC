@@ -1,0 +1,30 @@
+From b897474a42b67d9dca3407d8438fb9423b1538d1 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Thu, 12 Dec 2019 01:49:38 +0800
+Subject: [PATCH] Handle no cacheTimer case in replaceCacheFru function
+
+---
+ src/storagecommands.cpp | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/src/storagecommands.cpp b/src/storagecommands.cpp
+index 9ea28e8..be6318e 100644
+--- a/src/storagecommands.cpp
++++ b/src/storagecommands.cpp
+@@ -157,7 +157,12 @@ ipmi_ret_t replaceCacheFru(uint8_t devId)
+     static uint8_t lastDevId = 0xFF;
+ 
+     bool timerRunning = (cacheTimer != nullptr) && !cacheTimer->isExpired();
+-    if (lastDevId == devId && timerRunning)
++
++    if(lastDevId == devId && cacheTimer == nullptr) // No Fru update occurs
++    {
++        return IPMI_CC_OK; // cache already up to date
++    }
++    else if (lastDevId == devId && timerRunning)
+     {
+         return IPMI_CC_OK; // cache already up to date
+     }
+-- 
+2.22.0
+

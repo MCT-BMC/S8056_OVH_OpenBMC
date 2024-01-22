@@ -1,0 +1,193 @@
+From cf510a700a4ebb07d3bc485bec305721c7561f6a Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Thu, 10 Dec 2020 10:57:59 +0800
+Subject: [PATCH] Check threshold immediately when setting threshold
+
+---
+ include/sensor.hpp | 21 ++++++-----
+ src/Thresholds.cpp | 88 ++++++++++++++++++++++++++++++++++++++++++++--
+ 2 files changed, 98 insertions(+), 11 deletions(-)
+
+diff --git a/include/sensor.hpp b/include/sensor.hpp
+index f9f0b5b..e13a5b8 100644
+--- a/include/sensor.hpp
++++ b/include/sensor.hpp
+@@ -86,6 +86,11 @@ struct Sensor
+     size_t errCount;
+     bool isSensorFailure;
+     std::unique_ptr<SensorInstrumentation> instrumentation;
++    bool isFirst = true;
++    bool isUpperCritical = false;
++    bool isUpperWarning = false;
++    bool isLowerCritical = false;
++    bool isLowerWarning = false;
+ 
+     // This member variable provides a hook that can be used to receive
+     // notification whenever this Sensor's value is externally set via D-Bus.
+@@ -289,15 +294,13 @@ struct Sensor
+                     thresholds::persistThreshold(configurationPath, objectType,
+                                                  threshold, conn, thresSize,
+                                                  label);
+-                    // Invalidate previously remembered value,
+-                    // so new thresholds will be checked during next update,
+-                    // even if sensor reading remains unchanged.
+-                    value = std::numeric_limits<double>::quiet_NaN();
+-
+-                    // Although tempting, don't call checkThresholds() from here
+-                    // directly. Let the regular sensor monitor call the same
+-                    // using updateValue(), which can check conditions like
+-                    // poweron, etc., before raising any event.
++
++                    // Check threshold immediately if reading state is good.
++                    if (readingStateGood())
++                    {
++                        thresholds::checkThresholds(this);
++                    }
++
+                     return 1;
+                 });
+             iface->register_property(alarm, false);
+diff --git a/src/Thresholds.cpp b/src/Thresholds.cpp
+index 4c21d60..b6d20e0 100644
+--- a/src/Thresholds.cpp
++++ b/src/Thresholds.cpp
+@@ -297,6 +297,25 @@ static std::vector<ChangeParam> checkThresholds(Sensor* sensor, double value)
+         {
+             if (value >= threshold.value)
+             {
++                if (threshold.level == thresholds::Level::CRITICAL)
++                {
++                    if (sensor->isUpperCritical == true)
++                    {
++                        continue;
++                    }
++
++                    sensor->isUpperCritical = true;
++                }
++                else if (threshold.level == thresholds::Level::WARNING)
++                {
++                    if (sensor->isUpperWarning == true)
++                    {
++                        continue;
++                    }
++
++                    sensor->isUpperWarning = true;
++                }
++
+                 thresholdChanges.emplace_back(threshold, true, value);
+                 if (++cHiTrue < assertLogCount)
+                 {
+@@ -307,6 +326,27 @@ static std::vector<ChangeParam> checkThresholds(Sensor* sensor, double value)
+             }
+             else if (value < (threshold.value - sensor->hysteresisTrigger))
+             {
++                if (threshold.level == thresholds::Level::CRITICAL)
++                {
++                    if ((sensor->isUpperCritical == false) &&
++                        (sensor->isFirst == false))
++                    {
++                        continue;
++                    }
++
++                    sensor->isUpperCritical = false;
++                }
++                else if (threshold.level == thresholds::Level::WARNING)
++                {
++                    if ((sensor->isUpperWarning == false) &&
++                        (sensor->isFirst == false))
++                    {
++                        continue;
++                    }
++
++                    sensor->isUpperWarning = false;
++                }
++
+                 thresholdChanges.emplace_back(threshold, false, value);
+                 ++cHiFalse;
+             }
+@@ -319,6 +359,25 @@ static std::vector<ChangeParam> checkThresholds(Sensor* sensor, double value)
+         {
+             if (value <= threshold.value)
+             {
++                if (threshold.level == thresholds::Level::CRITICAL)
++                {
++                    if (sensor->isLowerCritical == true)
++                    {
++                        continue;
++                    }
++
++                    sensor->isLowerCritical = true;
++                }
++                else if (threshold.level == thresholds::Level::WARNING)
++                {
++                    if (sensor->isLowerWarning == true)
++                    {
++                        continue;
++                    }
++
++                    sensor->isLowerWarning = true;
++                }
++
+                 thresholdChanges.emplace_back(threshold, true, value);
+                 if (++cLoTrue < assertLogCount)
+                 {
+@@ -330,6 +389,27 @@ static std::vector<ChangeParam> checkThresholds(Sensor* sensor, double value)
+             }
+             else if (value > (threshold.value + sensor->hysteresisTrigger))
+             {
++                if (threshold.level == thresholds::Level::CRITICAL)
++                {
++                    if ((sensor->isLowerCritical == false) &&
++                        (sensor->isFirst == false))
++                    {
++                        continue;
++                    }
++
++                    sensor->isLowerCritical = false;
++                }
++                else if (threshold.level == thresholds::Level::WARNING)
++                {
++                    if ((sensor->isLowerWarning == false) &&
++                        (sensor->isFirst == false))
++                    {
++                        continue;
++                    }
++
++                    sensor->isLowerWarning = false;
++                }
++
+                 thresholdChanges.emplace_back(threshold, false, value);
+                 ++cLoFalse;
+             }
+@@ -442,7 +522,8 @@ void checkThresholdsPowerDelay(Sensor* sensor, ThresholdTimer& thresholdTimer)
+         //   first and when timer expires for the previous one, no additional
+         //   signal will be logged.
+         // 4. no delays for all high events.
+-        if (change.threshold.direction == thresholds::Direction::LOW)
++        if (change.threshold.direction == thresholds::Direction::LOW &&
++            sensor->isFirst == false)
+         {
+             if (change.asserted || thresholdTimer.hasActiveTimer(
+                                        change.threshold, !change.asserted))
+@@ -455,6 +536,8 @@ void checkThresholdsPowerDelay(Sensor* sensor, ThresholdTimer& thresholdTimer)
+         assertThresholds(sensor, change.assertValue, change.threshold.level,
+                          change.threshold.direction, change.asserted);
+     }
++
++    sensor->isFirst = false;
+ }
+ 
+ void assertThresholds(Sensor* sensor, double assertValue,
+@@ -499,7 +582,8 @@ void assertThresholds(Sensor* sensor, double assertValue,
+         return;
+     }
+ 
+-    if (interface->set_property<bool, true>(property, assert))
++    if (interface->set_property<bool, true>(property, assert) ||
++        sensor->isFirst)
+     {
+         try
+         {
+-- 
+2.28.0
+

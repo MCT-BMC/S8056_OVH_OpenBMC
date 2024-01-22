@@ -1,0 +1,71 @@
+From 268100ed3eff94ab3a637b6d24eadd9b118767cb Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Wed, 19 Feb 2020 11:27:12 +0800
+Subject: [PATCH] Initialize the BMC status LED to solid Amber
+
+---
+ board/aspeed/ast-g5/ast-g5.c | 34 ++++++++++++++++++++++++++++++++++
+ 1 file changed, 34 insertions(+)
+
+diff --git a/board/aspeed/ast-g5/ast-g5.c b/board/aspeed/ast-g5/ast-g5.c
+index 3dc78d8229..88bb86cfd8 100644
+--- a/board/aspeed/ast-g5/ast-g5.c
++++ b/board/aspeed/ast-g5/ast-g5.c
+@@ -43,6 +43,10 @@ DECLARE_GLOBAL_DATA_PTR;
+ #define LPC_REG_BASE              0x1e789000
+ #define HOST_INTERFACE_CTL_5      0x80
+ 
++#define GPIO_REG_BASE             0x1e780000
++#define GPIO_YZAAAB_DATA          0x1e0
++#define GPIO_YZAAAB_DIR           0x1e4
++
+ /* --------------------------------------------------------------------
+  * @fn Chip_Register_Init
+  * @brief Initialize the BMC chip registers if needed
+@@ -175,6 +179,35 @@ void Set_Default_UART_Route(void)
+     *(volatile ulong *)(0x1E78909C) = 0x1450000 ;
+ }
+ 
++/*--------------------------------------------------------------------
++ * @fn Set_Default_Status_LED
++ * @brief Set the status LED to solid Amber as default
++ *
++ *--------------------------------------------------------------------*/
++void Set_Default_Status_LED()
++{
++    ulong reg_addr = 0;
++    ulong temp = 0;
++
++    // printf("Set the status LED to solid Amber\n");
++
++    /* Set GPIOAA0 (Green) to O(L) - OFF
++       Set GPIOAA1 (Amber) to O(H) - ON */
++
++    // Data
++    reg_addr = GPIO_REG_BASE + GPIO_YZAAAB_DATA;
++    temp = *((volatile ulong *) reg_addr);
++    temp &= ~(0x00010000);  // GPIOAA0 (Green) to low
++    temp |= 0x00020000;     // GPIOAA1 (Amber) to high
++    *((volatile ulong *) reg_addr) = temp;
++
++    // Direction
++    reg_addr = GPIO_REG_BASE + GPIO_YZAAAB_DIR;
++    temp = *((volatile ulong *) reg_addr);
++    temp |= 0x00030000;     // GPIOAA0 & GPIOAA1 to output
++    *((volatile ulong *) reg_addr) = temp;
++}
++
+ int board_init(void)
+ {
+ 	gd->bd->bi_boot_params = CONFIG_SYS_SDRAM_BASE + 0x100;
+@@ -183,6 +216,7 @@ int board_init(void)
+     Chip_Register_Init();
+     Set_Default_Fan_PWM(DEFAULT_PWM);
+     Set_Default_UART_Route();
++    Set_Default_Status_LED();
+ 
+ 	return 0;
+ }
+-- 
+2.24.1
+

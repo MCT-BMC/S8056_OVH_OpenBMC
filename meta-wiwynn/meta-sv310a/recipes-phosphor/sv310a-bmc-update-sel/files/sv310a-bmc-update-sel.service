@@ -1,0 +1,17 @@
+[Unit]
+Description=Generate BMC Update SEL
+Requires=xyz.openbmc_project.Logging.IPMI.service
+After=xyz.openbmc_project.Logging.IPMI.service
+Wants=mapper-wait@-xyz-openbmc_project-Logging-IPMI.service
+After=mapper-wait@-xyz-openbmc_project-Logging-IPMI.service
+After=sv310a-bmc-update-sel.service
+
+[Service]
+Restart=no
+ExecStart=/usr/sbin/sv310a-bmc-update-sel.sh
+SyslogIdentifier=sv310a-bmc-update-sel
+TimeoutSec=infinity
+
+[Install]
+WantedBy={SYSTEMD_DEFAULT_TARGET}
+

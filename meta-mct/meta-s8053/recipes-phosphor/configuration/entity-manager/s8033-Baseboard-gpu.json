@@ -1,0 +1,69 @@
+{
+    "Exposes": [
+        {
+
+            "Connector": {
+                "Name": "CPU Fan Connector 0",
+                "Pwm": 0,
+                "PwmName": "SYS_PWM_6",
+                "Tachs": [
+                    0
+                ]
+            },
+            "Index": 0,
+            "Name": "SYS_FAN_6",
+            "PowerState": "On",
+            "PresenceSensorName": "FAN6_PRESENT",
+            "Thresholds": [
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 100
+                }
+            ],
+            "Type": "AspeedFan"
+        },
+        {
+            "Name": "FAN6_PRESENT",
+            "GpioName": "FAN_PRESENT0",
+            "Path": "fan_present",
+            "Polarity": "HIGH",
+            "EventMon": "NULL",
+            "PowerState": "Always",
+            "Type": "FanPresenceSensor"
+        },
+        {
+            "Address": "0x4f",
+            "Bus": 26,
+            "Name": "GPU_Temp",
+            "PowerState": "On",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Label": "GPU_Temp",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 91
+                }
+            ],
+            "Type": "TMP75"
+        }
+    ],
+    "Name": "s8033 Baseboard GPU",
+    "Probe": [
+        "xyz.openbmc_project.FruDevice({'BUS' : 2})",
+        "AND",
+        "xyz.openbmc_project.FruDevice({'ADDRESS': 80})",
+        "AND",
+        "xyz.openbmc_project.mct.sku({'CurrentSku': 2})",
+        "MATCH_ONE"
+    ],
+    "Type": "Panel",
+    "xyz.openbmc_project.Inventory.Decorator.Asset": {
+        "Manufacturer": "$BOARD_MANUFACTURER",
+        "Model": "$BOARD_PRODUCT_NAME",
+        "PartNumber": "$BOARD_PART_NUMBER",
+        "SerialNumber": "$BOARD_SERIAL_NUMBER"
+    }
+}

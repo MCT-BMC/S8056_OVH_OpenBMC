@@ -1,0 +1,49 @@
+From 1493232f8750262301589c4c9caf6fe72b69b059 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Mon, 11 May 2020 17:41:23 +0800
+Subject: [PATCH] Add property for power-on dealy policy
+
+---
+ .../Power/RestorePolicy.interface.yaml        | 22 +++++++++++++++++++
+ 1 file changed, 22 insertions(+)
+
+diff --git a/yaml/xyz/openbmc_project/Control/Power/RestorePolicy.interface.yaml b/yaml/xyz/openbmc_project/Control/Power/RestorePolicy.interface.yaml
+index d44e09e..f00282d 100644
+--- a/yaml/xyz/openbmc_project/Control/Power/RestorePolicy.interface.yaml
++++ b/yaml/xyz/openbmc_project/Control/Power/RestorePolicy.interface.yaml
+@@ -10,6 +10,11 @@ properties:
+       description: >
+           The policy to adopt after the BMC reset.
+ 
++    - name: PowerRestoreDelay
++      type: enum[self.Delay]
++      description: >
++          The dealy time policy to power on the system.
++
+ enumerations:
+     - name: Policy
+       description: >
+@@ -28,3 +33,20 @@ enumerations:
+           description: >
+             Restore power to last requested state recorded before the BMC was
+             reset.
++
++    - name: Delay
++      description: >
++        Possible power-on delay time policies.
++      values:
++        - name: Disable
++          description: >
++            Power on the system with no dealy time.
++        - name: In1min
++          description: >
++            Power on the system randomly in 1 minute.
++        - name: In2min
++          description: >
++            Power on the system randomly in 2 minutes.
++        - name: In3min
++          description: >
++            Power on the system randomly in 3 minutes.
+-- 
+2.28.0
+

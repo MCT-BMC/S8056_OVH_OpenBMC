@@ -1,0 +1,45 @@
+From 7d4da3cc7457926c6f5c99419e58b50d08c09ba9 Mon Sep 17 00:00:00 2001
+From: "jocelyn.chou" <jocelyn.chou@mic.com.tw>
+Date: Thu, 25 Aug 2022 10:56:21 +0800
+Subject: [PATCH] Support new fan writepath pattern.
+
+---
+ sysfs/util.cpp | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/sysfs/util.cpp b/sysfs/util.cpp
+index b7cc6f3..fbab72e 100644
+--- a/sysfs/util.cpp
++++ b/sysfs/util.cpp
+@@ -28,8 +28,9 @@ namespace pid_control
+  * 1. /sys/class/hwmon/hwmon0/pwm1
+  * 2. /sys/devices/platform/ahb/1e786000.pwm-tacho-controller/hwmon/<asterisk
+  * asterisk>/pwm1
++ * 3. /sys/bus/i2c/drivers/<name>/<bus>-<address>/hwmon/<asterisk asterisk>/pwm1
+  *
+- * In this latter case, I want to fill in that gap.  Assuming because it's this
++ * In case 2 and 3, I want to fill in that gap.  Assuming because it's this
+  * path that it'll only have one directory there.
+  */
+ 
+@@ -38,13 +39,15 @@ namespace fs = std::filesystem;
+ 
+ std::string FixupPath(std::string original)
+ {
+-    std::string::size_type n, x;
++    std::string::size_type n, x, y;
+ 
+     /* TODO: Consider the merits of using regex for this. */
+     n = original.find("**");
+     x = original.find(platform);
++    y = original.find("drivers");
+ 
+-    if ((n != std::string::npos) && (x != std::string::npos))
++    if (((n != std::string::npos) && (x != std::string::npos)) ||
++        ((n != std::string::npos) && (y != std::string::npos)))
+     {
+         /* This path has some missing pieces and we support it. */
+         std::string base = original.substr(0, n);
+-- 
+2.7.4
+

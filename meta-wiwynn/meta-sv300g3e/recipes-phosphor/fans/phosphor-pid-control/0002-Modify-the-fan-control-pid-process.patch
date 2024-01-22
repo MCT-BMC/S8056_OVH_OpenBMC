@@ -1,0 +1,245 @@
+From 65958b6c84cd79149e8c239ebbe79b978351a25d Mon Sep 17 00:00:00 2001
+From: JPChang <JP_Chang@wiwynn.com>
+Date: Tue, 5 Nov 2019 18:43:53 +0800
+Subject: [PATCH 2/3] Modify the fan control pid process
+
+Descrption
+- Modify fan control pid process.
+- Modify the conditions of testing hysteresis.
+- Support debug mode to record current sensor reading and output pwm.
+---
+ pid/buildjson.cpp          |  7 +++++++
+ pid/ec/pid.cpp             | 12 +++++++++---
+ pid/ec/pid.hpp             |  4 +++-
+ pid/pidcontroller.cpp      | 26 +++++++++++++++++---------
+ pid/pidcontroller.hpp      |  1 +
+ pid/stepwisecontroller.cpp |  1 +
+ pid/thermalcontroller.cpp  |  3 +++
+ pid/util.cpp               |  2 ++
+ 8 files changed, 43 insertions(+), 13 deletions(-)
+
+diff --git a/pid/buildjson.cpp b/pid/buildjson.cpp
+index 9fa5f66..40756cb 100644
+--- a/pid/buildjson.cpp
++++ b/pid/buildjson.cpp
+@@ -64,7 +64,14 @@ void from_json(const json& j, conf::ControllerInfo& c)
+         p.at("outLim_max").get_to(c.pidInfo.outLim.max);
+         p.at("slewNeg").get_to(c.pidInfo.slewNeg);
+         p.at("slewPos").get_to(c.pidInfo.slewPos);
++        auto derivativeCoeff = p.find("derivativeCoeff");
++        auto derivativeCoeffValue = 0.0;
++        if(derivativeCoeff != p.end())
++        {
++            p.at("derivativeCoeff").get_to(derivativeCoeffValue);
++        }
+ 
++        c.pidInfo.derivativeCoeff = derivativeCoeffValue;
+         c.pidInfo.positiveHysteresis = positiveHysteresisValue;
+         c.pidInfo.negativeHysteresis = negativeHysteresisValue;
+     }
+diff --git a/pid/ec/pid.cpp b/pid/ec/pid.cpp
+index 7d8b403..cd0a1bd 100644
+--- a/pid/ec/pid.cpp
++++ b/pid/ec/pid.cpp
+@@ -15,6 +15,8 @@
+  */
+ 
+ #include "pid.hpp"
++#include <cmath>
++#include <iostream>
+ 
+ namespace ec
+ {
+@@ -40,12 +42,13 @@ static double clamp(double x, double min, double max)
+  *  pid code
+  *  Note: Codes assumes the ts field is non-zero
+  */
+-double pid(pid_info_t* pidinfoptr, double input, double setpoint)
++double pid(pid_info_t* pidinfoptr, double input, double setpoint, double lastInput)
+ {
+     double error;
+ 
+     double proportionalTerm;
+     double integralTerm = 0.0f;
++    double derivativeTerm = 0.0f;
+     double feedFwdTerm = 0.0f;
+ 
+     double output;
+@@ -53,7 +56,7 @@ double pid(pid_info_t* pidinfoptr, double input, double setpoint)
+     // calculate P, I, D, FF
+ 
+     // Pid
+-    error = setpoint - input;
++    error = std::abs(setpoint - input);
+     proportionalTerm = pidinfoptr->proportionalCoeff * error;
+ 
+     // pId
+@@ -65,11 +68,14 @@ double pid(pid_info_t* pidinfoptr, double input, double setpoint)
+                              pidinfoptr->integralLimit.max);
+     }
+ 
++    // piD
++    derivativeTerm = pidinfoptr->derivativeCoeff * (input - lastInput);
++
+     // FF
+     feedFwdTerm =
+         (setpoint + pidinfoptr->feedFwdOffset) * pidinfoptr->feedFwdGain;
+ 
+-    output = proportionalTerm + integralTerm + feedFwdTerm;
++    output = proportionalTerm + integralTerm + derivativeTerm + feedFwdTerm;
+     output = clamp(output, pidinfoptr->outLim.min, pidinfoptr->outLim.max);
+ 
+     // slew rate
+diff --git a/pid/ec/pid.hpp b/pid/ec/pid.hpp
+index 74ad5a7..a5efe37 100644
+--- a/pid/ec/pid.hpp
++++ b/pid/ec/pid.hpp
+@@ -24,6 +24,7 @@ typedef struct
+ 
+     double proportionalCoeff; // coeff for P
+     double integralCoeff;     // coeff for I
++    double derivativeCoeff;   // coeff for D
+     double feedFwdOffset;     // offset coeff for feed-forward term
+     double feedFwdGain;       // gain for feed-forward term
+ 
+@@ -35,7 +36,7 @@ typedef struct
+     double negativeHysteresis;
+ } pid_info_t;
+ 
+-double pid(pid_info_t* pidinfoptr, double input, double setpoint);
++double pid(pid_info_t* pidinfoptr, double input, double setpoint, double lastInput);
+ 
+ /* Condensed version for use by the configuration. */
+ struct pidinfo
+@@ -43,6 +44,7 @@ struct pidinfo
+     double ts;                  // sample time in seconds
+     double proportionalCoeff;   // coeff for P
+     double integralCoeff;       // coeff for I
++    double derivativeCoeff;     // coeff for D
+     double feedFwdOffset;       // offset coeff for feed-forward term
+     double feedFwdGain;         // gain for feed-forward term
+     ec::limits_t integralLimit; // clamp of integral
+diff --git a/pid/pidcontroller.cpp b/pid/pidcontroller.cpp
+index e3eaaff..08c41c4 100644
+--- a/pid/pidcontroller.cpp
++++ b/pid/pidcontroller.cpp
+@@ -45,7 +45,7 @@ void PIDController::process(void)
+     if (info->positiveHysteresis == 0 && info->negativeHysteresis == 0)
+     {
+         // Calculate new output
+-        output = ec::pid(info, input, setpt);
++        output = ec::pid(info, input, setpt, lastInput);
+ 
+         // this variable isn't actually used in this context, but we're setting
+         // it here incase somebody uses it later it's the correct value
+@@ -56,23 +56,31 @@ void PIDController::process(void)
+         // initialize if not set yet
+         if (std::isnan(lastInput))
+         {
+-            lastInput = input;
++            lastInput = setpt;
+         }
+ 
+-        // if reading is outside of hysteresis bounds, use it for reading,
+-        // otherwise use last reading without updating it first
+-        else if ((input - lastInput) > info->positiveHysteresis)
++        // over the hysteresis bounds, keep counting pid
++        if (input > setpt + info->positiveHysteresis)
+         {
++            output = ec::pid(info, input, setpt, lastInput);
+             lastInput = input;
+         }
+-        else if ((lastInput - input) > info->negativeHysteresis)
++        // under the hysteresis bounds, initialize pid
++        else if (input < setpt - info->negativeHysteresis)
+         {
+-            lastInput = input;
++            lastInput = setpt;
++            info->integral = 0;
++            output = 0;
++        }
++        // inside the hysteresis bounds, keep last output
++        else
++        {
++            output = lastOutput;
+         }
+-
+-        output = ec::pid(info, lastInput, setpt);
+     }
+ 
++    lastOutput = output;
++
+     // Output new value
+     outputProc(output);
+ 
+diff --git a/pid/pidcontroller.hpp b/pid/pidcontroller.hpp
+index 3d38c2a..c72bedf 100644
+--- a/pid/pidcontroller.hpp
++++ b/pid/pidcontroller.hpp
+@@ -63,4 +63,5 @@ class PIDController : public Controller
+     double _setpoint;
+     std::string _id;
+     double lastInput = std::numeric_limits<double>::quiet_NaN();
++    double lastOutput = 0;
+ };
+diff --git a/pid/stepwisecontroller.cpp b/pid/stepwisecontroller.cpp
+index 66b4a10..54430e2 100644
+--- a/pid/stepwisecontroller.cpp
++++ b/pid/stepwisecontroller.cpp
+@@ -105,5 +105,6 @@ void StepwiseController::outputProc(double value)
+     {
+         _owner->addSetPoint(value);
+     }
++    //sd_journal_print(LOG_INFO, "%s stepwise output pwm: %lg", getID().c_str(), value);
+     return;
+ }
+diff --git a/pid/thermalcontroller.cpp b/pid/thermalcontroller.cpp
+index 5a5b9cc..ec0ba77 100644
+--- a/pid/thermalcontroller.cpp
++++ b/pid/thermalcontroller.cpp
+@@ -21,6 +21,7 @@
+ #include "zone.hpp"
+ 
+ #include <algorithm>
++#include <systemd/sd-journal.h>
+ 
+ ThermalType getThermalType(const std::string& typeString)
+ {
+@@ -77,6 +78,7 @@ double ThermalController::inputProc(void)
+         value = compare(value, _owner->getCachedValue(in));
+     }
+ 
++    //sd_journal_print(LOG_INFO, "%s choose the maximum temperature value: %lg",getID().c_str(), value);
+     return value;
+ }
+ 
+@@ -104,5 +106,6 @@ void ThermalController::outputProc(double value)
+ {
+     _owner->addSetPoint(value);
+ 
++    //sd_journal_print(LOG_INFO, "%s temp output pwm: %lg", getID().c_str(), value);
+     return;
+ }
+diff --git a/pid/util.cpp b/pid/util.cpp
+index 0a8f892..b56c6af 100644
+--- a/pid/util.cpp
++++ b/pid/util.cpp
+@@ -28,6 +28,7 @@ void initializePIDStruct(ec::pid_info_t* info, const ec::pidinfo& initial)
+     info->ts = initial.ts;
+     info->proportionalCoeff = initial.proportionalCoeff;
+     info->integralCoeff = initial.integralCoeff;
++    info->derivativeCoeff = initial.derivativeCoeff;
+     info->feedFwdOffset = initial.feedFwdOffset;
+     info->feedFwdGain = initial.feedFwdGain;
+     info->integralLimit.min = initial.integralLimit.min;
+@@ -45,6 +46,7 @@ void dumpPIDStruct(ec::pid_info_t* info)
+     std::cerr << " ts: " << info->ts
+               << " proportionalCoeff: " << info->proportionalCoeff
+               << " integralCoeff: " << info->integralCoeff
++              << " derivativeCoeff: " << info->derivativeCoeff
+               << " feedFwdOffset: " << info->feedFwdOffset
+               << " feedFwdGain: " << info->feedFwdGain
+               << " integralLimit.min: " << info->integralLimit.min
+-- 
+2.22.0
+

@@ -1,0 +1,11 @@
+[Unit]
+Description= Check node and setup BMC IPMB slave address
+After=mct-node-manager.service
+Before=ipmb.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/node-ipmb-device-setting.sh
+
+[Install]
+WantedBy=multi-user.target

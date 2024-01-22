@@ -1,0 +1,25 @@
+From bd8076834d53fcabe5b75c260e048f7aecb29ab9 Mon Sep 17 00:00:00 2001
+From: Eli Huang <Eli_Huang@wiwynn.com>
+Date: Tue, 18 May 2021 16:16:40 +0800
+Subject: [PATCH] Set IPv6AcceptRA to true
+
+---
+ network_config.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/network_config.cpp b/network_config.cpp
+index e83b16c..494e709 100644
+--- a/network_config.cpp
++++ b/network_config.cpp
+@@ -24,7 +24,7 @@ void writeDHCPDefault(const std::string& filename, const std::string& interface)
+ #else
+                 "LinkLocalAddressing=no\n"
+ #endif
+-                "IPv6AcceptRA=false\n"
++                "IPv6AcceptRA=true\n"
+                 "[DHCP]\nClientIdentifier=mac\n";
+     filestream.close();
+ }
+-- 
+2.28.0
+

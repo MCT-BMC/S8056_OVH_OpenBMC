@@ -1,0 +1,22 @@
+From 8fcd3fc702e278388681a08c1dba1b68f57ebc9f Mon Sep 17 00:00:00 2001
+From: Janny Au <janny.au@mic.com.tw>
+Date: Thu, 10 Mar 2022 17:01:49 +0800
+Subject: [PATCH] Change-default-PWM-duty-to-50
+
+---
+ drivers/hwmon/aspeed-pwm-tacho.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/hwmon/aspeed-pwm-tacho.c b/drivers/hwmon/aspeed-pwm-tacho.c
+index 2f3c379b85b0..97f35a3768e3 100644
+--- a/drivers/hwmon/aspeed-pwm-tacho.c
++++ b/drivers/hwmon/aspeed-pwm-tacho.c
+@@ -162,7 +162,7 @@
+ #define M_TACH_MODE 0x02 /* 10b */
+ #define M_TACH_MODE FALLING_EDGES /* 10b */
+ #define M_TACH_UNIT 0x0210
+-#define INIT_FAN_CTRL 0xFF
++#define INIT_FAN_CTRL 0x7F
+ 
+ /* How long we sleep in us while waiting for an RPM result. */
+ #define ASPEED_RPM_STATUS_SLEEP_USEC	500

@@ -1,0 +1,77 @@
+From 6c78995018d55a3c48832b4a25cef8ce45a8390c Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Tue, 15 Mar 2022 16:11:05 +0800
+Subject: [PATCH 5/9] Add post complete sel supported
+
+---
+ src/power_control.cpp | 28 ++++++++++++++++++++++++++--
+ 1 file changed, 26 insertions(+), 2 deletions(-)
+
+diff --git a/src/power_control.cpp b/src/power_control.cpp
+index 5973d6a..a959529 100755
+--- a/src/power_control.cpp
++++ b/src/power_control.cpp
+@@ -147,7 +147,8 @@ boost::container::flat_map<std::string, int> TimerMap = {
+     {"PowerOffSaveMs", 7000},
+     {"SlotPowerCycleMs", 200},
+     {"powerButtonDelayTimeMs", 2000},
+-    {"hscButtonDelayTimeMs", 15000}};
++    {"hscButtonDelayTimeMs", 15000},
++    {"postCompleteDelayTimeMs", 10000}};
+ 
+ static bool nmiEnabled = true;
+ static bool sioEnabled = true;
+@@ -177,6 +178,8 @@ static boost::asio::steady_timer slotPowerCycleTimer(io);
+ static boost::asio::steady_timer powerButtonDelayTimer(io);
+ // Time holding power button asserted HSC control
+ static boost::asio::steady_timer hscButtonDelayTimer(io);
++// Time when post complete asset and delay to log SEL
++static boost::asio::steady_timer postCompleteDelayTimer(io);
+ 
+ // GPIO Lines and Event Descriptors
+ static gpiod::line psPowerOKLine;
+@@ -2187,7 +2190,7 @@ static void powerButtonHandler(bool state)
+                         if (ec != boost::asio::error::operation_aborted)
+                         {
+                             lg2::error(
+-                                "Power button delay async_wait failed:  {ERROR_MSG}",
++                                "Power button delay async_wait failed: {ERROR_MSG}",
+                                 "ERROR_MSG", ec.message());
+                         }
+                     }
+@@ -2482,11 +2485,32 @@ static void postCompleteHandler(bool state)
+         sendPowerControlEvent(Event::postCompleteAssert);
+         setOperatingSystemState(OperatingSystemStateStage::Standby);
+         setDimmStatus(1);
++        postCompleteDelayTimer.expires_after(std::chrono::milliseconds(TimerMap["postCompleteDelayTimeMs"]));
++        postCompleteDelayTimer.async_wait([powerState](const boost::system::error_code ec) {
++            if (ec)
++            {
++                // operation_aborted is expected if timer is canceled before
++                // completion.
++                if (ec != boost::asio::error::operation_aborted)
++                {
++                    lg2::error(
++                        "Post complete delay async_wait failed: {ERROR_MSG}",
++                        "ERROR_MSG", ec.message());
++                }
++                return;
++            }
++
++            if(getChassisState(powerState) == "xyz.openbmc_project.State.Chassis.PowerState.On")
++            {
++                logSELEvent("Post Complete SEL Entry","/xyz/openbmc_project/sensors/system_event/END_OF_POST",0x01,0xFF,0xFF);
++            }
++        });
+     }
+     else
+     {
+         sendPowerControlEvent(Event::postCompleteDeAssert);
+         setOperatingSystemState(OperatingSystemStateStage::Inactive);
++        postCompleteDelayTimer.cancel();
+     }
+ }
+ 
+-- 
+2.7.4
+

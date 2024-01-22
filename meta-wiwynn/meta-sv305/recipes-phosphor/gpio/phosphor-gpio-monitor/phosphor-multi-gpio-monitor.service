@@ -1,0 +1,25 @@
+[Unit]
+Description=Phosphor Multi GPIO monitor
+After=xyz.openbmc_project.EntityManager.service
+Before=xyz.openbmc_project.adcsensor.service
+Before=xyz.openbmc_project.cpusensor.service
+Before=xyz.openbmc_project.eventsensor.service
+Before=xyz.openbmc_project.fpgasensor.service
+Before=xyz.openbmc_project.hwmontempsensor.service
+Before=xyz.openbmc_project.fansensor.service
+Before=xyz.openbmc_project.ipmbsensor.service
+Before=xyz.openbmc_project.nvmesensor.service
+Before=xyz.openbmc_project.psusensor.service
+Before=xyz.openbmc_project.vrsensor.service
+Before=phosphor-discover-system-state@0.service
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+StartLimitInterval=0
+ExecStart=/usr/bin/phosphor-multi-gpio-monitor --config /usr/share/phosphor-gpio-monitor/phosphor-multi-gpio-monitor.json
+SyslogIdentifier=phosphor-multi-gpio-monitor
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,165 @@
+[
+    {
+       "Exposes": [
+            {
+                "Address": "0x4f",
+                "Bus": "$bus - 1",
+                "Name": "GPU0_Temp",
+                "PowerState": "On",
+                "Thresholds": [
+                    {
+                        "Direction": "greater than",
+                        "Label": "GPU0_Temp",
+                        "Name": "upper critical",
+                        "Hysteresis": 3,
+                        "Severity": 1,
+                        "Value": 91
+                    }
+                ],
+                "Type": "TMP75"
+            },
+            {
+                "Address": "0x4f",
+                "Bus": "$bus",
+                "Name": "REAR_RISER_TEMP",
+                "Thresholds": [
+                    {
+                        "Direction": "greater than",
+                        "Label": "REAR_RISER_TEMP",
+                        "Name": "upper critical",
+                        "Hysteresis": 3,
+                        "Severity": 1,
+                        "Value": 45,
+                        "Index": 1
+                    }
+                ],
+                "Type": "TMP75"
+            },
+           {
+               "Connector": "Sys FAN Connector 1",
+               "Index": 1,
+               "Name": "SYS_FAN_1_B",
+               "PowerState": "Always",
+               "PresenceSensorName": "FAN1_PRESENCE",
+               "Address": "0x22",
+               "Bus": 16,
+               "Thresholds": [
+                   {
+                       "Direction": "less than",
+                        "Name": "lower critical",
+                        "Severity": 1,
+                        "Value": 2500
+                   }
+               ],
+               "Type": "I2CFan"
+           },
+           {
+               "Connector": "Sys FAN Connector 2",
+               "Index": 4,
+               "Name": "SYS_FAN_2_B",
+               "PowerState": "Always",
+               "PresenceSensorName": "FAN2_PRESENCE",
+               "Address": "0x22",
+               "Bus": 16,
+               "Thresholds": [
+                   {
+                       "Direction": "less than",
+                       "Name": "lower critical",
+                       "Severity": 1,
+                       "Value": 2500
+                   }
+               ],
+               "Type": "I2CFan"
+           },
+           {
+               "Connector": "Sys FAN Connector 3",
+               "Index": 7,
+               "Name": "SYS_FAN_3_B",
+               "PowerState": "Always",
+               "PresenceSensorName": "FAN3_PRESENCE",
+               "Address": "0x22",
+               "Bus": 16,
+               "Thresholds": [
+                   {
+                       "Direction": "less than",
+                       "Name": "lower critical",
+                       "Severity": 1,
+                       "Value": 2500
+                   }
+               ],
+               "Type": "I2CFan"
+           },
+           {
+               "Connector": "Sys FAN Connector 4",
+               "Index": 1,
+               "Name": "SYS_FAN_4_B",
+               "PowerState": "Always",
+               "PresenceSensorName": "FAN4_PRESENCE",
+               "Address": "0x23",
+               "Bus": 16,
+               "Thresholds": [
+                   {
+                       "Direction": "less than",
+                       "Name": "lower critical",
+                       "Severity": 1,
+                       "Value": 2500
+                   }
+               ],
+               "Type": "I2CFan"
+           },
+           {
+               "Connector": "Sys FAN Connector 5",
+               "Index": 4,
+               "Name": "SYS_FAN_5_B",
+               "PowerState": "Always",
+               "PresenceSensorName": "FAN5_PRESENCE",
+               "Address": "0x23",
+               "Bus": 16,
+               "Thresholds": [
+                   {
+                       "Direction": "less than",
+                       "Name": "lower critical",
+                       "Severity": 1,
+                       "Value": 2500
+                   }
+               ],
+               "Type": "I2CFan"
+           },
+           {
+               "Connector": "Sys FAN Connector 6",
+               "Index": 7,
+               "Name": "SYS_FAN_6_B",
+               "PowerState": "Always",
+               "PresenceSensorName": "FAN6_PRESENCE",
+               "Address": "0x23",
+               "Bus": 16,
+               "Thresholds": [
+                   {
+                       "Direction": "less than",
+                       "Name": "lower critical",
+                       "Severity": 1,
+                       "Value": 2500
+                   }
+               ],
+               "Type": "I2CFan"
+           },
+            {
+                "Address": "$address",
+                "Bus": "$bus",
+                "Name": "REAR_RISER_FRU",
+                "Type": "EEPROM"
+            }
+       ],
+       "Name": "s8053 Rear Riser",
+       "Probe": [
+            "xyz.openbmc_project.FruDevice({'BUS': 34, 'ADDRESS': 86})"
+        ],
+       "Type": "Panel",
+       "xyz.openbmc_project.Inventory.Decorator.Asset": {
+           "Manufacturer": "$BOARD_MANUFACTURER",
+           "Model": "$BOARD_PRODUCT_NAME",
+           "PartNumber": "$BOARD_PART_NUMBER",
+           "SerialNumber": "$BOARD_SERIAL_NUMBER"
+       }
+   }
+]

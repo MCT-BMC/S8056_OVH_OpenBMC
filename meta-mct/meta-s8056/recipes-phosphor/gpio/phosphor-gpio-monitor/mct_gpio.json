@@ -1,0 +1,31 @@
+[
+    {
+        "Name": "ThermalTrip",
+        "LineName": "FM_CPU0_THERMTRIP_R_N",
+        "EventMon": "FALLING",
+        "Continue": true,
+        "initialization": false,
+        "Target":
+        {
+            "FALLING": [
+                "gpio-prochot-thermtrip-assert@thermtrip.service"
+            ]
+        }
+    },
+    {
+        "Name": "RotDetect",
+        "LineName": "ROT_DETECT_N",
+        "EventMon": "BOTH",
+        "Continue": true,
+        "initialization": true,
+        "Target":
+        {
+            "FALLING": [
+                "gpio-rot-detect-assert@Present.service"
+            ],
+            "RISING": [
+                "gpio-rot-detect-assert@Absent.service"
+            ]
+        }
+    }
+]

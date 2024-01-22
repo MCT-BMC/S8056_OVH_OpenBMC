@@ -1,0 +1,16 @@
+#! /bin/sh
+IMAGE_FILE=$1
+
+BMC_UPDATER_CMD="/usr/sbin/bmc2-update"
+
+PROGREE_ENABLE=$2
+
+BMC_VERSION_ID=$(echo $IMAGE_FILE |cut -d / -f 4)
+
+if [  -n "$PROGREE_ENABLE"  ]; then
+    $BMC_UPDATER_CMD -P $BMC_VERSION_ID -p $IMAGE_FILE
+else
+    $BMC_UPDATER_CMD -p $IMAGE_FILE
+fi
+
+exit 0

@@ -1,0 +1,3702 @@
+From 78727aa2c852c730fc010dd484e6ff8d3debb9c1 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Mon, 23 Nov 2020 09:29:52 +0800
+Subject: [PATCH] Add sel when sensors driver failed
+
+---
+ include/ADCSensor.hpp       |   9 +-
+ include/AMDCPUSensor.hpp    |   7 +-
+ include/DIMMSensor.hpp      |   2 +-
+ include/HwmonTempSensor.hpp |   6 +-
+ include/NICSensor.hpp       |   4 +-
+ include/NVMESensor.hpp      |   2 +-
+ include/PSUSensor.hpp       |   7 +-
+ include/TachSensor.hpp      |  19 +-
+ include/Utils.hpp           |  27 ++
+ include/sensor.hpp          |  22 +-
+ meson.build                 |   6 +-
+ src/ADCSensor.cpp           |  25 +-
+ src/ADCSensorMain.cpp       | 168 +++------
+ src/AMDCPUSensor.cpp        |  12 +-
+ src/AMDCPUSensorMain.cpp    | 139 +++-----
+ src/DIMMSensor.cpp          |   7 +-
+ src/DIMMSensorMain.cpp      | 144 ++------
+ src/FanMain.cpp             | 236 ++++---------
+ src/HwmonTempMain.cpp       | 202 ++++-------
+ src/HwmonTempSensor.cpp     |  22 +-
+ src/IpmbSensor.cpp          |   2 -
+ src/NICSensor.cpp           |  11 +-
+ src/NICSensorMain.cpp       | 177 +++-------
+ src/NVMESensor.cpp          |   6 +-
+ src/NVMESensorMain.cpp      | 152 +++-----
+ src/PSUSensor.cpp           |  41 ++-
+ src/PSUSensorMain.cpp       | 675 ++++--------------------------------
+ src/TachSensor.cpp          | 116 +++++--
+ src/Utils.cpp               | 152 ++++++++
+ 29 files changed, 804 insertions(+), 1594 deletions(-)
+
+diff --git a/include/ADCSensor.hpp b/include/ADCSensor.hpp
+index bca1b8b..c632e05 100644
+--- a/include/ADCSensor.hpp
++++ b/include/ADCSensor.hpp
+@@ -61,15 +61,18 @@ class BridgeGpio
+ class ADCSensor : public Sensor, public std::enable_shared_from_this<ADCSensor>
+ {
+   public:
+-    ADCSensor(const std::string& path,
++    ADCSensor(const std::string& path, const std::string& objectType,
+               sdbusplus::asio::object_server& objectServer,
+               std::shared_ptr<sdbusplus::asio::connection>& conn,
+               boost::asio::io_service& io, const std::string& sensorName,
+               std::vector<thresholds::Threshold>&& thresholds,
+               const double scaleFactor, const float pollRate,
+               const double maxValue, const double minValue,
+-              PowerState readState, const std::string& sensorConfiguration,
+-              std::optional<BridgeGpio>&& bridgeGpio);
++              const PowerState readState,
++              const std::string& sensorConfiguration,
++              const std::string& dbusPath,
++              std::optional<BridgeGpio>&& bridgeGpio,
++              const bool isSensorFailure);
+     ~ADCSensor() override;
+     void setupRead(void);
+ 
+diff --git a/include/AMDCPUSensor.hpp b/include/AMDCPUSensor.hpp
+index a098df1..8a5def0 100644
+--- a/include/AMDCPUSensor.hpp
++++ b/include/AMDCPUSensor.hpp
+@@ -28,9 +28,10 @@ class AMDCPUSensor :
+                  boost::asio::io_service& io, const std::string& sensorName,
+                  std::vector<thresholds::Threshold>&& thresholds,
+                  PowerState readState, const std::string& sensorConfiguration,
+-                 const double maxValue, const double minValue,
+-                 unsigned int sensorPollMs,
+-                 const std::optional<double>& tctlMax);
++                 const std::string& dbusPath, const double maxValue,
++                 const double minValue, unsigned int sensorPollMs,
++                 const std::optional<double>& tctlMax,
++                 const bool isSensorFailure);
+     ~AMDCPUSensor();
+     void setupRead(void);
+ 
+diff --git a/include/DIMMSensor.hpp b/include/DIMMSensor.hpp
+index 60f46bd..1e5a0a3 100644
+--- a/include/DIMMSensor.hpp
++++ b/include/DIMMSensor.hpp
+@@ -16,7 +16,7 @@ class DIMMSensor :
+                boost::asio::io_service& io, const std::string& sensorName,
+                std::vector<thresholds::Threshold>&& thresholds,
+                const std::string& sensorConfiguration,
+-               const std::string& sensorTypeName, const double maxValue,
++               const std::string& dbusPath, const double maxValue,
+                const double minValue, const PowerState readState,
+                const uint8_t busId, const uint8_t slaveAddr,
+                const uint8_t dataReg);
+diff --git a/include/HwmonTempSensor.hpp b/include/HwmonTempSensor.hpp
+index ac847df..a733db4 100644
+--- a/include/HwmonTempSensor.hpp
++++ b/include/HwmonTempSensor.hpp
+@@ -16,11 +16,13 @@ class HwmonTempSensor :
+     HwmonTempSensor(const std::string& path, const std::string& objectType,
+                     sdbusplus::asio::object_server& objectServer,
+                     std::shared_ptr<sdbusplus::asio::connection>& conn,
+-                    boost::asio::io_service& io, const std::string& fanName,
++                    boost::asio::io_service& io, const std::string& sensorName,
+                     std::vector<thresholds::Threshold>&& thresholds,
+                     const float pollRate,
+                     const std::string& sensorConfiguration,
+-                    const PowerState powerState);
++                    const std::string& dbusPath, const double maxValue,
++                    const double minValue, const PowerState powerState,
++                    const bool isSensorFailure);
+     ~HwmonTempSensor() override;
+     void setupRead(void);
+ 
+diff --git a/include/NICSensor.hpp b/include/NICSensor.hpp
+index 10aad18..fbf0931 100644
+--- a/include/NICSensor.hpp
++++ b/include/NICSensor.hpp
+@@ -19,12 +19,12 @@ class NICSensor : public Sensor, public std::enable_shared_from_this<NICSensor>
+               boost::asio::io_service& io, const std::string& sensorName,
+               std::vector<thresholds::Threshold>&& thresholds,
+               const std::string& sensorConfiguration,
+-              const std::string& sensorTypeName, const double maxValue,
++              const std::string& dbusPath, const double maxValue,
+               const double minValue, const PowerState readState,
+               const uint8_t busId, const uint8_t slaveAddr,
+               const uint8_t cmdCode, const ReadMode readMode,
+               const double scaleVal, const double offsetVal,
+-              const std::optional<double>& tctlMax);
++              const std::optional<double>& tctlMax, const bool isSensorFailure);
+     ~NICSensor();
+     void setupRead(void);
+ 
+diff --git a/include/NVMESensor.hpp b/include/NVMESensor.hpp
+index 24ae781..36e41ec 100644
+--- a/include/NVMESensor.hpp
++++ b/include/NVMESensor.hpp
+@@ -51,7 +51,7 @@ class NVMESensor :
+                boost::asio::io_service& io, const std::string& sensorName,
+                std::vector<thresholds::Threshold>&& thresholds,
+                const std::string& sensorConfiguration,
+-               const std::string& sensorUnit, const std::string& sensorTypeName,
++               const std::string& sensorUnit, const std::string& dbusPath,
+                const double maxValue, const double minValue,
+                const PowerState readState, const uint8_t busId,
+                const DeviceDetectInfo& detectInfo);
+diff --git a/include/PSUSensor.hpp b/include/PSUSensor.hpp
+index 2aab36c..492c536 100644
+--- a/include/PSUSensor.hpp
++++ b/include/PSUSensor.hpp
+@@ -19,10 +19,9 @@ class PSUSensor : public Sensor, public std::enable_shared_from_this<PSUSensor>
+               boost::asio::io_service& io, const std::string& sensorName,
+               std::vector<thresholds::Threshold>&& thresholds,
+               const std::string& sensorConfiguration,
+-              const std::string& sensorUnits, const unsigned int factor,
+-              const double maxValue, const double minValue,
+-              const std::string& label, size_t tSize,
+-              const PowerState readState);
++              const std::string& sensorUnit, const std::string& dbusPath,
++              const unsigned int factor, const double maxValue,
++              const double minValue, const PowerState readState);
+     ~PSUSensor() override;
+     void setupRead(void);
+ 
+diff --git a/include/TachSensor.hpp b/include/TachSensor.hpp
+index 944e419..e51f2ac 100644
+--- a/include/TachSensor.hpp
++++ b/include/TachSensor.hpp
+@@ -60,21 +60,25 @@ class RedundancySensor
+     boost::container::flat_map<std::string, bool> statuses;
+ };
+ 
+-class TachSensor : public Sensor
++class TachSensor :
++    public Sensor,
++    public std::enable_shared_from_this<TachSensor>
+ {
+   public:
+     TachSensor(const std::string& path, const std::string& objectType,
+                sdbusplus::asio::object_server& objectServer,
+                std::shared_ptr<sdbusplus::asio::connection>& conn,
+-               std::unique_ptr<PresenceSensor>&& presence,
++               std::shared_ptr<PresenceSensor>&& presence,
+                std::optional<RedundancySensor>* redundancy,
+                boost::asio::io_service& io, const std::string& fanName,
+                std::vector<thresholds::Threshold>&& thresholds,
+                const std::string& sensorConfiguration,
+-               const std::pair<size_t, size_t>& limits,
+-               const PowerState& powerState,
+-               const std::optional<std::string>& led);
++               const std::string& dbusPath, const double maxValue,
++               const double minValue, const PowerState& readState,
++               const std::optional<std::string>& led,
++               const bool isSensorFailure);
+     ~TachSensor() override;
++    void setupRead(void);
+ 
+     inline static bool fanFailSelLogged = false;
+     inline static std::shared_ptr<boost::asio::steady_timer> hardOffTimer;
+@@ -83,16 +87,15 @@ class TachSensor : public Sensor
+     inline static std::set<std::string> failedFans;
+     sdbusplus::asio::object_server& objServer;
+     std::optional<RedundancySensor>* redundancy;
+-    std::unique_ptr<PresenceSensor> presence;
++    std::shared_ptr<PresenceSensor> presence;
+     std::shared_ptr<sdbusplus::asio::dbus_interface> itemIface;
+     std::shared_ptr<sdbusplus::asio::dbus_interface> itemAssoc;
+     boost::asio::posix::stream_descriptor inputDev;
+     boost::asio::steady_timer waitTimer;
+-    boost::asio::streambuf readBuf;
++    std::shared_ptr<boost::asio::streambuf> readBuf;
+     std::string path;
+     std::optional<std::string> led;
+     bool ledState = false;
+-    void setupRead(void);
+     void handleResponse(const boost::system::error_code& err);
+     void checkThresholds(void) override;
+     void fanFailHostPowerOff(void);
+diff --git a/include/Utils.hpp b/include/Utils.hpp
+index 94bd77a..962f7e5 100644
+--- a/include/Utils.hpp
++++ b/include/Utils.hpp
+@@ -21,6 +21,11 @@
+ #include <vector>
+ 
+ namespace State = sdbusplus::xyz::openbmc_project::State::server;
++namespace fs = std::filesystem;
++namespace thresholds
++{
++struct Threshold;
++} // namespace thresholds
+ 
+ const constexpr char* jsonStore = "/var/configuration/flattened.json";
+ const constexpr char* inventoryPath = "/xyz/openbmc_project/inventory";
+@@ -37,6 +42,7 @@ using SensorBaseConfigMap =
+     boost::container::flat_map<std::string, BasicVariantType>;
+ using SensorBaseConfiguration = std::pair<std::string, SensorBaseConfigMap>;
+ using SensorData = boost::container::flat_map<std::string, SensorBaseConfigMap>;
++using SensorObject = std::pair<sdbusplus::message::object_path, SensorData>;
+ using ManagedObjectType =
+     boost::container::flat_map<sdbusplus::message::object_path, SensorData>;
+ 
+@@ -327,3 +333,24 @@ void setupManufacturingModeMatch(sdbusplus::asio::connection& conn);
+ bool getManufacturingMode();
+ 
+ void addSensorFailSel(const std::string& sensorPath, bool isAssert);
++
++bool parseSensorInfo(const SensorObject& sensor,
++                     const std::vector<std::string>& sensorTypes,
++                     const SensorBaseConfiguration*& baseConfiguration,
++                     const SensorBaseConfigMap*& baseConfigMap,
++                     std::string& objectType, std::string& sensorName,
++                     std::string& sensorType, std::string& dbusPath,
++                     std::vector<thresholds::Threshold>& sensorThresholds,
++                     std::pair<double, double>& limits, PowerState& readState);
++
++bool findPathFromDriver(const SensorBaseConfigMap*& baseConfigMap,
++                        const std::string& sensorName,
++                        const std::string& dbusPath,
++                        const std::vector<fs::path>& paths,
++                        const std::string prefix, const std::string suffix,
++                        std::string& driverPath, uint64_t bus = 0,
++                        uint64_t address = 0);
++
++bool findPathFromI2C(const SensorBaseConfigMap*& baseConfigMap,
++                     const std::string& sensorName, uint64_t& bus,
++                     uint64_t& address, std::string& i2cPath);
+diff --git a/include/sensor.hpp b/include/sensor.hpp
+index 9f39cc5..f9f0b5b 100644
+--- a/include/sensor.hpp
++++ b/include/sensor.hpp
+@@ -13,6 +13,11 @@
+ 
+ constexpr size_t sensorFailedPollTimeMs = 5000;
+ 
++inline std::map<std::string, std::string> sensorTypeTable = {
++    {"fan", "fan_tach/"},     {"power", "power/"},  {"curr", "current/"},
++    {"temp", "temperature/"}, {"volt", "voltage/"}, {"in", "voltage/"}};
++constexpr const char* sensorPathPrefix = "/xyz/openbmc_project/sensors/";
++
+ // Enable useful logging with sensor instrumentation
+ // This is intentionally not DEBUG, avoid clash with usage in .cpp files
+ constexpr bool enableInstrumentation = false;
+@@ -42,14 +47,15 @@ struct Sensor
+            const std::string& configurationPath, const std::string& objectType,
+            bool isSettable, const double max, const double min,
+            std::shared_ptr<sdbusplus::asio::connection>& conn,
+-           PowerState readState = PowerState::always) :
++           PowerState readState = PowerState::always,
++           const bool isSensorFailure = false) :
+         name(sensor_paths::escapePathForDbus(name)),
+         configurationPath(configurationPath), objectType(objectType),
+         isSensorSettable(isSettable), maxValue(max), minValue(min),
+         thresholds(std::move(thresholdData)),
+         hysteresisTrigger((max - min) * 0.01),
+         hysteresisPublish((max - min) * 0.0001), dbusConnection(conn),
+-        readState(readState), errCount(0),
++        readState(readState), errCount(0), isSensorFailure(isSensorFailure),
+         instrumentation(enableInstrumentation
+                             ? std::make_unique<SensorInstrumentation>()
+                             : nullptr)
+@@ -78,6 +84,7 @@ struct Sensor
+     std::shared_ptr<sdbusplus::asio::connection> dbusConnection;
+     PowerState readState;
+     size_t errCount;
++    bool isSensorFailure;
+     std::unique_ptr<SensorInstrumentation> instrumentation;
+ 
+     // This member variable provides a hook that can be used to receive
+@@ -426,10 +433,13 @@ struct Sensor
+         {
+             markFunctional(false);
+ 
+-            if ((objectType.find("NVME") == std::string::npos) &&
+-                (objectType.find("DIMM") == std::string::npos))
++            if (isSensorFailure == true)
+             {
+-                sendSensorFailSignal(true);
++                if ((objectType.find("NVME") == std::string::npos) &&
++                    (objectType.find("DIMM") == std::string::npos))
++                {
++                    sendSensorFailSignal(true);
++                }
+             }
+         }
+     }
+@@ -460,7 +470,7 @@ struct Sensor
+         checkThresholds();
+         if (!std::isnan(newValue))
+         {
+-            if (errCount >= errorThreshold)
++            if (isSensorFailure == true)
+             {
+                 if ((objectType.find("NVME") == std::string::npos) &&
+                     (objectType.find("DIMM") == std::string::npos))
+diff --git a/meson.build b/meson.build
+index 28b7e0c..69ddc40 100644
+--- a/meson.build
++++ b/meson.build
+@@ -59,7 +59,11 @@ thresholds_a = static_library(
+ utils_a = static_library(
+     'utils_a',
+     ['src/Utils.cpp', 'src/SensorPaths.cpp'],
+-    dependencies: [ sdbusplus, phosphor_dbus_interfaces ],
++    dependencies: [
++        sdbusplus,
++        phosphor_dbus_interfaces,
++        libobmcdbus
++    ],
+     implicit_include_directories: false,
+     include_directories: 'include',
+ )
+diff --git a/src/ADCSensor.cpp b/src/ADCSensor.cpp
+index 6b0efeb..6766228 100644
+--- a/src/ADCSensor.cpp
++++ b/src/ADCSensor.cpp
+@@ -40,20 +40,21 @@ static constexpr unsigned int sensorScaleFactor = 1000;
+ 
+ static constexpr double roundFactor = 10000; // 3 decimal places
+ 
+-ADCSensor::ADCSensor(const std::string& path,
++ADCSensor::ADCSensor(const std::string& path, const std::string& objectType,
+                      sdbusplus::asio::object_server& objectServer,
+                      std::shared_ptr<sdbusplus::asio::connection>& conn,
+                      boost::asio::io_service& io, const std::string& sensorName,
+                      std::vector<thresholds::Threshold>&& thresholdsIn,
+                      const double scaleFactor, const float pollRate,
+                      const double maxValue, const double minValue,
+-                     PowerState readState,
++                     const PowerState readState,
+                      const std::string& sensorConfiguration,
+-                     std::optional<BridgeGpio>&& bridgeGpio) :
++                     const std::string& dbusPath,
++                     std::optional<BridgeGpio>&& bridgeGpio,
++                     const bool isSensorFailure) :
+     Sensor(boost::replace_all_copy(sensorName, " ", "_"),
+-           std::move(thresholdsIn), sensorConfiguration,
+-           "xyz.openbmc_project.Configuration.ADC", false, maxValue, minValue,
+-           conn, readState),
++           std::move(thresholdsIn), sensorConfiguration, objectType, false,
++           maxValue, minValue, conn, readState, isSensorFailure),
+     std::enable_shared_from_this<ADCSensor>(), objServer(objectServer),
+     inputDev(io, open(path.c_str(), O_RDONLY)), waitTimer(io), path(path),
+     scaleFactor(scaleFactor),
+@@ -61,22 +62,18 @@ ADCSensor::ADCSensor(const std::string& path,
+     bridgeGpio(std::move(bridgeGpio)), thresholdTimer(io, this)
+ {
+     sensorInterface = objectServer.add_interface(
+-        "/xyz/openbmc_project/sensors/voltage/" + name,
+-        "xyz.openbmc_project.Sensor.Value");
++        dbusPath, "xyz.openbmc_project.Sensor.Value");
+     if (thresholds::hasWarningInterface(thresholds))
+     {
+         thresholdInterfaceWarning = objectServer.add_interface(
+-            "/xyz/openbmc_project/sensors/voltage/" + name,
+-            "xyz.openbmc_project.Sensor.Threshold.Warning");
++            dbusPath, "xyz.openbmc_project.Sensor.Threshold.Warning");
+     }
+     if (thresholds::hasCriticalInterface(thresholds))
+     {
+         thresholdInterfaceCritical = objectServer.add_interface(
+-            "/xyz/openbmc_project/sensors/voltage/" + name,
+-            "xyz.openbmc_project.Sensor.Threshold.Critical");
++            dbusPath, "xyz.openbmc_project.Sensor.Threshold.Critical");
+     }
+-    association = objectServer.add_interface(
+-        "/xyz/openbmc_project/sensors/voltage/" + name, association::interface);
++    association = objectServer.add_interface(dbusPath, association::interface);
+     setInitialProperties(conn, sensor_paths::unitVolts);
+ }
+ 
+diff --git a/src/ADCSensorMain.cpp b/src/ADCSensorMain.cpp
+index 0ae170d..0fcdff9 100644
+--- a/src/ADCSensorMain.cpp
++++ b/src/ADCSensorMain.cpp
+@@ -42,8 +42,9 @@ static constexpr double minReading = 0;
+ 
+ namespace fs = std::filesystem;
+ 
+-static constexpr std::array<const char*, 1> sensorTypes = {
++static std::vector<std::string> sensorTypes = {
+     "xyz.openbmc_project.Configuration.ADC"};
++
+ static std::regex inputRegex(R"(in(\d+)_input)");
+ 
+ static boost::container::flat_map<size_t, bool> cpuPresence;
+@@ -62,6 +63,7 @@ bool isAdc(const fs::path& parentPath)
+ 
+     std::string name;
+     std::getline(nameFile, name);
++    nameFile.close();
+ 
+     return name == "iio_hwmon";
+ }
+@@ -80,113 +82,62 @@ void createSensors(
+                    sensorsChanged](
+                       const ManagedObjectType& sensorConfigurations) {
+             bool firstScan = sensorsChanged == nullptr;
++
++            // Get all adc driver paths.
+             std::vector<fs::path> paths;
+-            if (!findFiles(fs::path("/sys/class/hwmon"), R"(in\d+_input)",
+-                           paths))
+-            {
+-                std::cerr << "No temperature sensors in system\n";
+-                return;
+-            }
++            findFiles(fs::path("/sys/class/hwmon"), R"(in\d+_input)", paths);
+ 
+-            // iterate through all found adc sensors, and try to match them with
+-            // configuration
+-            for (auto& path : paths)
++            // Filter out adc from any other voltage sensor.
++            for (auto it = paths.begin(); it != paths.end(); ++it)
+             {
+-                if (!isAdc(path.parent_path()))
+-                {
+-                    continue;
+-                }
+-                std::smatch match;
+-                std::string pathStr = path.string();
+-
+-                std::regex_search(pathStr, match, inputRegex);
+-                std::string indexStr = *(match.begin() + 1);
+-
+-                auto directory = path.parent_path();
+-                // convert to 0 based
+-                size_t index = std::stoul(indexStr) - 1;
+-
+-                const SensorData* sensorData = nullptr;
+-                const std::string* interfacePath = nullptr;
+-                const std::pair<
+-                    std::string,
+-                    boost::container::flat_map<std::string, BasicVariantType>>*
+-                    baseConfiguration;
+-                for (const std::pair<sdbusplus::message::object_path,
+-                                     SensorData>& sensor : sensorConfigurations)
+-                {
+-                    // clear it out each loop
+-                    baseConfiguration = nullptr;
+-
+-                    // find base configuration
+-                    for (const char* type : sensorTypes)
+-                    {
+-                        auto sensorBase = sensor.second.find(type);
+-                        if (sensorBase != sensor.second.end())
+-                        {
+-                            baseConfiguration = &(*sensorBase);
+-                            break;
+-                        }
+-                    }
+-                    if (baseConfiguration == nullptr)
+-                    {
+-                        continue;
+-                    }
+-                    auto findIndex = baseConfiguration->second.find("Index");
+-                    if (findIndex == baseConfiguration->second.end())
+-                    {
+-                        std::cerr << "Base configuration missing Index"
+-                                  << baseConfiguration->first << "\n";
+-                        continue;
+-                    }
+-
+-                    unsigned int number = std::visit(
+-                        VariantToUnsignedIntVisitor(), findIndex->second);
+-
+-                    if (number != index)
+-                    {
+-                        continue;
+-                    }
+-
+-                    sensorData = &(sensor.second);
+-                    interfacePath = &(sensor.first.str);
+-                    break;
+-                }
+-                if (sensorData == nullptr)
++                if (isAdc(it->parent_path()) == false)
+                 {
+-                    std::cerr << "failed to find match for " << path.string()
+-                              << "\n";
+-                    continue;
++                    paths.erase(it--);
+                 }
++            }
+ 
+-                if (baseConfiguration == nullptr)
++            for (const SensorObject& sensor : sensorConfigurations)
++            {
++                const std::string* interfacePath = &(sensor.first.str);
++                const SensorData* sensorData = &(sensor.second);
++                const SensorBaseConfiguration* baseConfiguration = nullptr;
++                const SensorBaseConfigMap* baseConfigMap = nullptr;
++
++                std::string objectType;
++                std::string sensorName;
++                std::string sensorType;
++                std::string dbusPath;
++                std::vector<thresholds::Threshold> sensorThresholds;
++                auto limits = std::make_pair(minReading, maxReading);
++                PowerState readState = PowerState::always;
++                if (!parseSensorInfo(sensor, sensorTypes, baseConfiguration,
++                                     baseConfigMap, objectType, sensorName,
++                                     sensorType, dbusPath, sensorThresholds,
++                                     limits, readState))
+                 {
+-                    std::cerr << "error finding base configuration for"
+-                              << path.string() << "\n";
+                     continue;
+                 }
+ 
+-                auto findSensorName = baseConfiguration->second.find("Name");
+-                if (findSensorName == baseConfiguration->second.end())
++                std::string driverPath;
++                if (!findPathFromDriver(baseConfigMap, sensorName, dbusPath,
++                                        paths, sensorType, "input", driverPath))
+                 {
+-                    std::cerr << "could not determine configuration name for "
+-                              << path.string() << "\n";
+                     continue;
+                 }
+-                std::string sensorName =
+-                    std::get<std::string>(findSensorName->second);
+ 
+                 // on rescans, only update sensors we were signaled by
+                 auto findSensor = sensors.find(sensorName);
++                bool isSensorFailure = false;
+                 if (!firstScan && findSensor != sensors.end())
+                 {
+                     bool found = false;
+-                    for (auto it = sensorsChanged->begin();
+-                         it != sensorsChanged->end(); it++)
++                    for (auto& it : *sensorsChanged)
+                     {
+                         if (findSensor->second &&
+-                            boost::ends_with(*it, findSensor->second->name))
++                            boost::ends_with(it, findSensor->second->name))
+                         {
++                            isSensorFailure =
++                                findSensor->second->isSensorFailure;
+                             sensorsChanged->erase(it);
+                             findSensor->second = nullptr;
+                             found = true;
+@@ -198,17 +149,14 @@ void createSensors(
+                         continue;
+                     }
+                 }
+-                std::vector<thresholds::Threshold> sensorThresholds;
+-                if (!parseThresholdsFromConfig(*sensorData, sensorThresholds))
++                else if (sensorsChanged != nullptr)
+                 {
+-                    std::cerr << "error populating thresholds for "
+-                              << sensorName << "\n";
++                    sensorsChanged->erase(*interfacePath);
+                 }
+ 
+-                auto findScaleFactor =
+-                    baseConfiguration->second.find("ScaleFactor");
+                 float scaleFactor = 1.0;
+-                if (findScaleFactor != baseConfiguration->second.end())
++                auto findScaleFactor = baseConfigMap->find("ScaleFactor");
++                if (findScaleFactor != baseConfigMap->end())
+                 {
+                     scaleFactor = std::visit(VariantToFloatVisitor(),
+                                              findScaleFactor->second);
+@@ -231,20 +179,8 @@ void createSensors(
+                     }
+                 }
+ 
+-                auto findPowerOn = baseConfiguration->second.find("PowerState");
+-                PowerState readState = PowerState::always;
+-                if (findPowerOn != baseConfiguration->second.end())
+-                {
+-                    std::string powerState = std::visit(
+-                        VariantToStringVisitor(), findPowerOn->second);
+-                    setReadState(powerState, readState);
+-                }
+-
+-                auto limits = std::make_pair(minReading, maxReading);
+-                findLimits(limits, baseConfiguration);
+-
+-                auto findCPU = baseConfiguration->second.find("CPURequired");
+-                if (findCPU != baseConfiguration->second.end())
++                auto findCPU = baseConfigMap->find("CPURequired");
++                if (findCPU != baseConfigMap->end())
+                 {
+                     size_t index =
+                         std::visit(VariantToIntVisitor(), findCPU->second);
+@@ -259,9 +195,6 @@ void createSensors(
+                     }
+                 }
+ 
+-                auto& sensor = sensors[sensorName];
+-                sensor = nullptr;
+-
+                 std::optional<BridgeGpio> bridgeGpio;
+                 for (const SensorBaseConfiguration& suppConfig : *sensorData)
+                 {
+@@ -293,12 +226,13 @@ void createSensors(
+                     }
+                 }
+ 
+-                sensor = std::make_shared<ADCSensor>(
+-                    path.string(), objectServer, dbusConnection, io, sensorName,
+-                    std::move(sensorThresholds), scaleFactor, pollRate,
+-                    limits.second, limits.first, readState, *interfacePath,
+-                    std::move(bridgeGpio));
+-                sensor->setupRead();
++                sensors[sensorName] = std::make_shared<ADCSensor>(
++                    driverPath, objectType, objectServer, dbusConnection, io,
++                    sensorName, std::move(sensorThresholds), scaleFactor,
++                    pollRate, limits.second, limits.first, readState,
++                    *interfacePath, dbusPath, std::move(bridgeGpio),
++                    isSensorFailure);
++                sensors[sensorName]->setupRead();
+             }
+         }));
+ 
+@@ -396,7 +330,7 @@ int main()
+             });
+         };
+ 
+-    for (const char* type : sensorTypes)
++    for (const auto& type : sensorTypes)
+     {
+         auto match = std::make_unique<sdbusplus::bus::match::match>(
+             static_cast<sdbusplus::bus::bus&>(*systemBus),
+diff --git a/src/AMDCPUSensor.cpp b/src/AMDCPUSensor.cpp
+index e739b46..0134147 100644
+--- a/src/AMDCPUSensor.cpp
++++ b/src/AMDCPUSensor.cpp
+@@ -18,8 +18,6 @@
+ #include <string>
+ #include <vector>
+ 
+-static constexpr const char* sensorPathPrefix = "/xyz/openbmc_project/sensors/";
+-
+ static constexpr unsigned int sensorScaleFactor = 1000;
+ static constexpr double roundFactor = 10000;
+ 
+@@ -29,18 +27,16 @@ AMDCPUSensor::AMDCPUSensor(
+     std::shared_ptr<sdbusplus::asio::connection>& conn,
+     boost::asio::io_service& io, const std::string& sensorName,
+     std::vector<thresholds::Threshold>&& _thresholds, PowerState readState,
+-    const std::string& sensorConfiguration, const double maxValue,
+-    const double minValue, unsigned int sensorPollMs,
+-    const std::optional<double>& tctlMax) :
++    const std::string& sensorConfiguration, const std::string& dbusPath,
++    const double maxValue, const double minValue, unsigned int sensorPollMs,
++    const std::optional<double>& tctlMax, const bool isSensorFailure) :
+     Sensor(boost::replace_all_copy(sensorName, " ", "_"),
+            std::move(_thresholds), sensorConfiguration, objectType, false,
+-           maxValue, minValue, conn, readState),
++           maxValue, minValue, conn, readState, isSensorFailure),
+     std::enable_shared_from_this<AMDCPUSensor>(), objServer(objectServer),
+     inputDev(io, open(path.c_str(), O_RDONLY)), waitTimer(io), path(path),
+     sensorPollMs(sensorPollMs), thresholdTimer(io, this)
+ {
+-    std::string dbusPath(sensorPathPrefix + std::string("temperature/") + name);
+-
+     sensorInterface = objectServer.add_interface(
+         dbusPath, "xyz.openbmc_project.Sensor.Value");
+     if (tctlMax.has_value())
+diff --git a/src/AMDCPUSensorMain.cpp b/src/AMDCPUSensorMain.cpp
+index 88fefb6..f50cf0a 100644
+--- a/src/AMDCPUSensorMain.cpp
++++ b/src/AMDCPUSensorMain.cpp
+@@ -30,7 +30,7 @@ static constexpr bool DEBUG = false;
+ 
+ namespace fs = std::filesystem;
+ 
+-static constexpr std::array<const char*, 1> sensorTypes = {
++static std::vector<std::string> sensorTypes = {
+     "xyz.openbmc_project.Configuration.CPU"};
+ static std::regex inputRegex(R"(temp(\d+)_input)");
+ 
+@@ -51,6 +51,7 @@ bool isCpu(const fs::path& parentPath)
+ 
+     std::string name;
+     std::getline(nameFile, name);
++    nameFile.close();
+ 
+     return name == "sbtsi";
+ }
+@@ -70,97 +71,58 @@ bool createSensors(
+                       const ManagedObjectType& sensorConfigurations) {
+             bool firstScan = sensorsChanged == nullptr;
+             std::vector<fs::path> paths;
+-            if (!findFiles(fs::path("/sys/class/hwmon"), R"(temp\d+_input)",
+-                           paths))
+-            {
+-                std::cerr << "No temperature sensors in system\n";
+-                return;
+-            }
++            findFiles(fs::path("/sys/class/hwmon"), R"(temp\d+_input)", paths);
+ 
+-            // iterate through all found cpu sensors, and try to match them with
+-            // configuration
+-            for (auto& path : paths)
++            // Filter out cpu from any other temperature sensor.
++            for (auto it = paths.begin(); it != paths.end(); ++it)
+             {
+-                if (!isCpu(path.parent_path()))
+-                {
+-                    continue;
+-                }
+-                std::smatch match;
+-                std::string pathStr = path.string();
+-
+-                std::regex_search(pathStr, match, inputRegex);
+-                std::string indexStr = *(match.begin() + 1);
+-
+-                auto directory = path.parent_path();
+-
+-                const SensorData* sensorData = nullptr;
+-                const std::string* interfacePath = nullptr;
+-                const char* sensorType = nullptr;
+-                const std::pair<
+-                    std::string,
+-                    boost::container::flat_map<std::string, BasicVariantType>>*
+-                    baseConfiguration;
+-                for (const std::pair<sdbusplus::message::object_path,
+-                                     SensorData>& sensor : sensorConfigurations)
+-                {
+-                    // clear it out each loop
+-                    baseConfiguration = nullptr;
+-
+-                    // find base configuration
+-                    for (const char* type : sensorTypes)
+-                    {
+-                        auto sensorBase = sensor.second.find(type);
+-                        if (sensorBase != sensor.second.end())
+-                        {
+-                            baseConfiguration = &(*sensorBase);
+-                            sensorType = type;
+-                            break;
+-                        }
+-                    }
+-                    if (baseConfiguration == nullptr)
+-                    {
+-                        continue;
+-                    }
+-
+-                    sensorData = &(sensor.second);
+-                    interfacePath = &(sensor.first.str);
+-                    break;
+-                }
+-                if (sensorData == nullptr)
++                if (!isCpu(it->parent_path()))
+                 {
+-                    std::cerr << "failed to find match for " << path.string()
+-                              << "\n";
+-                    continue;
++                    paths.erase(it--);
+                 }
++            }
+ 
+-                if (baseConfiguration == nullptr)
++            for (const SensorObject& sensor : sensorConfigurations)
++            {
++                const std::string* interfacePath = &(sensor.first.str);
++                const SensorBaseConfiguration* baseConfiguration = nullptr;
++                const SensorBaseConfigMap* baseConfigMap = nullptr;
++
++                std::string objectType;
++                std::string sensorName;
++                std::string sensorType;
++                std::string dbusPath;
++                std::vector<thresholds::Threshold> sensorThresholds;
++                auto limits = std::make_pair(minReading, maxReading);
++                PowerState readState = PowerState::biosPost;
++                if (!parseSensorInfo(sensor, sensorTypes, baseConfiguration,
++                                     baseConfigMap, objectType, sensorName,
++                                     sensorType, dbusPath, sensorThresholds,
++                                     limits, readState))
+                 {
+-                    std::cerr << "error finding base configuration for"
+-                              << path.string() << "\n";
+                     continue;
+                 }
+ 
+-                auto findSensorName = baseConfiguration->second.find("Name");
+-                if (findSensorName == baseConfiguration->second.end())
++                std::string driverPath;
++                if (!findPathFromDriver(baseConfigMap, sensorName, dbusPath,
++                                        paths, sensorType, "input", driverPath))
+                 {
+-                    std::cerr << "could not determine configuration name for "
+-                              << path.string() << "\n";
+                     continue;
+                 }
+-                std::string sensorName =
+-                    std::get<std::string>(findSensorName->second);
+ 
+                 // on rescans, only update sensors we were signaled by
+                 auto findSensor = sensors.find(sensorName);
++                bool isSensorFailure = false;
+                 if (!firstScan && findSensor != sensors.end())
+                 {
+                     bool found = false;
+-                    for (auto it = sensorsChanged->begin();
+-                         it != sensorsChanged->end(); it++)
++                    for (auto& it : *sensorsChanged)
+                     {
+                         if (findSensor->second &&
+-                            boost::ends_with(*it, findSensor->second->name))
++                            boost::ends_with(it, findSensor->second->name))
+                         {
++                            isSensorFailure =
++                                findSensor->second->isSensorFailure;
+                             sensorsChanged->erase(it);
+                             findSensor->second = nullptr;
+                             found = true;
+@@ -172,47 +134,32 @@ bool createSensors(
+                         continue;
+                     }
+                 }
+-                std::vector<thresholds::Threshold> sensorThresholds;
+-                if (!parseThresholdsFromConfig(*sensorData, sensorThresholds))
++                else if (sensorsChanged != nullptr)
+                 {
+-                    std::cerr << "error populating thresholds for "
+-                              << sensorName << "\n";
++                    sensorsChanged->erase(*interfacePath);
+                 }
+ 
+                 std::optional<double> tctlMax = std::nullopt;
+-                auto findTctlMax = baseConfiguration->second.find("TctlMax");
+-                if (findTctlMax != baseConfiguration->second.end())
++                auto findTctlMax = baseConfigMap->find("TctlMax");
++                if (findTctlMax != baseConfigMap->end())
+                 {
+                     tctlMax = std::visit(VariantToDoubleVisitor(),
+                                          findTctlMax->second);
+                 }
+ 
+-                auto findPowerOn = baseConfiguration->second.find("PowerState");
+-                PowerState readState = PowerState::always;
+-                if (findPowerOn != baseConfiguration->second.end())
+-                {
+-                    std::string powerState = std::visit(
+-                        VariantToStringVisitor(), findPowerOn->second);
+-                    setReadState(powerState, readState);
+-                }
+-
+-                auto limits = std::make_pair(minReading, maxReading);
+-                findLimits(limits, baseConfiguration);
+-
+                 unsigned int sensorPollMs = initSensorPollMs;
+-                auto findPollingTime =
+-                    baseConfiguration->second.find("PollingTime");
+-                if (findPollingTime != baseConfiguration->second.end())
++                auto findPollingTime = baseConfigMap->find("PollingTime");
++                if (findPollingTime != baseConfigMap->end())
+                 {
+                     sensorPollMs = std::visit(VariantToUnsignedIntVisitor(),
+                                               findPollingTime->second);
+                 }
+ 
+                 sensors[sensorName] = std::make_shared<AMDCPUSensor>(
+-                    path.string(), sensorType, objectServer, dbusConnection, io,
++                    driverPath, objectType, objectServer, dbusConnection, io,
+                     sensorName, std::move(sensorThresholds), readState,
+-                    *interfacePath, limits.second, limits.first, sensorPollMs,
+-                    tctlMax);
++                    *interfacePath, dbusPath, limits.second, limits.first,
++                    sensorPollMs, tctlMax, isSensorFailure);
+                 sensors[sensorName]->setupRead();
+             }
+         }));
+@@ -266,7 +213,7 @@ int main()
+             });
+         };
+ 
+-    for (const char* type : sensorTypes)
++    for (const auto& type : sensorTypes)
+     {
+         auto match = std::make_unique<sdbusplus::bus::match::match>(
+             static_cast<sdbusplus::bus::bus&>(*systemBus),
+diff --git a/src/DIMMSensor.cpp b/src/DIMMSensor.cpp
+index 283caab..e0b3da0 100644
+--- a/src/DIMMSensor.cpp
++++ b/src/DIMMSensor.cpp
+@@ -27,7 +27,6 @@
+ #include <string>
+ 
+ static constexpr bool DEBUG = false;
+-static constexpr const char* sensorPathPrefix = "/xyz/openbmc_project/sensors/";
+ 
+ static constexpr unsigned int sensorPollMs = 1000;
+ static constexpr int highDecimalBit = 3;
+@@ -41,19 +40,17 @@ DIMMSensor::DIMMSensor(const std::string& path, const std::string& objectType,
+                        const std::string& sensorName,
+                        std::vector<thresholds::Threshold>&& _thresholds,
+                        const std::string& sensorConfiguration,
+-                       const std::string& sensorTypeName, const double maxValue,
++                       const std::string& dbusPath, const double maxValue,
+                        const double minValue, const PowerState readState,
+                        const uint8_t busId, const uint8_t slaveAddr,
+                        const uint8_t dataReg) :
+     Sensor(boost::replace_all_copy(sensorName, " ", "_"),
+            std::move(_thresholds), sensorConfiguration, objectType, false,
+-           maxValue, minValue, conn, readState),
++           maxValue, minValue, conn, readState, false),
+     objServer(objectServer), waitTimer(io), path(path), busId(busId),
+     slaveAddr(slaveAddr), dataReg(dataReg), senValue(0),
+     isVirtualBusReady(false), thresholdTimer(io, this)
+ {
+-    std::string dbusPath = sensorPathPrefix + sensorTypeName + name;
+-
+     sensorInterface = objectServer.add_interface(
+         dbusPath, "xyz.openbmc_project.Sensor.Value");
+ 
+diff --git a/src/DIMMSensorMain.cpp b/src/DIMMSensorMain.cpp
+index f1e523b..b89373b 100644
+--- a/src/DIMMSensorMain.cpp
++++ b/src/DIMMSensorMain.cpp
+@@ -30,10 +30,9 @@
+ static constexpr bool DEBUG = false;
+ 
+ namespace fs = std::filesystem;
+-static constexpr std::array<const char*, 1> sensorTypes = {
++static std::vector<std::string> sensorTypes = {
+     "xyz.openbmc_project.Configuration.DIMM"};
+ 
+-static boost::container::flat_map<std::string, std::string> sensorTable;
+ static constexpr double maxReading = 150;
+ static constexpr double minReading = -65;
+ 
+@@ -49,7 +48,7 @@ void createSensors(
+     // use new data the first time, then refresh
+     ManagedObjectType sensorConfigurations;
+     bool useCache = false;
+-    for (const char* type : sensorTypes)
++    for (const auto& type : sensorTypes)
+     {
+         if (!getSensorConfiguration(type, dbusConnection, sensorConfigurations,
+                                     useCache))
+@@ -59,103 +58,50 @@ void createSensors(
+         }
+         useCache = true;
+     }
+-
+-    for (const std::pair<sdbusplus::message::object_path, SensorData>& sensor :
+-         sensorConfigurations)
++    for (const SensorObject& sensor : sensorConfigurations)
+     {
+-        const SensorData* sensorData = nullptr;
+-        const std::string* interfacePath = nullptr;
+-        const char* sensorType = nullptr;
+-        const std::pair<std::string, boost::container::flat_map<
+-                                         std::string, BasicVariantType>>*
+-            baseConfiguration = nullptr;
+-
+-        sensorData = &(sensor.second);
+-        for (const char* type : sensorTypes)
+-        {
+-            auto sensorBase = sensorData->find(type);
+-            if (sensorBase != sensorData->end())
+-            {
+-                baseConfiguration = &(*sensorBase);
+-                sensorType = type;
+-                break;
+-            }
+-        }
+-        if (baseConfiguration == nullptr)
+-        {
+-            std::cerr << "error finding base configuration for DIMM \n";
+-            continue;
+-        }
+-
+-        auto configurationBus = baseConfiguration->second.find("Bus");
+-        auto configurationAddress = baseConfiguration->second.find("Address");
+-        auto configurationRegister = baseConfiguration->second.find("Register");
+-
+-        if (configurationBus == baseConfiguration->second.end() ||
+-            configurationAddress == baseConfiguration->second.end() ||
+-            configurationRegister == baseConfiguration->second.end())
+-        {
+-            std::cerr << "fail to find the bus, addr, or register in JSON\n";
+-            continue;
+-        }
+-
+-        uint8_t busId =
+-            static_cast<uint8_t>(std::get<uint64_t>(configurationBus->second));
+-        std::string i2cBus = "/dev/i2c-" + std::to_string(busId);
+-        uint8_t slaveAddr = static_cast<uint8_t>(
+-            std::get<uint64_t>(configurationAddress->second));
+-        uint8_t dataReg = static_cast<uint8_t>(
+-            std::get<uint64_t>(configurationRegister->second));
+-
+-        if (0x80 <= slaveAddr)
+-        {
+-            std::cerr
+-                << "error i2c slave addr is out of the range (7-bit addr)\n";
+-            continue;
+-        }
+-
+-        interfacePath = &(sensor.first.str);
+-        if (interfacePath == nullptr)
+-        {
+-            std::cerr << " invalid sensor interface path\n";
+-            continue;
+-        }
+-
+-        auto findSensorName = baseConfiguration->second.find("Name");
+-        if (findSensorName == baseConfiguration->second.end())
++        const std::string* interfacePath = &(sensor.first.str);
++        const SensorBaseConfiguration* baseConfiguration = nullptr;
++        const SensorBaseConfigMap* baseConfigMap = nullptr;
++
++        std::string objectType;
++        std::string sensorName;
++        std::string sensorType;
++        std::string dbusPath;
++        std::vector<thresholds::Threshold> sensorThresholds;
++        auto limits = std::make_pair(minReading, maxReading);
++        PowerState readState = PowerState::biosPost;
++        if (!parseSensorInfo(sensor, sensorTypes, baseConfiguration,
++                             baseConfigMap, objectType, sensorName, sensorType,
++                             dbusPath, sensorThresholds, limits, readState))
+         {
+-            std::cerr << "fail to find sensor name in JSON\n";
+             continue;
+         }
+-        std::string sensorName = std::get<std::string>(findSensorName->second);
+ 
+-        /* Sensor Type: temp */
+-        auto findSensorTypeJson = baseConfiguration->second.find("SensorType");
+-        if (findSensorTypeJson == baseConfiguration->second.end())
++        uint64_t bus;
++        uint64_t address;
++        std::string i2cPath;
++        if (!findPathFromI2C(baseConfigMap, sensorName, bus, address, i2cPath))
+         {
+-            std::cerr << "fail to find sensor type in JSON\n";
+             continue;
+         }
+-        std::string SensorTypeJson =
+-            std::get<std::string>(findSensorTypeJson->second);
+ 
+-        auto findSensorType = sensorTable.find(SensorTypeJson);
+-        if (findSensorType == sensorTable.end())
++        auto findRegister = baseConfigMap->find("Register");
++        if (findRegister == baseConfigMap->end())
+         {
+-            std::cerr << "fail to find match for DIMM sensorType: "
+-                      << SensorTypeJson << "\n";
++            std::cerr << sensorName << " missing register\n";
+             continue;
+         }
++        auto dataRegister = std::get<uint64_t>(findRegister->second);
+ 
+         // on rescans, only update sensors we were signaled by
+         auto findSensor = sensors.find(sensorName);
+         if (!firstScan && findSensor != sensors.end())
+         {
+             bool found = false;
+-            for (auto it = sensorsChanged->begin(); it != sensorsChanged->end();
+-                 it++)
++            for (auto& it : *sensorsChanged)
+             {
+-                if (boost::ends_with(*it, findSensor->second->name))
++                if (boost::ends_with(it, findSensor->second->name))
+                 {
+                     sensorsChanged->erase(it);
+                     findSensor->second = nullptr;
+@@ -168,41 +114,19 @@ void createSensors(
+                 continue;
+             }
+         }
+-
+-        std::vector<thresholds::Threshold> sensorThresholds;
+-        if (!parseThresholdsFromConfig(*sensorData, sensorThresholds))
++        else if (sensorsChanged != nullptr)
+         {
+-            std::cerr << "error populating thresholds for " << sensorName
+-                      << "\n";
+-        }
+-
+-        auto limits = std::make_pair(minReading, maxReading);
+-        findLimits(limits, baseConfiguration);
+-
+-        auto findPowerState = baseConfiguration->second.find("PowerState");
+-        PowerState readState = PowerState::biosPost;
+-        if (findPowerState != baseConfiguration->second.end())
+-        {
+-            std::string powerState =
+-                std::visit(VariantToStringVisitor(), findPowerState->second);
+-            setReadState(powerState, readState);
++            sensorsChanged->erase(*interfacePath);
+         }
+ 
+         sensors[sensorName] = std::make_shared<DIMMSensor>(
+-            i2cBus, sensorType, objectServer, dbusConnection, io, sensorName,
+-            std::move(sensorThresholds), *interfacePath, findSensorType->second,
+-            limits.second, limits.first, readState, busId, slaveAddr, dataReg);
++            i2cPath, objectType, objectServer, dbusConnection, io, sensorName,
++            std::move(sensorThresholds), *interfacePath, dbusPath,
++            limits.second, limits.first, readState, bus, address, dataRegister);
+         sensors[sensorName]->setupRead();
+     }
+ }
+ 
+-void propertyInitialize(void)
+-{
+-    sensorTable = {
+-        {"temp", "temperature/"},
+-    };
+-}
+-
+ int main()
+ {
+     boost::asio::io_service io;
+@@ -215,8 +139,6 @@ int main()
+     std::shared_ptr<boost::container::flat_set<std::string>> sensorsChanged =
+         std::make_shared<boost::container::flat_set<std::string>>();
+ 
+-    propertyInitialize();
+-
+     io.post([&]() {
+         createSensors(io, objectServer, sensors, systemBus, nullptr);
+     });
+@@ -249,7 +171,7 @@ int main()
+             });
+         };
+ 
+-    for (const char* type : sensorTypes)
++    for (const auto& type : sensorTypes)
+     {
+         auto match = std::make_unique<sdbusplus::bus::match::match>(
+             static_cast<sdbusplus::bus::bus&>(*systemBus),
+diff --git a/src/FanMain.cpp b/src/FanMain.cpp
+index f0db90b..ad2f277 100644
+--- a/src/FanMain.cpp
++++ b/src/FanMain.cpp
+@@ -44,11 +44,14 @@ static constexpr bool debug = false;
+ namespace fs = std::filesystem;
+ 
+ // The following two structures need to be consistent
+-static constexpr std::array<const char*, 3> sensorTypes = {
++static std::vector<std::string> sensorTypes = {
+     "xyz.openbmc_project.Configuration.AspeedFan",
+     "xyz.openbmc_project.Configuration.I2CFan",
+     "xyz.openbmc_project.Configuration.NuvotonFan"};
+ 
++static constexpr double maxReading = 25000;
++static constexpr double minReading = 0;
++
+ enum FanTypes
+ {
+     aspeed = 0,
+@@ -57,9 +60,6 @@ enum FanTypes
+     max,
+ };
+ 
+-static_assert(std::tuple_size<decltype(sensorTypes)>::value == FanTypes::max,
+-              "sensorTypes element number is not equal to FanTypes number");
+-
+ constexpr const char* redundancyConfiguration =
+     "xyz.openbmc_project.Configuration.FanRedundancy";
+ static std::regex inputRegex(R"(fan(\d+)_input)");
+@@ -100,7 +100,7 @@ void enablePwm(const fs::path& filePath)
+     }
+ }
+ void createRedundancySensor(
+-    const boost::container::flat_map<std::string, std::unique_ptr<TachSensor>>&
++    const boost::container::flat_map<std::string, std::shared_ptr<TachSensor>>&
+         sensors,
+     const std::shared_ptr<sdbusplus::asio::connection>& conn,
+     sdbusplus::asio::object_server& objectServer)
+@@ -152,9 +152,9 @@ void createRedundancySensor(
+ 
+ void createSensors(
+     boost::asio::io_service& io, sdbusplus::asio::object_server& objectServer,
+-    boost::container::flat_map<std::string, std::unique_ptr<TachSensor>>&
++    boost::container::flat_map<std::string, std::shared_ptr<TachSensor>>&
+         tachSensors,
+-    boost::container::flat_map<std::string, std::unique_ptr<PwmSensor>>&
++    boost::container::flat_map<std::string, std::shared_ptr<PwmSensor>>&
+         pwmSensors,
+     std::shared_ptr<sdbusplus::asio::connection>& dbusConnection,
+     const std::shared_ptr<boost::container::flat_set<std::string>>&
+@@ -167,139 +167,61 @@ void createSensors(
+                    &dbusConnection, sensorsChanged](
+                       const ManagedObjectType& sensorConfigurations) {
+             bool firstScan = sensorsChanged == nullptr;
++
+             std::vector<fs::path> paths;
+-            if (!findFiles(fs::path("/sys/class/hwmon"), R"(fan\d+_input)",
+-                           paths))
+-            {
+-                std::cerr << "No fan sensors in system\n";
+-                return;
+-            }
++            findFiles(fs::path("/sys/class/hwmon"), R"(fan\d+_input)", paths);
+ 
+-            // iterate through all found fan sensors, and try to match them with
+-            // configuration
+-            for (const auto& path : paths)
++            for (const SensorObject& sensor : sensorConfigurations)
+             {
+-                std::smatch match;
+-                std::string pathStr = path.string();
+-
+-                std::regex_search(pathStr, match, inputRegex);
+-                std::string indexStr = *(match.begin() + 1);
+-
+-                fs::path directory = path.parent_path();
+-                FanTypes fanType = getFanType(directory);
+-
+-                // convert to 0 based
+-                size_t index = std::stoul(indexStr) - 1;
+-
+-                const char* baseType;
+-                const SensorData* sensorData = nullptr;
+-                const std::string* interfacePath = nullptr;
++                const std::string* interfacePath = &(sensor.first.str);
++                const SensorData* sensorData = &(sensor.second);
+                 const SensorBaseConfiguration* baseConfiguration = nullptr;
+-                for (const std::pair<sdbusplus::message::object_path,
+-                                     SensorData>& sensor : sensorConfigurations)
+-                {
+-                    // find the base of the configuration to see if indexes
+-                    // match
+-                    auto sensorBaseFind =
+-                        sensor.second.find(sensorTypes[fanType]);
+-                    if (sensorBaseFind == sensor.second.end())
+-                    {
+-                        continue;
+-                    }
+-
+-                    baseConfiguration = &(*sensorBaseFind);
+-                    interfacePath = &(sensor.first.str);
+-                    baseType = sensorTypes[fanType];
++                const SensorBaseConfigMap* baseConfigMap = nullptr;
+ 
+-                    auto findIndex = baseConfiguration->second.find("Index");
+-                    if (findIndex == baseConfiguration->second.end())
+-                    {
+-                        std::cerr << baseConfiguration->first
+-                                  << " missing index\n";
+-                        continue;
+-                    }
+-                    unsigned int configIndex = std::visit(
+-                        VariantToUnsignedIntVisitor(), findIndex->second);
+-                    if (configIndex != index)
+-                    {
+-                        continue;
+-                    }
+-                    if (fanType == FanTypes::aspeed ||
+-                        fanType == FanTypes::nuvoton)
+-                    {
+-                        // there will be only 1 aspeed or nuvoton sensor object
+-                        // in sysfs, we found the fan
+-                        sensorData = &(sensor.second);
+-                        break;
+-                    }
+-                    if (fanType == FanTypes::i2c)
+-                    {
+-                        size_t bus = 0;
+-                        size_t address = 0;
+-
+-                        std::string link =
+-                            fs::read_symlink(directory / "device").filename();
+-
+-                        size_t findDash = link.find('-');
+-                        if (findDash == std::string::npos ||
+-                            link.size() <= findDash + 1)
+-                        {
+-                            std::cerr << "Error finding device from symlink";
+-                        }
+-                        bus = std::stoi(link.substr(0, findDash));
+-                        address =
+-                            std::stoi(link.substr(findDash + 1), nullptr, 16);
+-
+-                        auto findBus = baseConfiguration->second.find("Bus");
+-                        auto findAddress =
+-                            baseConfiguration->second.find("Address");
+-                        if (findBus == baseConfiguration->second.end() ||
+-                            findAddress == baseConfiguration->second.end())
+-                        {
+-                            std::cerr << baseConfiguration->first
+-                                      << " missing bus or address\n";
+-                            continue;
+-                        }
+-                        unsigned int configBus = std::visit(
+-                            VariantToUnsignedIntVisitor(), findBus->second);
+-                        unsigned int configAddress = std::visit(
+-                            VariantToUnsignedIntVisitor(), findAddress->second);
+-
+-                        if (configBus == bus && configAddress == address)
+-                        {
+-                            sensorData = &(sensor.second);
+-                            break;
+-                        }
+-                    }
+-                }
+-                if (sensorData == nullptr)
++                std::string objectType;
++                std::string sensorName;
++                std::string sensorType;
++                std::string dbusPath;
++                std::vector<thresholds::Threshold> sensorThresholds;
++                auto limits = std::make_pair(minReading, maxReading);
++                PowerState readState = PowerState::on;
++                if (!parseSensorInfo(sensor, sensorTypes, baseConfiguration,
++                                     baseConfigMap, objectType, sensorName,
++                                     sensorType, dbusPath, sensorThresholds,
++                                     limits, readState))
+                 {
+-                    std::cerr << "failed to find match for " << path.string()
+-                              << "\n";
+                     continue;
+                 }
+ 
+-                auto findSensorName = baseConfiguration->second.find("Name");
+-
+-                if (findSensorName == baseConfiguration->second.end())
++                uint64_t bus = 0;
++                uint64_t address = 0;
++                std::string i2cPath;
++                if (objectType == "xyz.openbmc_project.Configuration.I2CFan")
+                 {
+-                    std::cerr << "could not determine configuration name for "
+-                              << path.string() << "\n";
+-                    continue;
++                    if (!findPathFromI2C(baseConfigMap, sensorName, bus,
++                                         address, i2cPath))
++                    {
++                        continue;
++                    }
+                 }
+-                std::string sensorName =
+-                    std::get<std::string>(findSensorName->second);
++
++                std::string driverPath;
++                findPathFromDriver(baseConfigMap, sensorName, dbusPath, paths,
++                                   sensorType, "input", driverPath, bus,
++                                   address);
+ 
+                 // on rescans, only update sensors we were signaled by
+                 auto findSensor = tachSensors.find(sensorName);
++                bool isSensorFailure = false;
+                 if (!firstScan && findSensor != tachSensors.end())
+                 {
+                     bool found = false;
+-                    for (auto it = sensorsChanged->begin();
+-                         it != sensorsChanged->end(); it++)
++                    for (auto& it : *sensorsChanged)
+                     {
+-                        if (boost::ends_with(*it, findSensor->second->name))
++                        if (boost::ends_with(it, findSensor->second->name))
+                         {
++                            isSensorFailure =
++                                findSensor->second->isSensorFailure;
+                             sensorsChanged->erase(it);
+                             findSensor->second = nullptr;
+                             found = true;
+@@ -311,24 +233,19 @@ void createSensors(
+                         continue;
+                     }
+                 }
+-                std::vector<thresholds::Threshold> sensorThresholds;
+-                if (!parseThresholdsFromConfig(*sensorData, sensorThresholds))
++                else if (sensorsChanged != nullptr)
+                 {
+-                    std::cerr << "error populating thresholds for "
+-                              << sensorName << "\n";
++                    sensorsChanged->erase(*interfacePath);
+                 }
+ 
+-                auto presenceConfig =
+-                    sensorData->find(baseType + std::string(".Presence"));
+-
+-                std::unique_ptr<PresenceSensor> presenceSensor(nullptr);
+-
+                 // presence sensors are optional
++                std::shared_ptr<PresenceSensor> presenceSensor(nullptr);
++                auto presenceConfig =
++                    sensorData->find(objectType + std::string(".Presence"));
+                 if (presenceConfig != sensorData->end())
+                 {
+                     auto findPolarity = presenceConfig->second.find("Polarity");
+                     auto findPinName = presenceConfig->second.find("PinName");
+-
+                     if (findPinName == presenceConfig->second.end() ||
+                         findPolarity == presenceConfig->second.end())
+                     {
+@@ -341,7 +258,7 @@ void createSensors(
+                         if (auto pinName =
+                                 std::get_if<std::string>(&findPinName->second))
+                         {
+-                            presenceSensor = std::make_unique<PresenceSensor>(
++                            presenceSensor = std::make_shared<PresenceSensor>(
+                                 *pinName, inverted, io, sensorName);
+                         }
+                         else
+@@ -352,45 +269,31 @@ void createSensors(
+                         }
+                     }
+                 }
++
+                 std::optional<RedundancySensor>* redundancy = nullptr;
+-                if (fanType == FanTypes::aspeed)
++                if (objectType == "xyz.openbmc_project.Configuration.AspeedFan")
+                 {
+                     redundancy = &systemRedundancy;
+                 }
+ 
+-                PowerState powerState = PowerState::on;
+-                auto findPower = baseConfiguration->second.find("PowerState");
+-                if (findPower != baseConfiguration->second.end())
+-                {
+-                    auto ptrPower =
+-                        std::get_if<std::string>(&(findPower->second));
+-                    if (ptrPower)
+-                    {
+-                        setReadState(*ptrPower, powerState);
+-                    }
+-                }
+-
+-                constexpr double defaultMaxReading = 25000;
+-                constexpr double defaultMinReading = 0;
+-                auto limits =
+-                    std::make_pair(defaultMinReading, defaultMaxReading);
+-
+-                auto connector =
+-                    sensorData->find(baseType + std::string(".Connector"));
+-
+                 std::optional<std::string> led;
+                 std::string pwmName;
+                 fs::path pwmPath;
+ 
++                auto connector = sensorData->find(objectType + ".Connector");
+                 if (connector != sensorData->end())
+                 {
+                     auto findPwm = connector->second.find("Pwm");
+                     if (findPwm != connector->second.end())
+                     {
+-                        fs::path pwmEnableFile =
+-                            "pwm" + std::to_string(index + 1) + "_enable";
+-                        fs::path enablePath =
+-                            path.parent_path() / pwmEnableFile;
++                        fs::path directory = fs::path(driverPath).parent_path();
++
++                        std::smatch match;
++                        std::regex_search(driverPath, match, inputRegex);
++                        std::string indexStr = *(match.begin() + 1);
++
++                        fs::path pwmEnableFile = "pwm" + indexStr + "_enable";
++                        fs::path enablePath = directory / pwmEnableFile;
+                         enablePwm(enablePath);
+                         size_t pwm = std::visit(VariantToUnsignedIntVisitor(),
+                                                 findPwm->second);
+@@ -431,17 +334,18 @@ void createSensors(
+                     }
+                 }
+ 
+-                findLimits(limits, baseConfiguration);
+-                tachSensors[sensorName] = std::make_unique<TachSensor>(
+-                    path.string(), baseType, objectServer, dbusConnection,
++                tachSensors[sensorName] = std::make_shared<TachSensor>(
++                    driverPath, objectType, objectServer, dbusConnection,
+                     std::move(presenceSensor), redundancy, io, sensorName,
+-                    std::move(sensorThresholds), *interfacePath, limits,
+-                    powerState, led);
++                    std::move(sensorThresholds), *interfacePath, dbusPath,
++                    limits.second, limits.first, readState, led,
++                    isSensorFailure);
++                tachSensors[sensorName]->setupRead();
+ 
+                 if (!pwmPath.empty() && fs::exists(pwmPath) &&
+                     !pwmSensors.count(pwmPath))
+                 {
+-                    pwmSensors[pwmPath] = std::make_unique<PwmSensor>(
++                    pwmSensors[pwmPath] = std::make_shared<PwmSensor>(
+                         pwmName, pwmPath, dbusConnection, objectServer,
+                         *interfacePath, "Fan");
+                 }
+@@ -460,9 +364,9 @@ int main()
+     auto systemBus = std::make_shared<sdbusplus::asio::connection>(io);
+     systemBus->request_name("xyz.openbmc_project.FanSensor");
+     sdbusplus::asio::object_server objectServer(systemBus);
+-    boost::container::flat_map<std::string, std::unique_ptr<TachSensor>>
++    boost::container::flat_map<std::string, std::shared_ptr<TachSensor>>
+         tachSensors;
+-    boost::container::flat_map<std::string, std::unique_ptr<PwmSensor>>
++    boost::container::flat_map<std::string, std::shared_ptr<PwmSensor>>
+         pwmSensors;
+     std::vector<std::unique_ptr<sdbusplus::bus::match::match>> matches;
+     auto sensorsChanged =
+@@ -501,7 +405,7 @@ int main()
+             });
+         };
+ 
+-    for (const char* type : sensorTypes)
++    for (const auto& type : sensorTypes)
+     {
+         auto match = std::make_unique<sdbusplus::bus::match::match>(
+             static_cast<sdbusplus::bus::bus&>(*systemBus),
+diff --git a/src/HwmonTempMain.cpp b/src/HwmonTempMain.cpp
+index 6b3eab4..29b8bc1 100644
+--- a/src/HwmonTempMain.cpp
++++ b/src/HwmonTempMain.cpp
+@@ -40,7 +40,7 @@ static constexpr bool debug = false;
+ static constexpr float pollRateDefault = 0.5;
+ 
+ namespace fs = std::filesystem;
+-static constexpr std::array<const char*, 16> sensorTypes = {
++static std::vector<std::string> sensorTypes = {
+     "xyz.openbmc_project.Configuration.EMC1412",
+     "xyz.openbmc_project.Configuration.EMC1413",
+     "xyz.openbmc_project.Configuration.EMC1414",
+@@ -58,6 +58,9 @@ static constexpr std::array<const char*, 16> sensorTypes = {
+     "xyz.openbmc_project.Configuration.TMP75",
+     "xyz.openbmc_project.Configuration.W83773G"};
+ 
++static constexpr double maxReading = 127;
++static constexpr double minReading = -128;
++
+ void createSensors(
+     boost::asio::io_service& io, sdbusplus::asio::object_server& objectServer,
+     boost::container::flat_map<std::string, std::shared_ptr<HwmonTempSensor>>&
+@@ -74,125 +77,69 @@ void createSensors(
+             bool firstScan = sensorsChanged == nullptr;
+ 
+             std::vector<fs::path> paths;
+-            if (!findFiles(fs::path("/sys/class/hwmon"), R"(temp\d+_input)",
+-                           paths))
+-            {
+-                std::cerr << "No temperature sensors in system\n";
+-                return;
+-            }
+-
+-            boost::container::flat_set<std::string> directories;
++            findFiles(fs::path("/sys/class/hwmon"), R"(temp\d+_input)", paths);
+ 
+-            // iterate through all found temp sensors, and try to match them
+-            // with configuration
++            std::map<std::string, fs::path> i2cToPath;
+             for (auto& path : paths)
+             {
+-                std::smatch match;
+-                const std::string& pathStr = path.string();
+-                auto directory = path.parent_path();
+-
+-                auto ret = directories.insert(directory.string());
+-                if (!ret.second)
+-                {
+-                    continue; // already searched this path
+-                }
+-
+-                fs::path device = directory / "device";
++                auto device = path.parent_path() / "device";
+                 std::string deviceName = fs::canonical(device).stem();
+-                auto findHyphen = deviceName.find('-');
+-                if (findHyphen == std::string::npos)
+-                {
+-                    std::cerr << "found bad device " << deviceName << "\n";
+-                    continue;
+-                }
+-                std::string busStr = deviceName.substr(0, findHyphen);
+-                std::string addrStr = deviceName.substr(findHyphen + 1);
++                i2cToPath.emplace(deviceName, path);
++            }
+ 
+-                size_t bus = 0;
+-                size_t addr = 0;
+-                try
+-                {
+-                    bus = std::stoi(busStr);
+-                    addr = std::stoi(addrStr, nullptr, 16);
+-                }
+-                catch (std::invalid_argument&)
+-                {
+-                    continue;
+-                }
+-                const SensorData* sensorData = nullptr;
+-                const std::string* interfacePath = nullptr;
+-                const char* sensorType = nullptr;
++            for (const SensorObject& sensor : sensorConfigurations)
++            {
++                const std::string* interfacePath = &(sensor.first.str);
++                const SensorData* sensorData = &(sensor.second);
+                 const SensorBaseConfiguration* baseConfiguration = nullptr;
+                 const SensorBaseConfigMap* baseConfigMap = nullptr;
+ 
+-                for (const std::pair<sdbusplus::message::object_path,
+-                                     SensorData>& sensor : sensorConfigurations)
++                std::string objectType;
++                std::string sensorName;
++                std::string sensorType;
++                std::string dbusPath;
++                std::vector<thresholds::Threshold> sensorThresholds;
++                auto limits = std::make_pair(minReading, maxReading);
++                PowerState readState = PowerState::always;
++                if (!parseSensorInfo(sensor, sensorTypes, baseConfiguration,
++                                     baseConfigMap, objectType, sensorName,
++                                     sensorType, dbusPath, sensorThresholds,
++                                     limits, readState))
+                 {
+-                    sensorData = &(sensor.second);
+-                    for (const char* type : sensorTypes)
+-                    {
+-                        auto sensorBase = sensorData->find(type);
+-                        if (sensorBase != sensorData->end())
+-                        {
+-                            baseConfiguration = &(*sensorBase);
+-                            sensorType = type;
+-                            break;
+-                        }
+-                    }
+-                    if (baseConfiguration == nullptr)
+-                    {
+-                        std::cerr << "error finding base configuration for "
+-                                  << deviceName << "\n";
+-                        continue;
+-                    }
+-                    baseConfigMap = &baseConfiguration->second;
+-                    auto configurationBus = baseConfigMap->find("Bus");
+-                    auto configurationAddress = baseConfigMap->find("Address");
+-
+-                    if (configurationBus == baseConfigMap->end() ||
+-                        configurationAddress == baseConfigMap->end())
+-                    {
+-                        std::cerr << "error finding bus or address in "
+-                                     "configuration\n";
+-                        continue;
+-                    }
+-
+-                    if (std::get<uint64_t>(configurationBus->second) != bus ||
+-                        std::get<uint64_t>(configurationAddress->second) !=
+-                            addr)
+-                    {
+-                        continue;
+-                    }
+-
+-                    interfacePath = &(sensor.first.str);
+-                    break;
++                    continue;
+                 }
+-                if (interfacePath == nullptr)
++
++                uint64_t bus;
++                uint64_t address;
++                std::string i2cPath;
++                if (!findPathFromI2C(baseConfigMap, sensorName, bus, address,
++                                     i2cPath))
+                 {
+-                    std::cerr << "failed to find match for " << deviceName
+-                              << "\n";
+                     continue;
+                 }
+ 
+-                auto findSensorName = baseConfigMap->find("Name");
+-                if (findSensorName == baseConfigMap->end())
++                // Convert bus and address to format x-yyyy
++                std::stringstream ss;
++                ss << bus << "-" << std::right << std::setfill('0')
++                   << std::setw(4) << std::hex << address;
++                auto findPath = i2cToPath.find(ss.str());
++                if (findPath == i2cToPath.end())
+                 {
+-                    std::cerr << "could not determine configuration name for "
+-                              << deviceName << "\n";
++                    addSensorFailSel(dbusPath, true);
+                     continue;
+                 }
+-                std::string sensorName =
+-                    std::get<std::string>(findSensorName->second);
+-                // on rescans, only update sensors we were signaled by
++
+                 auto findSensor = sensors.find(sensorName);
++                bool isSensorFailure = false;
+                 if (!firstScan && findSensor != sensors.end())
+                 {
+                     bool found = false;
+-                    for (auto it = sensorsChanged->begin();
+-                         it != sensorsChanged->end(); it++)
++                    for (auto& it : *sensorsChanged)
+                     {
+-                        if (boost::ends_with(*it, findSensor->second->name))
++                        if (boost::ends_with(it, findSensor->second->name))
+                         {
++                            isSensorFailure =
++                                findSensor->second->isSensorFailure;
+                             sensorsChanged->erase(it);
+                             findSensor->second = nullptr;
+                             found = true;
+@@ -204,15 +151,9 @@ void createSensors(
+                         continue;
+                     }
+                 }
+-
+-                std::vector<thresholds::Threshold> sensorThresholds;
+-                int index = 1;
+-
+-                if (!parseThresholdsFromConfig(*sensorData, sensorThresholds,
+-                                               nullptr, &index))
++                else if (sensorsChanged != nullptr)
+                 {
+-                    std::cerr << "error populating thresholds for "
+-                              << sensorName << " index 1\n";
++                    sensorsChanged->erase(*interfacePath);
+                 }
+ 
+                 auto findPollRate = baseConfiguration->second.find("PollRate");
+@@ -227,27 +168,17 @@ void createSensors(
+                     }
+                 }
+ 
+-                auto findPowerOn = baseConfiguration->second.find("PowerState");
+-                PowerState readState = PowerState::always;
+-                if (findPowerOn != baseConfiguration->second.end())
+-                {
+-                    std::string powerState = std::visit(
+-                        VariantToStringVisitor(), findPowerOn->second);
+-                    setReadState(powerState, readState);
+-                }
+-
+                 auto permitSet = getPermitSet(*baseConfigMap);
+-                auto& sensor = sensors[sensorName];
+-                sensor = nullptr;
+-                auto hwmonFile = getFullHwmonFilePath(directory.string(),
+-                                                      "temp1", permitSet);
++                auto hwmonFile = getFullHwmonFilePath(
++                    findPath->second.parent_path(), "temp1", permitSet);
+                 if (hwmonFile)
+                 {
+-                    sensor = std::make_shared<HwmonTempSensor>(
+-                        *hwmonFile, sensorType, objectServer, dbusConnection,
++                    sensors[sensorName] = std::make_shared<HwmonTempSensor>(
++                        *hwmonFile, objectType, objectServer, dbusConnection,
+                         io, sensorName, std::move(sensorThresholds), pollRate,
+-                        *interfacePath, readState);
+-                    sensor->setupRead();
++                        *interfacePath, dbusPath, limits.second, limits.first,
++                        readState, isSensorFailure);
++                    sensors[sensorName]->setupRead();
+                 }
+                 // Looking for keys like "Name1" for temp2_input,
+                 // "Name2" for temp3_input, etc.
+@@ -261,11 +192,14 @@ void createSensors(
+                     {
+                         break;
+                     }
+-                    std::string sensorName =
++                    std::string sensorNameOther =
+                         std::get<std::string>(findKey->second);
++                    std::string dbusPathOther =
++                        dbusPath.substr(0, dbusPath.find_last_of("/") + 1) +
++                        boost::replace_all_copy(sensorNameOther, " ", "_");
+                     hwmonFile = getFullHwmonFilePath(
+-                        directory.string(), "temp" + std::to_string(i + 1),
+-                        permitSet);
++                        findPath->second.parent_path(),
++                        "temp" + std::to_string(i + 1), permitSet);
+                     if (hwmonFile)
+                     {
+                         // To look up thresholds for these additional sensors,
+@@ -283,14 +217,14 @@ void createSensors(
+                                       << "\n";
+                         }
+ 
+-                        auto& sensor = sensors[sensorName];
+-                        sensor = nullptr;
+-                        sensor = std::make_shared<HwmonTempSensor>(
+-                            *hwmonFile, sensorType, objectServer,
+-                            dbusConnection, io, sensorName,
+-                            std::move(thresholds), pollRate, *interfacePath,
+-                            readState);
+-                        sensor->setupRead();
++                        sensors[sensorNameOther] =
++                            std::make_shared<HwmonTempSensor>(
++                                *hwmonFile, objectType, objectServer,
++                                dbusConnection, io, sensorNameOther,
++                                std::move(thresholds), pollRate, *interfacePath,
++                                dbusPathOther, limits.second, limits.first,
++                                readState, isSensorFailure);
++                        sensors[sensorName]->setupRead();
+                     }
+                 }
+             }
+@@ -343,7 +277,7 @@ int main()
+             });
+         };
+ 
+-    for (const char* type : sensorTypes)
++    for (const auto& type : sensorTypes)
+     {
+         auto match = std::make_unique<sdbusplus::bus::match::match>(
+             static_cast<sdbusplus::bus::bus&>(*systemBus),
+diff --git a/src/HwmonTempSensor.cpp b/src/HwmonTempSensor.cpp
+index 4febbf6..c976970 100644
+--- a/src/HwmonTempSensor.cpp
++++ b/src/HwmonTempSensor.cpp
+@@ -33,42 +33,36 @@
+ static constexpr unsigned int sensorScaleFactor = 1000;
+ static constexpr size_t warnAfterErrorCount = 10;
+ 
+-static constexpr double maxReading = 127;
+-static constexpr double minReading = -128;
+-
+ HwmonTempSensor::HwmonTempSensor(
+     const std::string& path, const std::string& objectType,
+     sdbusplus::asio::object_server& objectServer,
+     std::shared_ptr<sdbusplus::asio::connection>& conn,
+     boost::asio::io_service& io, const std::string& sensorName,
+     std::vector<thresholds::Threshold>&& thresholdsIn, const float pollRate,
+-    const std::string& sensorConfiguration, const PowerState powerState) :
++    const std::string& sensorConfiguration, const std::string& dbusPath,
++    const double maxValue, const double minValue, const PowerState powerState,
++    bool isSensorFailure) :
+     Sensor(boost::replace_all_copy(sensorName, " ", "_"),
+            std::move(thresholdsIn), sensorConfiguration, objectType, false,
+-           maxReading, minReading, conn, powerState),
++           maxValue, minValue, conn, powerState, isSensorFailure),
+     std::enable_shared_from_this<HwmonTempSensor>(), objServer(objectServer),
+     inputDev(io, open(path.c_str(), O_RDONLY)), waitTimer(io), path(path),
+     sensorPollMs(static_cast<unsigned int>(pollRate * 1000))
+ {
+     sensorInterface = objectServer.add_interface(
+-        "/xyz/openbmc_project/sensors/temperature/" + name,
+-        "xyz.openbmc_project.Sensor.Value");
++        dbusPath, "xyz.openbmc_project.Sensor.Value");
+ 
+     if (thresholds::hasWarningInterface(thresholds))
+     {
+         thresholdInterfaceWarning = objectServer.add_interface(
+-            "/xyz/openbmc_project/sensors/temperature/" + name,
+-            "xyz.openbmc_project.Sensor.Threshold.Warning");
++            dbusPath, "xyz.openbmc_project.Sensor.Threshold.Warning");
+     }
+     if (thresholds::hasCriticalInterface(thresholds))
+     {
+         thresholdInterfaceCritical = objectServer.add_interface(
+-            "/xyz/openbmc_project/sensors/temperature/" + name,
+-            "xyz.openbmc_project.Sensor.Threshold.Critical");
++            dbusPath, "xyz.openbmc_project.Sensor.Threshold.Critical");
+     }
+-    association = objectServer.add_interface(
+-        "/xyz/openbmc_project/sensors/temperature/" + name,
+-        association::interface);
++    association = objectServer.add_interface(dbusPath, association::interface);
+     setInitialProperties(conn, sensor_paths::unitDegreesC);
+ }
+ 
+diff --git a/src/IpmbSensor.cpp b/src/IpmbSensor.cpp
+index 107ff2b..e4e4881 100644
+--- a/src/IpmbSensor.cpp
++++ b/src/IpmbSensor.cpp
+@@ -47,8 +47,6 @@ static constexpr uint8_t meAddress = 1;
+ static constexpr uint8_t lun = 0;
+ static constexpr uint8_t hostSMbusIndexDefault = 0x03;
+ 
+-static constexpr const char* sensorPathPrefix = "/xyz/openbmc_project/sensors/";
+-
+ using IpmbMethodType =
+     std::tuple<int, uint8_t, uint8_t, uint8_t, uint8_t, std::vector<uint8_t>>;
+ 
+diff --git a/src/NICSensor.cpp b/src/NICSensor.cpp
+index f07c003..8223601 100644
+--- a/src/NICSensor.cpp
++++ b/src/NICSensor.cpp
+@@ -15,8 +15,6 @@
+ 
+ static constexpr bool DEBUG = false;
+ 
+-static constexpr const char* sensorPathPrefix = "/xyz/openbmc_project/sensors/";
+-
+ static constexpr unsigned int sensorPollMs = 1000;
+ static constexpr unsigned int sensorScaleFactor = 1000;
+ 
+@@ -26,21 +24,20 @@ NICSensor::NICSensor(const std::string& path, const std::string& objectType,
+                      boost::asio::io_service& io, const std::string& sensorName,
+                      std::vector<thresholds::Threshold>&& _thresholds,
+                      const std::string& sensorConfiguration,
+-                     const std::string& sensorTypeName, const double maxValue,
++                     const std::string& dbusPath, const double maxValue,
+                      const double minValue, const PowerState readState,
+                      const uint8_t busId, const uint8_t slaveAddr,
+                      const uint8_t cmdCode, const ReadMode readMode,
+                      const double scaleVal, const double offsetVal,
+-                     const std::optional<double>& tctlMax) :
++                     const std::optional<double>& tctlMax,
++                     const bool isSensorFailure) :
+     Sensor(boost::replace_all_copy(sensorName, " ", "_"),
+            std::move(_thresholds), sensorConfiguration, objectType, false,
+-           maxValue, minValue, conn, readState),
++           maxValue, minValue, conn, readState, isSensorFailure),
+     objServer(objectServer), waitTimer(io), path(path), busId(busId),
+     slaveAddr(slaveAddr), cmdCode(cmdCode), readMode(readMode),
+     scaleVal(scaleVal), offsetVal(offsetVal), thresholdTimer(io, this)
+ {
+-    std::string dbusPath = sensorPathPrefix + sensorTypeName + name;
+-
+     sensorInterface = objectServer.add_interface(
+         dbusPath, "xyz.openbmc_project.Sensor.Value");
+     if (tctlMax.has_value())
+diff --git a/src/NICSensorMain.cpp b/src/NICSensorMain.cpp
+index 64390be..67cbf7b 100644
+--- a/src/NICSensorMain.cpp
++++ b/src/NICSensorMain.cpp
+@@ -11,11 +11,12 @@
+ #include <regex>
+ 
+ namespace fs = std::filesystem;
+-static constexpr std::array<const char*, 1> sensorTypes = {
++static std::vector<std::string> sensorTypes = {
+     "xyz.openbmc_project.Configuration.NIC"};
+ 
+-static boost::container::flat_map<std::string, std::string> sensorTable;
+-static boost::container::flat_map<std::string, ReadMode> modeTable;
++static std::map<std::string, ReadMode> modeTable = {
++    {"Byte", ReadMode::READ_BYTE}};
++
+ static constexpr double maxReading = 255;
+ static constexpr double minReading = 0;
+ 
+@@ -31,7 +32,7 @@ void createSensors(
+     // use new data the first time, then refresh
+     ManagedObjectType sensorConfigurations;
+     bool useCache = false;
+-    for (const char* type : sensorTypes)
++    for (const auto& type : sensorTypes)
+     {
+         if (!getSensorConfiguration(type, dbusConnection, sensorConfigurations,
+                                     useCache))
+@@ -42,102 +43,50 @@ void createSensors(
+         useCache = true;
+     }
+ 
+-    for (const std::pair<sdbusplus::message::object_path, SensorData>& sensor :
+-         sensorConfigurations)
++    for (const SensorObject& sensor : sensorConfigurations)
+     {
+-        const SensorData* sensorData = nullptr;
+-        const std::string* interfacePath = nullptr;
+-        const char* sensorType = nullptr;
+-        const std::pair<std::string, boost::container::flat_map<
+-                                         std::string, BasicVariantType>>*
+-            baseConfiguration = nullptr;
+-
+-        sensorData = &(sensor.second);
+-        for (const char* type : sensorTypes)
+-        {
+-            auto sensorBase = sensorData->find(type);
+-            if (sensorBase != sensorData->end())
+-            {
+-                baseConfiguration = &(*sensorBase);
+-                sensorType = type;
+-                break;
+-            }
+-        }
+-        if (baseConfiguration == nullptr)
+-        {
+-            std::cerr << "error finding base configuration for NIC \n";
+-            continue;
+-        }
+-
+-        auto configurationBus = baseConfiguration->second.find("Bus");
+-        auto configurationAddress = baseConfiguration->second.find("Address");
+-        auto configurationCmd = baseConfiguration->second.find("Command");
+-
+-        if (configurationBus == baseConfiguration->second.end() ||
+-            configurationAddress == baseConfiguration->second.end() ||
+-            configurationCmd == baseConfiguration->second.end())
+-        {
+-            std::cerr << "fail to find the bus, addr, cmd, or page in JSON\n";
+-            continue;
+-        }
+-
+-        uint8_t busId =
+-            static_cast<uint8_t>(std::get<uint64_t>(configurationBus->second));
+-        std::string i2cBus =
+-            "/sys/class/i2c-dev/i2c-" + std::to_string(busId) + "/device";
+-        uint8_t slaveAddr = static_cast<uint8_t>(
+-            std::get<uint64_t>(configurationAddress->second));
+-        uint8_t cmdCode =
+-            static_cast<uint8_t>(std::get<uint64_t>(configurationCmd->second));
+-
+-        if (0x80 <= slaveAddr)
+-        {
+-            std::cerr
+-                << "error i2c slave addr is out of the range (7-bit addr)\n";
+-            continue;
+-        }
+-
+-        interfacePath = &(sensor.first.str);
+-        if (interfacePath == nullptr)
+-        {
+-            std::cerr << " invalid sensor interface path\n";
+-            continue;
+-        }
+-
+-        auto findSensorName = baseConfiguration->second.find("Name");
+-        if (findSensorName == baseConfiguration->second.end())
++        const std::string* interfacePath = &(sensor.first.str);
++        const SensorBaseConfiguration* baseConfiguration = nullptr;
++        const SensorBaseConfigMap* baseConfigMap = nullptr;
++
++        std::string objectType;
++        std::string sensorName;
++        std::string sensorType;
++        std::string dbusPath;
++        std::vector<thresholds::Threshold> sensorThresholds;
++        auto limits = std::make_pair(minReading, maxReading);
++        PowerState readState = PowerState::biosPost;
++        if (!parseSensorInfo(sensor, sensorTypes, baseConfiguration,
++                             baseConfigMap, objectType, sensorName, sensorType,
++                             dbusPath, sensorThresholds, limits, readState))
+         {
+-            std::cerr << "fail to find sensor name in JSON\n";
+             continue;
+         }
+-        std::string sensorName = std::get<std::string>(findSensorName->second);
+ 
+-        // Sensor Type: power, curr, temp, volt
+-        auto findSensorTypeJson = baseConfiguration->second.find("SensorType");
+-        if (findSensorTypeJson == baseConfiguration->second.end())
++        uint64_t bus;
++        uint64_t address;
++        std::string i2cPath;
++        if (!findPathFromI2C(baseConfigMap, sensorName, bus, address, i2cPath))
+         {
+-            std::cerr << "fail to find sensor type in JSON\n";
+             continue;
+         }
+-        std::string SensorTypeJson =
+-            std::get<std::string>(findSensorTypeJson->second);
+ 
+-        auto findSensorType = sensorTable.find(SensorTypeJson);
+-        if (findSensorType == sensorTable.end())
++        auto findCommand = baseConfigMap->find("Command");
++        if (findCommand == baseConfigMap->end())
+         {
+-            std::cerr << "fail to find match for NIC sensorType: "
+-                      << SensorTypeJson << "\n";
++            std::cerr << sensorName << " missing command\n";
+             continue;
+         }
++        auto command = std::get<uint64_t>(findCommand->second);
+ 
+         /* Convert Method: Byte, Word*/
+-        auto findModeString = baseConfiguration->second.find("Mode");
+-        if (findModeString == baseConfiguration->second.end())
++        auto findtModeString = baseConfigMap->find("Mode");
++        if (findtModeString == baseConfigMap->end())
+         {
+             std::cerr << sensorName << " missing mode\n";
+             continue;
+         }
+-        auto modeString = std::get<std::string>(findModeString->second);
++        auto modeString = std::get<std::string>(findtModeString->second);
+ 
+         auto findMode = modeTable.find(modeString);
+         if (findMode == modeTable.end())
+@@ -147,42 +96,40 @@ void createSensors(
+         }
+         ReadMode readMode = findMode->second;
+ 
+-        /* Initialize scale and offset value */
+         double scaleVal = 1;
+-        double offsetVal = 0;
+-
+-        auto findScaleVal = baseConfiguration->second.find("ScaleValue");
+-        if (findScaleVal != baseConfiguration->second.end())
++        auto findScaleVal = baseConfigMap->find("ScaleValue");
++        if (findScaleVal != baseConfigMap->end())
+         {
+             scaleVal =
+                 std::visit(VariantToDoubleVisitor(), findScaleVal->second);
+         }
+ 
+-        auto findOffsetVal = baseConfiguration->second.find("OffsetValue");
+-        if (findOffsetVal != baseConfiguration->second.end())
++        double offsetVal = 0;
++        auto findOffsetVal = baseConfigMap->find("OffsetValue");
++        if (findOffsetVal != baseConfigMap->end())
+         {
+             offsetVal =
+                 std::visit(VariantToDoubleVisitor(), findOffsetVal->second);
+         }
+ 
+         std::optional<double> tctlMax = std::nullopt;
+-        auto findTctlMax = baseConfiguration->second.find("TctlMax");
+-        if (findTctlMax != baseConfiguration->second.end())
++        auto findTctlMax = baseConfigMap->find("TctlMax");
++        if (findTctlMax != baseConfigMap->end())
+         {
+-
+             tctlMax = std::visit(VariantToDoubleVisitor(), findTctlMax->second);
+         }
+ 
+         // on rescans, only update sensors we were signaled by
+         auto findSensor = sensors.find(sensorName);
++        bool isSensorFailure = false;
+         if (!firstScan && findSensor != sensors.end())
+         {
+             bool found = false;
+-            for (auto it = sensorsChanged->begin(); it != sensorsChanged->end();
+-                 it++)
++            for (auto& it : *sensorsChanged)
+             {
+-                if (boost::ends_with(*it, findSensor->second->name))
++                if (boost::ends_with(it, findSensor->second->name))
+                 {
++                    isSensorFailure = findSensor->second->isSensorFailure;
+                     sensorsChanged->erase(it);
+                     findSensor->second = nullptr;
+                     found = true;
+@@ -194,44 +141,20 @@ void createSensors(
+                 continue;
+             }
+         }
+-
+-        std::vector<thresholds::Threshold> sensorThresholds;
+-        if (!parseThresholdsFromConfig(*sensorData, sensorThresholds))
++        else if (sensorsChanged != nullptr)
+         {
+-            std::cerr << "error populating thresholds for " << sensorName
+-                      << "\n";
+-        }
+-
+-        auto limits = std::make_pair(minReading, maxReading);
+-        findLimits(limits, baseConfiguration);
+-
+-        auto findPowerState = baseConfiguration->second.find("PowerState");
+-        PowerState readState = PowerState::biosPost;
+-        if (findPowerState != baseConfiguration->second.end())
+-        {
+-            std::string powerState =
+-                std::visit(VariantToStringVisitor(), findPowerState->second);
+-            setReadState(powerState, readState);
++            sensorsChanged->erase(*interfacePath);
+         }
+ 
+         sensors[sensorName] = std::make_shared<NICSensor>(
+-            i2cBus, sensorType, objectServer, dbusConnection, io, sensorName,
+-            std::move(sensorThresholds), *interfacePath, findSensorType->second,
+-            limits.second, limits.first, readState, busId, slaveAddr, cmdCode,
+-            readMode, scaleVal, offsetVal, tctlMax);
++            i2cPath, objectType, objectServer, dbusConnection, io, sensorName,
++            std::move(sensorThresholds), *interfacePath, dbusPath,
++            limits.second, limits.first, readState, bus, address, command,
++            readMode, scaleVal, offsetVal, tctlMax, isSensorFailure);
+         sensors[sensorName]->setupRead();
+     }
+ }
+ 
+-void propertyInitialize(void)
+-{
+-    sensorTable = {{"power", "power/"},
+-                   {"curr", "current/"},
+-                   {"temp", "temperature/"},
+-                   {"volt", "voltage/"}};
+-    modeTable = {{"Byte", ReadMode::READ_BYTE}};
+-}
+-
+ int main()
+ {
+     boost::asio::io_service io;
+@@ -243,8 +166,6 @@ int main()
+     std::shared_ptr<boost::container::flat_set<std::string>> sensorsChanged =
+         std::make_shared<boost::container::flat_set<std::string>>();
+ 
+-    propertyInitialize();
+-
+     io.post([&]() {
+         createSensors(io, objectServer, sensors, systemBus, nullptr);
+     });
+@@ -278,7 +199,7 @@ int main()
+             });
+         };
+ 
+-    for (const char* type : sensorTypes)
++    for (const auto& type : sensorTypes)
+     {
+         auto match = std::make_unique<sdbusplus::bus::match::match>(
+             static_cast<sdbusplus::bus::bus&>(*systemBus),
+diff --git a/src/NVMESensor.cpp b/src/NVMESensor.cpp
+index c6b5836..6ef8dc2 100644
+--- a/src/NVMESensor.cpp
++++ b/src/NVMESensor.cpp
+@@ -13,7 +13,6 @@
+ #include <string>
+ 
+ static constexpr bool DEBUG = false;
+-static constexpr const char* sensorPathPrefix = "/xyz/openbmc_project/sensors/";
+ 
+ static constexpr unsigned int sensorPollMs = 1000;
+ static constexpr unsigned int sensorScaleFactor = 1000;
+@@ -29,13 +28,13 @@ NVMESensor::NVMESensor(const std::string& path, const std::string& objectType,
+                        std::vector<thresholds::Threshold>&& _thresholds,
+                        const std::string& sensorConfiguration,
+                        const std::string& sensorUnit,
+-                       const std::string& sensorTypeName, const double maxValue,
++                       const std::string& dbusPath, const double maxValue,
+                        const double minValue, const PowerState readState,
+                        const uint8_t busId,
+                        const DeviceDetectInfo& detectInfo) :
+     Sensor(boost::replace_all_copy(sensorName, " ", "_"),
+            std::move(_thresholds), sensorConfiguration, objectType, false,
+-           maxValue, minValue, conn, readState),
++           maxValue, minValue, conn, readState, true),
+     std::enable_shared_from_this<NVMESensor>(), objServer(objectServer),
+     waitTimer(io), path(path), sensorUnit(sensorUnit), busId(busId),
+     senValue(0), thresholdTimer(io, this), ssdAbsentTimer(io),
+@@ -43,7 +42,6 @@ NVMESensor::NVMESensor(const std::string& path, const std::string& objectType,
+     detectInfo(detectInfo), isAbsent(false), preIsAbsent(false),
+     isPowerOff(false)
+ {
+-    std::string dbusPath = sensorPathPrefix + sensorTypeName + name;
+     sensorInterface = objectServer.add_interface(
+         dbusPath, "xyz.openbmc_project.Sensor.Value");
+ 
+diff --git a/src/NVMESensorMain.cpp b/src/NVMESensorMain.cpp
+index d9402ff..130af8f 100644
+--- a/src/NVMESensorMain.cpp
++++ b/src/NVMESensorMain.cpp
+@@ -12,10 +12,9 @@
+ #include <regex>
+ 
+ namespace fs = std::filesystem;
+-static constexpr std::array<const char*, 1> sensorTypes = {
++static std::vector<std::string> sensorTypes = {
+     "xyz.openbmc_project.Configuration.NVME"};
+ 
+-static boost::container::flat_map<std::string, std::string> sensorTable;
+ static constexpr double maxReading = 255;
+ static constexpr double minReading = 0;
+ 
+@@ -31,7 +30,7 @@ void createSensors(
+     // use new data the first time, then refresh
+     ManagedObjectType sensorConfigurations;
+     bool useCache = false;
+-    for (const char* type : sensorTypes)
++    for (const auto& type : sensorTypes)
+     {
+         if (!getSensorConfiguration(type, dbusConnection, sensorConfigurations,
+                                     useCache))
+@@ -42,90 +41,46 @@ void createSensors(
+         useCache = true;
+     }
+ 
+-    for (const std::pair<sdbusplus::message::object_path, SensorData>& sensor :
+-         sensorConfigurations)
++    for (const SensorObject& sensor : sensorConfigurations)
+     {
+-        const SensorData* sensorData = nullptr;
+-        const std::string* interfacePath = nullptr;
+-        const char* sensorType = nullptr;
+-        const std::pair<std::string, boost::container::flat_map<
+-                                         std::string, BasicVariantType>>*
+-            baseConfiguration = nullptr;
+-
+-        sensorData = &(sensor.second);
+-        for (const char* type : sensorTypes)
+-        {
+-            auto sensorBase = sensorData->find(type);
+-            if (sensorBase != sensorData->end())
+-            {
+-                baseConfiguration = &(*sensorBase);
+-                sensorType = type;
+-                break;
+-            }
+-        }
+-        if (baseConfiguration == nullptr)
+-        {
+-            std::cerr << "error finding base configuration for NVME \n";
+-            continue;
+-        }
+-
+-        auto configurationBus = baseConfiguration->second.find("Bus");
+-
+-        if (configurationBus == baseConfiguration->second.end())
+-        {
+-            std::cerr << "fail to find the bus in JSON\n";
+-            continue;
+-        }
+-
+-        uint8_t busId =
+-            static_cast<uint8_t>(std::get<uint64_t>(configurationBus->second));
+-
+-        std::string i2cBus = "/sys/class/i2c-dev/i2c-" + std::to_string(busId);
+-
+-        interfacePath = &(sensor.first.str);
+-        if (interfacePath == nullptr)
+-        {
+-            std::cerr << " invalid sensor interface path\n";
+-            continue;
+-        }
+-
+-        auto findSensorName = baseConfiguration->second.find("Name");
+-        if (findSensorName == baseConfiguration->second.end())
+-        {
+-            std::cerr << "fail to find sensor name in JSON\n";
+-            continue;
+-        }
+-        std::string sensorName = std::get<std::string>(findSensorName->second);
+-
+-        // Sensor Type: power, curr, temp, volt
+-        auto findSensorTypeJson = baseConfiguration->second.find("SensorType");
+-        if (findSensorTypeJson == baseConfiguration->second.end())
++        const std::string* interfacePath = &(sensor.first.str);
++        const SensorBaseConfiguration* baseConfiguration = nullptr;
++        const SensorBaseConfigMap* baseConfigMap = nullptr;
++
++        std::string objectType;
++        std::string sensorName;
++        std::string sensorType;
++        std::string dbusPath;
++        std::vector<thresholds::Threshold> sensorThresholds;
++        auto limits = std::make_pair(minReading, maxReading);
++        PowerState readState = PowerState::on;
++        if (!parseSensorInfo(sensor, sensorTypes, baseConfiguration,
++                             baseConfigMap, objectType, sensorName, sensorType,
++                             dbusPath, sensorThresholds, limits, readState))
+         {
+-            std::cerr << "fail to find sensor type in JSON\n";
+             continue;
+         }
+-        std::string SensorTypeJson =
+-            std::get<std::string>(findSensorTypeJson->second);
+ 
+-        auto findSensorType = sensorTable.find(SensorTypeJson);
+-        if (findSensorType == sensorTable.end())
++        auto findBus = baseConfigMap->find("Bus");
++        if (findBus == baseConfigMap->end())
+         {
+-            std::cerr << "fail to find match for NVME sensorType: "
+-                      << SensorTypeJson << "\n";
++            std::cerr << sensorName << " missing bus\n";
+             continue;
+         }
++        auto bus = std::get<uint64_t>(findBus->second);
++        std::string i2cPath = "/dev/i2c-" + std::to_string(bus);
+ 
+         DeviceDetectInfo deviceDetectInfo;
+-        auto findDetectName = baseConfiguration->second.find("DetectName");
+-        auto findDetectBus = baseConfiguration->second.find("DetectBus");
+-        auto findDetectAddr = baseConfiguration->second.find("DetectAddr");
+-        auto findDetectCmd = baseConfiguration->second.find("DetectCmd");
+-        auto findDetectBit = baseConfiguration->second.find("DetectBit");
+-        if (findDetectName != baseConfiguration->second.end() &&
+-            findDetectBus != baseConfiguration->second.end() &&
+-            findDetectAddr != baseConfiguration->second.end() &&
+-            findDetectCmd != baseConfiguration->second.end() &&
+-            findDetectBit != baseConfiguration->second.end())
++        auto findDetectName = baseConfigMap->find("DetectName");
++        auto findDetectBus = baseConfigMap->find("DetectBus");
++        auto findDetectAddr = baseConfigMap->find("DetectAddr");
++        auto findDetectCmd = baseConfigMap->find("DetectCmd");
++        auto findDetectBit = baseConfigMap->find("DetectBit");
++        if (findDetectName != baseConfigMap->end() &&
++            findDetectBus != baseConfigMap->end() &&
++            findDetectAddr != baseConfigMap->end() &&
++            findDetectCmd != baseConfigMap->end() &&
++            findDetectBit != baseConfigMap->end())
+         {
+             deviceDetectInfo.needToDetect = true;
+             deviceDetectInfo.name =
+@@ -149,10 +104,9 @@ void createSensors(
+         if (!firstScan && findSensor != sensors.end())
+         {
+             bool found = false;
+-            for (auto it = sensorsChanged->begin(); it != sensorsChanged->end();
+-                 it++)
++            for (auto& it : *sensorsChanged)
+             {
+-                if (boost::ends_with(*it, findSensor->second->name))
++                if (boost::ends_with(it, findSensor->second->name))
+                 {
+                     sensorsChanged->erase(it);
+                     findSensor->second = nullptr;
+@@ -165,43 +119,19 @@ void createSensors(
+                 continue;
+             }
+         }
+-
+-        std::vector<thresholds::Threshold> sensorThresholds;
+-        if (!parseThresholdsFromConfig(*sensorData, sensorThresholds))
++        else if (sensorsChanged != nullptr)
+         {
+-            std::cerr << "error populating thresholds for " << sensorName
+-                      << "\n";
+-        }
+-
+-        auto limits = std::make_pair(minReading, maxReading);
+-        findLimits(limits, baseConfiguration);
+-
+-        auto findPowerState = baseConfiguration->second.find("PowerState");
+-        PowerState readState = PowerState::on;
+-        if (findPowerState != baseConfiguration->second.end())
+-        {
+-            std::string powerState =
+-                std::visit(VariantToStringVisitor(), findPowerState->second);
+-            setReadState(powerState, readState);
++            sensorsChanged->erase(*interfacePath);
+         }
+ 
+         sensors[sensorName] = std::make_unique<NVMESensor>(
+-            i2cBus, sensorType, objectServer, dbusConnection, io, sensorName,
+-            std::move(sensorThresholds), *interfacePath, findSensorType->first,
+-            findSensorType->second, limits.second, limits.first, readState,
+-            busId, deviceDetectInfo);
++            i2cPath, objectType, objectServer, dbusConnection, io, sensorName,
++            std::move(sensorThresholds), *interfacePath, sensorType, dbusPath,
++            limits.second, limits.first, readState, bus, deviceDetectInfo);
+         sensors[sensorName]->setupRead();
+     }
+ }
+ 
+-void propertyInitialize(void)
+-{
+-    sensorTable = {{"power", "power/"},
+-                   {"curr", "current/"},
+-                   {"temp", "temperature/"},
+-                   {"volt", "voltage/"}};
+-}
+-
+ int main()
+ {
+     boost::asio::io_service io;
+@@ -214,8 +144,6 @@ int main()
+     std::shared_ptr<boost::container::flat_set<std::string>> sensorsChanged =
+         std::make_shared<boost::container::flat_set<std::string>>();
+ 
+-    propertyInitialize();
+-
+     io.post([&]() {
+         createSensors(io, objectServer, sensors, systemBus, nullptr);
+     });
+@@ -248,7 +176,7 @@ int main()
+             });
+         };
+ 
+-    for (const char* type : sensorTypes)
++    for (const auto& type : sensorTypes)
+     {
+         auto match = std::make_unique<sdbusplus::bus::match::match>(
+             static_cast<sdbusplus::bus::bus&>(*systemBus),
+diff --git a/src/PSUSensor.cpp b/src/PSUSensor.cpp
+index 9851781..c9f18e2 100644
+--- a/src/PSUSensor.cpp
++++ b/src/PSUSensor.cpp
+@@ -30,8 +30,6 @@
+ #include <string>
+ #include <vector>
+ 
+-static constexpr const char* sensorPathPrefix = "/xyz/openbmc_project/sensors/";
+-
+ static constexpr bool debug = false;
+ 
+ PSUSensor::PSUSensor(const std::string& path, const std::string& objectType,
+@@ -40,19 +38,16 @@ PSUSensor::PSUSensor(const std::string& path, const std::string& objectType,
+                      boost::asio::io_service& io, const std::string& sensorName,
+                      std::vector<thresholds::Threshold>&& thresholdsIn,
+                      const std::string& sensorConfiguration,
+-                     const std::string& sensorUnits, unsigned int factor,
+-                     const double maxValue, const double minValue,
+-                     const std::string& label, size_t tSize,
+-                     const PowerState readState) :
++                     const std::string& sensorUnit, const std::string& dbusPath,
++                     const unsigned int factor, const double maxValue,
++                     const double minValue, const PowerState readState) :
+     Sensor(boost::replace_all_copy(sensorName, " ", "_"),
+            std::move(thresholdsIn), sensorConfiguration, objectType, false,
+-           maxValue, minValue, conn, readState),
++           maxValue, minValue, conn, readState, false),
+     std::enable_shared_from_this<PSUSensor>(), objServer(objectServer),
+     inputDev(io), waitTimer(io), path(path), pathRatedMax(""), pathRatedMin(""),
+     sensorFactor(factor), minMaxReadCounter(0), thresholdTimer(io, this)
+ {
+-    std::string unitPath = sensor_paths::getPathForUnits(sensorUnits);
+-
+     fd = open(path.c_str(), O_RDONLY);
+     if (fd < 0)
+     {
+@@ -61,8 +56,6 @@ PSUSensor::PSUSensor(const std::string& path, const std::string& objectType,
+     }
+     inputDev.assign(fd);
+ 
+-    std::string dbusPath = sensorPathPrefix + unitPath + "/" + name;
+-
+     sensorInterface = objectServer.add_interface(
+         dbusPath, "xyz.openbmc_project.Sensor.Value");
+ 
+@@ -76,21 +69,31 @@ PSUSensor::PSUSensor(const std::string& path, const std::string& objectType,
+         thresholdInterfaceCritical = objectServer.add_interface(
+             dbusPath, "xyz.openbmc_project.Sensor.Threshold.Critical");
+     }
++    association = objectServer.add_interface(dbusPath, association::interface);
+ 
+-    // This should be called before initializing association.
+-    // createInventoryAssoc() does add more associations before doing
+-    // register and initialize "Associations" property.
+-    if (label.empty() || tSize == thresholds.size())
++    std::string unit;
++    if (sensorUnit == "temp")
++    {
++        unit = sensor_paths::unitDegreesC;
++    }
++    else if (sensorUnit == "power")
+     {
+-        setInitialProperties(conn, sensorUnits);
++        unit = sensor_paths::unitWatts;
++    }
++    else if (sensorUnit == "curr")
++    {
++        unit = sensor_paths::unitAmperes;
++    }
++    else if (sensorUnit == "volt")
++    {
++        unit = sensor_paths::unitVolts;
+     }
+     else
+     {
+-        setInitialProperties(conn, sensorUnits, label, tSize);
++        unit = "Unknown";
+     }
+ 
+-    association = objectServer.add_interface(dbusPath, association::interface);
+-
++    setInitialProperties(conn, unit);
+     createInventoryAssoc(conn, association, configurationPath);
+ 
+     if (auto fileParts = splitFileName(path))
+diff --git a/src/PSUSensorMain.cpp b/src/PSUSensorMain.cpp
+index a38ecc5..f587563 100644
+--- a/src/PSUSensorMain.cpp
++++ b/src/PSUSensorMain.cpp
+@@ -40,7 +40,7 @@
+ 
+ static constexpr bool debug = false;
+ 
+-static constexpr std::array<const char*, 25> sensorTypes = {
++static std::vector<std::string> sensorTypes = {
+     "xyz.openbmc_project.Configuration.ADM1272",
+     "xyz.openbmc_project.Configuration.ADM1275",
+     "xyz.openbmc_project.Configuration.ADM1278",
+@@ -82,7 +82,6 @@ static boost::container::flat_map<std::string, std::unique_ptr<PSUCombineEvent>>
+     combineEvents;
+ static boost::container::flat_map<std::string, std::unique_ptr<PwmSensor>>
+     pwmSensors;
+-static boost::container::flat_map<std::string, std::string> sensorTable;
+ static boost::container::flat_map<std::string, PSUProperty> labelMatch;
+ static boost::container::flat_map<std::string, std::string> pwmTable;
+ static boost::container::flat_map<std::string, std::vector<std::string>>
+@@ -94,7 +93,8 @@ static boost::container::flat_map<
+ static boost::container::flat_map<std::string, std::vector<std::string>>
+     limitEventMatch;
+ 
+-static std::vector<PSUProperty> psuProperties;
++static constexpr double maxReading = 255;
++static constexpr double minReading = 0;
+ 
+ // Function CheckEvent will check each attribute from eventMatch table in the
+ // sysfs. If the attributes exists in sysfs, then store the complete path
+@@ -247,49 +247,23 @@ void checkEventLimits(
+     }
+ }
+ 
+-static bool checkPowerState(const SensorData& sensorData,
+-                            PowerState& sensorReadState,
+-                            const std::string* matchLabel)
++bool isPsu(const fs::path& parentPath)
+ {
+-    sensorReadState = PowerState::always;
++    fs::path namePath = parentPath / "name";
+ 
+-    if (matchLabel == nullptr)
++    std::ifstream nameFile(namePath);
++    if (!nameFile.good())
+     {
++        std::cerr << "Failure reading " << namePath.string() << "\n";
+         return false;
+     }
+ 
+-    for (const auto& item : sensorData)
+-    {
+-        if (item.first.find("PowerStates") == std::string::npos)
+-        {
+-            continue;
+-        }
+-
+-        auto labelFind = item.second.find("Label");
+-        if (labelFind == item.second.end())
+-        {
+-            continue;
+-        }
+-        if (std::visit(VariantToStringVisitor(), labelFind->second) !=
+-            *matchLabel)
+-        {
+-            continue;
+-        }
+-
+-        auto findPowerState = item.second.find("PowerState");
+-        if (findPowerState == item.second.end())
+-        {
+-            std::cerr << "failed to find PowerState in configuration\n";
+-            return false;
+-        }
+-
+-        std::string powerState =
+-            std::visit(VariantToStringVisitor(), findPowerState->second);
+-        setReadState(powerState, sensorReadState);
++    std::string name;
++    std::getline(nameFile, name);
++    nameFile.close();
+ 
+-        break;
+-    }
+-    return true;
++    auto findName = std::find(pmbusNames.begin(), pmbusNames.end(), name);
++    return findName != pmbusNames.end();
+ }
+ 
+ static void createSensorsCallback(
+@@ -299,603 +273,108 @@ static void createSensorsCallback(
+     const std::shared_ptr<boost::container::flat_set<std::string>>&
+         sensorsChanged)
+ {
+-    int numCreated = 0;
+     bool firstScan = sensorsChanged == nullptr;
+ 
+-    std::vector<fs::path> pmbusPaths;
+-    if (!findFiles(fs::path("/sys/class/hwmon"), "name", pmbusPaths))
+-    {
+-        std::cerr << "No PSU sensors in system\n";
+-        return;
+-    }
++    std::vector<fs::path> paths;
++    findFiles(fs::path("/sys/class/hwmon"), R"(\w+_input)", paths);
+ 
+-    boost::container::flat_set<std::string> directories;
+-    for (const auto& pmbusPath : pmbusPaths)
++    for (auto it = paths.begin(); it != paths.end(); ++it)
+     {
+-        boost::container::flat_map<std::string, std::vector<std::string>>
+-            eventPathList;
+-        boost::container::flat_map<
+-            std::string,
+-            boost::container::flat_map<std::string, std::vector<std::string>>>
+-            groupEventPathList;
+-
+-        std::ifstream nameFile(pmbusPath);
+-        if (!nameFile.good())
++        if (!isPsu(it->parent_path()))
+         {
+-            std::cerr << "Failure finding pmbus path " << pmbusPath << "\n";
+-            continue;
++            paths.erase(it--);
+         }
++    }
+ 
+-        std::string pmbusName;
+-        std::getline(nameFile, pmbusName);
+-        nameFile.close();
+-
+-        if (std::find(pmbusNames.begin(), pmbusNames.end(), pmbusName) ==
+-            pmbusNames.end())
++    for (const SensorObject& sensor : sensorConfigs)
++    {
++        const std::string* interfacePath = &(sensor.first.str);
++        const SensorBaseConfiguration* baseConfiguration = nullptr;
++        const SensorBaseConfigMap* baseConfigMap = nullptr;
++
++        std::string objectType;
++        std::string sensorName;
++        std::string sensorType;
++        std::string dbusPath;
++        std::vector<thresholds::Threshold> sensorThresholds;
++        auto limits = std::make_pair(minReading, maxReading);
++        PowerState readState = PowerState::always;
++        if (!parseSensorInfo(sensor, sensorTypes, baseConfiguration,
++                             baseConfigMap, objectType, sensorName, sensorType,
++                             dbusPath, sensorThresholds, limits, readState))
+         {
+-            if constexpr (debug)
+-            {
+-                // To avoid this error message, add your driver name to
+-                // the pmbusNames vector at the top of this file.
+-                std::cerr << "Driver name " << pmbusName
+-                          << " not found in sensor whitelist\n";
+-            }
+             continue;
+         }
+ 
+-        const std::string* psuName;
+-        auto directory = pmbusPath.parent_path();
+-
+-        auto ret = directories.insert(directory.string());
+-        if (!ret.second)
+-        {
+-            std::cerr << "Duplicate path " << directory.string() << "\n";
+-            continue; // check if path has already been searched
+-        }
+-
+-        fs::path device = directory / "device";
+-        std::string deviceName = fs::canonical(device).stem();
+-        auto findHyphen = deviceName.find('-');
+-        if (findHyphen == std::string::npos)
++        uint64_t bus = 0;
++        uint64_t address = 0;
++        std::string i2cPath;
++        if (!findPathFromI2C(baseConfigMap, sensorName, bus, address, i2cPath))
+         {
+-            std::cerr << "found bad device" << deviceName << "\n";
+             continue;
+         }
+-        std::string busStr = deviceName.substr(0, findHyphen);
+-        std::string addrStr = deviceName.substr(findHyphen + 1);
+ 
+-        size_t bus = 0;
+-        size_t addr = 0;
+-
+-        try
+-        {
+-            bus = std::stoi(busStr);
+-            addr = std::stoi(addrStr, nullptr, 16);
+-        }
+-        catch (std::invalid_argument&)
++        std::string driverPath;
++        if (!findPathFromDriver(baseConfigMap, sensorName, dbusPath, paths,
++                                sensorType, "input", driverPath, bus, address))
+         {
+-            std::cerr << "Error parsing bus " << busStr << " addr " << addrStr
+-                      << "\n";
+             continue;
+         }
+ 
+-        const std::pair<std::string, boost::container::flat_map<
+-                                         std::string, BasicVariantType>>*
+-            baseConfig = nullptr;
+-        const SensorData* sensorData = nullptr;
+-        const std::string* interfacePath = nullptr;
+-        const char* sensorType = nullptr;
+-        size_t thresholdConfSize = 0;
+-
+-        for (const std::pair<sdbusplus::message::object_path, SensorData>&
+-                 sensor : sensorConfigs)
+-        {
+-            sensorData = &(sensor.second);
+-            for (const char* type : sensorTypes)
+-            {
+-                auto sensorBase = sensorData->find(type);
+-                if (sensorBase != sensorData->end())
+-                {
+-                    baseConfig = &(*sensorBase);
+-                    sensorType = type;
+-                    break;
+-                }
+-            }
+-            if (baseConfig == nullptr)
+-            {
+-                std::cerr << "error finding base configuration for "
+-                          << deviceName << "\n";
+-                continue;
+-            }
+-
+-            auto configBus = baseConfig->second.find("Bus");
+-            auto configAddress = baseConfig->second.find("Address");
+-
+-            if (configBus == baseConfig->second.end() ||
+-                configAddress == baseConfig->second.end())
+-            {
+-                std::cerr << "error finding necessary entry in configuration\n";
+-                continue;
+-            }
+-
+-            const uint64_t* confBus;
+-            const uint64_t* confAddr;
+-            if (!(confBus = std::get_if<uint64_t>(&(configBus->second))) ||
+-                !(confAddr = std::get_if<uint64_t>(&(configAddress->second))))
+-            {
+-                std::cerr
+-                    << "Cannot get bus or address, invalid configuration\n";
+-                continue;
+-            }
+-
+-            if ((*confBus != bus) || (*confAddr != addr))
+-            {
+-                if constexpr (debug)
+-                {
+-                    std::cerr << "Configuration skipping " << *confBus << "-"
+-                              << *confAddr << " because not " << bus << "-"
+-                              << addr << "\n";
+-                }
+-
+-                continue;
+-            }
+-
+-            std::vector<thresholds::Threshold> confThresholds;
+-            if (!parseThresholdsFromConfig(*sensorData, confThresholds))
+-            {
+-                std::cerr << "error populating totoal thresholds\n";
+-            }
+-            thresholdConfSize = confThresholds.size();
+-
+-            interfacePath = &(sensor.first.str);
+-            break;
+-        }
+-        if (interfacePath == nullptr)
++        std::string label;
++        auto findLabel = baseConfigMap->find("Label");
++        if (findLabel == baseConfigMap->end())
+         {
+-            if constexpr (debug)
+-            {
+-                // To avoid this error message, add your export map entry,
+-                // from Entity Manager, to sensorTypes at the top of this file.
+-                std::cerr << "failed to find match for " << deviceName << "\n";
+-            }
++            std::cerr << "Failed to find configuration label\n";
+             continue;
+         }
++        label = std::visit(VariantToStringVisitor(), findLabel->second);
+ 
+-        auto findPSUName = baseConfig->second.find("Name");
+-        if (findPSUName == baseConfig->second.end())
++        auto findProperty = labelMatch.find(label);
++        if (findProperty == labelMatch.end())
+         {
+-            std::cerr << "could not determine configuration name for "
+-                      << deviceName << "\n";
++            std::cerr << "Could not find matching default property for "
++                      << label << "\n";
+             continue;
+         }
+ 
+-        if (!(psuName = std::get_if<std::string>(&(findPSUName->second))))
++        float scaleFactor =
++            std::pow(10.0, findProperty->second.sensorScaleFactor);
++        auto findScaleFactor = baseConfigMap->find("ScaleFactor");
++        if (findScaleFactor != baseConfigMap->end())
+         {
+-            std::cerr << "Cannot find psu name, invalid configuration\n";
+-            continue;
++            scaleFactor =
++                std::visit(VariantToFloatVisitor(), findScaleFactor->second);
+         }
+ 
+         // on rescans, only update sensors we were signaled by
+-        if (!firstScan)
+-        {
+-            std::string psuNameStr = "/" + *psuName;
+-            auto it =
+-                std::find_if(sensorsChanged->begin(), sensorsChanged->end(),
+-                             [psuNameStr](std::string& s) {
+-                                 return boost::ends_with(s, psuNameStr);
+-                             });
+-
+-            if (it == sensorsChanged->end())
+-            {
+-                continue;
+-            }
+-            sensorsChanged->erase(it);
+-        }
+-        checkEvent(directory.string(), eventMatch, eventPathList);
+-        checkGroupEvent(directory.string(), groupEventMatch,
+-                        groupEventPathList);
+-
+-        /* Check if there are more sensors in the same interface */
+-        int i = 1;
+-        std::vector<std::string> psuNames;
+-        do
+-        {
+-            // Individual string fields: Name, Name1, Name2, Name3, ...
+-            psuNames.push_back(std::get<std::string>(findPSUName->second));
+-            findPSUName = baseConfig->second.find("Name" + std::to_string(i++));
+-        } while (findPSUName != baseConfig->second.end());
+-
+-        std::vector<fs::path> sensorPaths;
+-        if (!findFiles(directory, R"(\w\d+_input$)", sensorPaths, 0))
+-        {
+-            std::cerr << "No PSU non-label sensor in PSU\n";
+-            continue;
+-        }
+-
+-        /* read max value in sysfs for in, curr, power, temp, ... */
+-        if (!findFiles(directory, R"(\w\d+_max$)", sensorPaths, 0))
+-        {
+-            if constexpr (debug)
+-            {
+-                std::cerr << "No max name in PSU \n";
+-            }
+-        }
+-
+-        /* Find array of labels to be exposed if it is defined in config */
+-        std::vector<std::string> findLabels;
+-        auto findLabelObj = baseConfig->second.find("Labels");
+-        if (findLabelObj != baseConfig->second.end())
+-        {
+-            findLabels =
+-                std::get<std::vector<std::string>>(findLabelObj->second);
+-        }
+-
+-        std::regex sensorNameRegEx("([A-Za-z]+)[0-9]*_");
+-        std::smatch matches;
+-
+-        for (const auto& sensorPath : sensorPaths)
++        auto findSensor = sensors.find(sensorName);
++        if (!firstScan && findSensor != sensors.end())
+         {
+-            bool maxLabel = false;
+-            std::string labelHead;
+-            std::string sensorPathStr = sensorPath.string();
+-            std::string sensorNameStr = sensorPath.filename();
+-            std::string sensorNameSubStr{""};
+-            if (std::regex_search(sensorNameStr, matches, sensorNameRegEx))
+-            {
+-                // hwmon *_input filename without number:
+-                // in, curr, power, temp, ...
+-                sensorNameSubStr = matches[1];
+-            }
+-            else
+-            {
+-                std::cerr << "Could not extract the alpha prefix from "
+-                          << sensorNameStr;
+-                continue;
+-            }
+-
+-            std::string labelPath;
+-
+-            /* find and differentiate _max and _input to replace "label" */
+-            size_t pos = sensorPathStr.find('_');
+-            if (pos != std::string::npos)
+-            {
+-
+-                std::string sensorPathStrMax = sensorPathStr.substr(pos);
+-                if (sensorPathStrMax.compare("_max") == 0)
+-                {
+-                    labelPath =
+-                        boost::replace_all_copy(sensorPathStr, "max", "label");
+-                    maxLabel = true;
+-                }
+-                else
+-                {
+-                    labelPath = boost::replace_all_copy(sensorPathStr, "input",
+-                                                        "label");
+-                    maxLabel = false;
+-                }
+-            }
+-            else
+-            {
+-                continue;
+-            }
+-
+-            std::ifstream labelFile(labelPath);
+-            if (!labelFile.good())
+-            {
+-                if constexpr (debug)
+-                {
+-                    std::cerr << "Input file " << sensorPath
+-                              << " has no corresponding label file\n";
+-                }
+-                // hwmon *_input filename with number:
+-                // temp1, temp2, temp3, ...
+-                labelHead = sensorNameStr.substr(0, sensorNameStr.find('_'));
+-            }
+-            else
+-            {
+-                std::string label;
+-                std::getline(labelFile, label);
+-                labelFile.close();
+-                auto findSensor = sensors.find(label);
+-                if (findSensor != sensors.end())
+-                {
+-                    continue;
+-                }
+-
+-                // hwmon corresponding *_label file contents:
+-                // vin1, vout1, ...
+-                labelHead = label.substr(0, label.find(' '));
+-            }
+-
+-            /* append "max" for labelMatch */
+-            if (maxLabel)
+-            {
+-                labelHead.insert(0, "max");
+-            }
+-
+-            if constexpr (debug)
+-            {
+-                std::cerr << "Sensor type=\"" << sensorNameSubStr
+-                          << "\" label=\"" << labelHead << "\"\n";
+-            }
+-
+-            if (!findLabels.empty())
+-            {
+-                /* Check if this labelHead is enabled in config file */
+-                if (std::find(findLabels.begin(), findLabels.end(),
+-                              labelHead) == findLabels.end())
+-                {
+-                    if constexpr (debug)
+-                    {
+-                        std::cerr << "could not find " << labelHead
+-                                  << " in the Labels list\n";
+-                    }
+-                    continue;
+-                }
+-            }
+-
+-            auto findProperty = labelMatch.find(labelHead);
+-            if (findProperty == labelMatch.end())
+-            {
+-                if constexpr (debug)
+-                {
+-                    std::cerr << "Could not find matching default property for "
+-                              << labelHead << "\n";
+-                }
+-                continue;
+-            }
+-
+-            // Protect the hardcoded labelMatch list from changes,
+-            // by making a copy and modifying that instead.
+-            // Avoid bleedthrough of one device's customizations to
+-            // the next device, as each should be independently customizable.
+-            psuProperties.push_back(findProperty->second);
+-            auto psuProperty = psuProperties.rbegin();
+-
+-            // Use label head as prefix for reading from config file,
+-            // example if temp1: temp1_Name, temp1_Scale, temp1_Min, ...
+-            std::string keyName = labelHead + "_Name";
+-            std::string keyScale = labelHead + "_Scale";
+-            std::string keyMin = labelHead + "_Min";
+-            std::string keyMax = labelHead + "_Max";
+-
+-            bool customizedName = false;
+-            auto findCustomName = baseConfig->second.find(keyName);
+-            if (findCustomName != baseConfig->second.end())
+-            {
+-                try
+-                {
+-                    psuProperty->labelTypeName = std::visit(
+-                        VariantToStringVisitor(), findCustomName->second);
+-                }
+-                catch (std::invalid_argument&)
+-                {
+-                    std::cerr << "Unable to parse " << keyName << "\n";
+-                    continue;
+-                }
+-
+-                // All strings are valid, including empty string
+-                customizedName = true;
+-            }
+-
+-            bool customizedScale = false;
+-            auto findCustomScale = baseConfig->second.find(keyScale);
+-            if (findCustomScale != baseConfig->second.end())
+-            {
+-                try
+-                {
+-                    psuProperty->sensorScaleFactor = std::visit(
+-                        VariantToUnsignedIntVisitor(), findCustomScale->second);
+-                }
+-                catch (std::invalid_argument&)
+-                {
+-                    std::cerr << "Unable to parse " << keyScale << "\n";
+-                    continue;
+-                }
+-
+-                // Avoid later division by zero
+-                if (psuProperty->sensorScaleFactor > 0)
+-                {
+-                    customizedScale = true;
+-                }
+-                else
+-                {
+-                    std::cerr << "Unable to accept " << keyScale << "\n";
+-                    continue;
+-                }
+-            }
+-
+-            auto findCustomMin = baseConfig->second.find(keyMin);
+-            if (findCustomMin != baseConfig->second.end())
+-            {
+-                try
+-                {
+-                    psuProperty->minReading = std::visit(
+-                        VariantToDoubleVisitor(), findCustomMin->second);
+-                }
+-                catch (std::invalid_argument&)
+-                {
+-                    std::cerr << "Unable to parse " << keyMin << "\n";
+-                    continue;
+-                }
+-            }
+-
+-            auto findCustomMax = baseConfig->second.find(keyMax);
+-            if (findCustomMax != baseConfig->second.end())
+-            {
+-                try
+-                {
+-                    psuProperty->maxReading = std::visit(
+-                        VariantToDoubleVisitor(), findCustomMax->second);
+-                }
+-                catch (std::invalid_argument&)
+-                {
+-                    std::cerr << "Unable to parse " << keyMax << "\n";
+-                    continue;
+-                }
+-            }
+-
+-            if (!(psuProperty->minReading < psuProperty->maxReading))
+-            {
+-                std::cerr << "Min must be less than Max\n";
+-                continue;
+-            }
+-
+-            // If the sensor name is being customized by config file,
+-            // then prefix/suffix composition becomes not necessary,
+-            // and in fact not wanted, because it gets in the way.
+-            std::string psuNameFromIndex;
+-            if (!customizedName)
++            bool found = false;
++            for (auto& it : *sensorsChanged)
+             {
+-                /* Find out sensor name index for this label */
+-                std::regex rgx("[A-Za-z]+([0-9]+)");
+-                size_t nameIndex{0};
+-                if (std::regex_search(labelHead, matches, rgx))
+-                {
+-                    nameIndex = std::stoi(matches[1]);
+-
+-                    // Decrement to preserve alignment, because hwmon
+-                    // human-readable filenames and labels use 1-based
+-                    // numbering, but the "Name", "Name1", "Name2", etc. naming
+-                    // convention (the psuNames vector) uses 0-based numbering.
+-                    if (nameIndex > 0)
+-                    {
+-                        --nameIndex;
+-                    }
+-                }
+-                else
+-                {
+-                    nameIndex = 0;
+-                }
+-
+-                if (psuNames.size() <= nameIndex)
+-                {
+-                    std::cerr << "Could not pair " << labelHead
+-                              << " with a Name field\n";
+-                    continue;
+-                }
+-
+-                psuNameFromIndex = psuNames[nameIndex];
+-
+-                if constexpr (debug)
+-                {
+-                    std::cerr << "Sensor label head " << labelHead
+-                              << " paired with " << psuNameFromIndex
+-                              << " at index " << nameIndex << "\n";
+-                }
+-            }
+-
+-            checkEventLimits(sensorPathStr, limitEventMatch, eventPathList);
+-
+-            // Similarly, if sensor scaling factor is being customized,
+-            // then the below power-of-10 constraint becomes unnecessary,
+-            // as config should be able to specify an arbitrary divisor.
+-            unsigned int factor = psuProperty->sensorScaleFactor;
+-            if (!customizedScale)
+-            {
+-                // Preserve existing usage of hardcoded labelMatch table below
+-                factor = std::pow(10.0, factor);
+-
+-                /* Change first char of substring to uppercase */
+-                char firstChar =
+-                    static_cast<char>(std::toupper(sensorNameSubStr[0]));
+-                std::string strScaleFactor =
+-                    firstChar + sensorNameSubStr.substr(1) + "ScaleFactor";
+-
+-                // Preserve existing configs by accepting earlier syntax,
+-                // example CurrScaleFactor, PowerScaleFactor, ...
+-                auto findScaleFactor = baseConfig->second.find(strScaleFactor);
+-                if (findScaleFactor != baseConfig->second.end())
+-                {
+-                    factor = std::visit(VariantToIntVisitor(),
+-                                        findScaleFactor->second);
+-                }
+-
+-                if constexpr (debug)
++                if (boost::ends_with(it, findSensor->second->name))
+                 {
+-                    std::cerr << "Sensor scaling factor " << factor
+-                              << " string " << strScaleFactor << "\n";
++                    sensorsChanged->erase(it);
++                    findSensor->second = nullptr;
++                    found = true;
++                    break;
+                 }
+             }
+-
+-            std::vector<thresholds::Threshold> sensorThresholds;
+-            if (!parseThresholdsFromConfig(*sensorData, sensorThresholds,
+-                                           &labelHead))
+-            {
+-                std::cerr << "error populating thresholds for "
+-                          << sensorNameSubStr << "\n";
+-            }
+-
+-            auto findSensorUnit = sensorTable.find(sensorNameSubStr);
+-            if (findSensorUnit == sensorTable.end())
++            if (!found)
+             {
+-                std::cerr << sensorNameSubStr
+-                          << " is not a recognized sensor type\n";
+                 continue;
+             }
+-
+-            if constexpr (debug)
+-            {
+-                std::cerr << "Sensor properties: Name \""
+-                          << psuProperty->labelTypeName << "\" Scale "
+-                          << psuProperty->sensorScaleFactor << " Min "
+-                          << psuProperty->minReading << " Max "
+-                          << psuProperty->maxReading << "\n";
+-            }
+-
+-            std::string sensorName = psuProperty->labelTypeName;
+-            if (customizedName)
+-            {
+-                if (sensorName.empty())
+-                {
+-                    // Allow selective disabling of an individual sensor,
+-                    // by customizing its name to an empty string.
+-                    std::cerr << "Sensor disabled, empty string\n";
+-                    continue;
+-                }
+-            }
+-            else
+-            {
+-                // Sensor name not customized, do prefix/suffix composition,
+-                // preserving default behavior by using psuNameFromIndex.
+-                sensorName =
+-                    psuNameFromIndex + " " + psuProperty->labelTypeName;
+-            }
+-
+-            PowerState sensorReadState;
+-            if (!checkPowerState(*sensorData, sensorReadState, &labelHead))
+-            {
+-                std::cerr << "Failed to find the sensor read power state for "
+-                          << sensorNameSubStr << "\n";
+-            }
+-
+-            if constexpr (debug)
+-            {
+-                std::cerr << "Sensor name \"" << sensorName << "\" path \""
+-                          << sensorPathStr << "\" type \"" << sensorType
+-                          << "\"\n";
+-            }
+-            // destruct existing one first if already created
+-            sensors[sensorName] = nullptr;
+-            sensors[sensorName] = std::make_shared<PSUSensor>(
+-                sensorPathStr, sensorType, objectServer, dbusConnection, io,
+-                sensorName, std::move(sensorThresholds), *interfacePath,
+-                findSensorUnit->second, factor, psuProperty->maxReading,
+-                psuProperty->minReading, labelHead, thresholdConfSize,
+-                sensorReadState);
+-            sensors[sensorName]->setupRead();
+-            ++numCreated;
+-            if constexpr (debug)
+-            {
+-                std::cerr << "Created " << numCreated << " sensors so far\n";
+-            }
+         }
+-    }
+ 
+-    if constexpr (debug)
+-    {
+-        std::cerr << "Created total of " << numCreated << " sensors\n";
++        sensors[sensorName] = std::make_shared<PSUSensor>(
++            driverPath, objectType, objectServer, dbusConnection, io,
++            sensorName, std::move(sensorThresholds), *interfacePath, sensorType,
++            dbusPath, scaleFactor, limits.second, limits.first, readState);
++        sensors[sensorName]->setupRead();
+     }
++
+     return;
+ }
+ 
+@@ -917,12 +396,6 @@ void createSensors(
+ 
+ void propertyInitialize(void)
+ {
+-    sensorTable = {{"power", sensor_paths::unitWatts},
+-                   {"curr", sensor_paths::unitAmperes},
+-                   {"temp", sensor_paths::unitDegreesC},
+-                   {"in", sensor_paths::unitVolts},
+-                   {"fan", sensor_paths::unitRPMs}};
+-
+     labelMatch = {{"pin", PSUProperty("Input Power", 3000, 0, 6)},
+                   {"pout1", PSUProperty("Output Power", 3000, 0, 6)},
+                   {"pout2", PSUProperty("Output Power", 3000, 0, 6)},
+@@ -1044,7 +517,7 @@ int main()
+             });
+         };
+ 
+-    for (const char* type : sensorTypes)
++    for (const auto& type : sensorTypes)
+     {
+         auto match = std::make_unique<sdbusplus::bus::match::match>(
+             static_cast<sdbusplus::bus::bus&>(*systemBus),
+diff --git a/src/TachSensor.cpp b/src/TachSensor.cpp
+index 9c2c162..ccdc451 100644
+--- a/src/TachSensor.cpp
++++ b/src/TachSensor.cpp
+@@ -44,41 +44,37 @@ static constexpr int fanFailSoftOffTimeLimit = 12;
+ TachSensor::TachSensor(const std::string& path, const std::string& objectType,
+                        sdbusplus::asio::object_server& objectServer,
+                        std::shared_ptr<sdbusplus::asio::connection>& conn,
+-                       std::unique_ptr<PresenceSensor>&& presenceSensor,
++                       std::shared_ptr<PresenceSensor>&& presenceSensor,
+                        std::optional<RedundancySensor>* redundancy,
+                        boost::asio::io_service& io, const std::string& fanName,
+                        std::vector<thresholds::Threshold>&& thresholdsIn,
+                        const std::string& sensorConfiguration,
+-                       const std::pair<size_t, size_t>& limits,
+-                       const PowerState& powerState,
+-                       const std::optional<std::string>& ledIn) :
++                       const std::string& dbusPath, const double maxValue,
++                       const double minValue, const PowerState& readState,
++                       const std::optional<std::string>& ledIn,
++                       const bool isSensorFailure) :
+     Sensor(boost::replace_all_copy(fanName, " ", "_"), std::move(thresholdsIn),
+-           sensorConfiguration, objectType, false, limits.second, limits.first,
+-           conn, powerState),
++           sensorConfiguration, objectType, false, maxValue, minValue, conn,
++           readState, isSensorFailure),
+     objServer(objectServer), redundancy(redundancy),
+     presence(std::move(presenceSensor)),
+     inputDev(io, open(path.c_str(), O_RDONLY)), waitTimer(io), path(path),
+     led(ledIn)
+ {
+     sensorInterface = objectServer.add_interface(
+-        "/xyz/openbmc_project/sensors/fan_tach/" + name,
+-        "xyz.openbmc_project.Sensor.Value");
++        dbusPath, "xyz.openbmc_project.Sensor.Value");
+ 
+     if (thresholds::hasWarningInterface(thresholds))
+     {
+         thresholdInterfaceWarning = objectServer.add_interface(
+-            "/xyz/openbmc_project/sensors/fan_tach/" + name,
+-            "xyz.openbmc_project.Sensor.Threshold.Warning");
++            dbusPath, "xyz.openbmc_project.Sensor.Threshold.Warning");
+     }
+     if (thresholds::hasCriticalInterface(thresholds))
+     {
+         thresholdInterfaceCritical = objectServer.add_interface(
+-            "/xyz/openbmc_project/sensors/fan_tach/" + name,
+-            "xyz.openbmc_project.Sensor.Threshold.Critical");
++            dbusPath, "xyz.openbmc_project.Sensor.Threshold.Critical");
+     }
+-    association = objectServer.add_interface(
+-        "/xyz/openbmc_project/sensors/fan_tach/" + name,
+-        association::interface);
++    association = objectServer.add_interface(dbusPath, association::interface);
+ 
+     if (presence)
+     {
+@@ -93,13 +89,10 @@ TachSensor::TachSensor(const std::string& path, const std::string& objectType,
+             "/xyz/openbmc_project/inventory/" + name, association::interface);
+         itemAssoc->register_property(
+             "associations",
+-            std::vector<Association>{
+-                {"sensors", "inventory",
+-                 "/xyz/openbmc_project/sensors/fan_tach/" + name}});
++            std::vector<Association>{{"sensors", "inventory", dbusPath}});
+         itemAssoc->initialize();
+     }
+     setInitialProperties(conn, sensor_paths::unitRPMs);
+-    setupRead();
+ }
+ 
+ TachSensor::~TachSensor()
+@@ -194,14 +187,70 @@ void TachSensor::fanFailHostPowerOff(void)
+ 
+ void TachSensor::setupRead(void)
+ {
++    std::shared_ptr<boost::asio::streambuf> buffer =
++        std::make_shared<boost::asio::streambuf>();
++
++    std::weak_ptr<TachSensor> weakRef = weak_from_this();
++
++    if (readingStateGood() && path.empty())
++    {
++        if (!fanFailSelLogged)
++        {
++            failedFans.insert(name);
++            if (failedFans.size() >= 2)
++            {
++                fanFailHostPowerOff();
++            }
++        }
++
++        waitTimer.expires_from_now(std::chrono::milliseconds(pwmPollMs));
++        waitTimer.async_wait([weakRef](const boost::system::error_code& ec) {
++            std::shared_ptr<TachSensor> self = weakRef.lock();
++            if (ec == boost::asio::error::operation_aborted)
++            {
++                if (self)
++                {
++                    std::cerr << "TachSensor " << self->name
++                              << " read cancelled\n";
++                }
++                else
++                {
++                    std::cerr << "TachSensor read cancelled no self\n";
++                }
++                return; // we're being canceled
++            }
++
++            if (self)
++            {
++                self->setupRead();
++            }
++            else
++            {
++                std::cerr << "TachSensor weakref no self\n";
++            }
++        });
++
++        incrementError();
++        return;
++    }
++
+     boost::asio::async_read_until(
+-        inputDev, readBuf, '\n',
+-        [&](const boost::system::error_code& ec,
+-            std::size_t /*bytes_transfered*/) { handleResponse(ec); });
++        inputDev, *buffer, '\n',
++        [weakRef, buffer](const boost::system::error_code& ec,
++                          std::size_t /*bytes_transfered*/) {
++            std::shared_ptr<TachSensor> self = weakRef.lock();
++            if (self)
++            {
++                self->readBuf = buffer;
++                self->handleResponse(ec);
++            }
++        });
+ }
+ 
+ void TachSensor::handleResponse(const boost::system::error_code& err)
+ {
++    std::weak_ptr<TachSensor> weakRef = weak_from_this();
++
+     if (err == boost::system::errc::bad_file_descriptor)
+     {
+         return; // we're being destroyed
+@@ -218,7 +267,7 @@ void TachSensor::handleResponse(const boost::system::error_code& err)
+         }
+         itemIface->set_property("Present", !missing);
+     }
+-    std::istream responseStream(&readBuf);
++    std::istream responseStream(readBuf.get());
+     if (readingStateGood())
+     {
+         if (!missing)
+@@ -277,12 +326,29 @@ void TachSensor::handleResponse(const boost::system::error_code& err)
+     }
+     inputDev.assign(fd);
+     waitTimer.expires_from_now(std::chrono::milliseconds(pollTime));
+-    waitTimer.async_wait([&](const boost::system::error_code& ec) {
++    waitTimer.async_wait([weakRef](const boost::system::error_code& ec) {
++        std::shared_ptr<TachSensor> self = weakRef.lock();
+         if (ec == boost::asio::error::operation_aborted)
+         {
++            if (self)
++            {
++                std::cerr << "TachSensor " << self->name << " read cancelled\n";
++            }
++            else
++            {
++                std::cerr << "TachSensor read cancelled no self\n";
++            }
+             return; // we're being canceled
+         }
+-        setupRead();
++
++        if (self)
++        {
++            self->setupRead();
++        }
++        else
++        {
++            std::cerr << "TachSensor weakref no self\n";
++        }
+     });
+ }
+ 
+diff --git a/src/Utils.cpp b/src/Utils.cpp
+index ba7471d..c8ac345 100644
+--- a/src/Utils.cpp
++++ b/src/Utils.cpp
+@@ -19,6 +19,7 @@
+ #include <TachSensor.hpp>
+ #include <Utils.hpp>
+ #include <boost/algorithm/string/predicate.hpp>
++#include <boost/algorithm/string/replace.hpp>
+ #include <boost/container/flat_map.hpp>
+ #include <openbmc/libobmcdbus.hpp>
+ #include <sdbusplus/asio/connection.hpp>
+@@ -581,3 +582,154 @@ void addSensorFailSel(const std::string& sensorPath, bool isAssert)
+ 
+     ipmiSelAdd(selAddMessage, path, eventData, isAssert);
+ }
++
++bool parseSensorInfo(const SensorObject& sensor,
++                     const std::vector<std::string>& sensorTypes,
++                     const SensorBaseConfiguration*& baseConfiguration,
++                     const SensorBaseConfigMap*& baseConfigMap,
++                     std::string& objectType, std::string& sensorName,
++                     std::string& sensorType, std::string& dbusPath,
++                     std::vector<thresholds::Threshold>& sensorThresholds,
++                     std::pair<double, double>& limits, PowerState& readState)
++{
++    // Find base configuration.
++    for (const auto& type : sensorTypes)
++    {
++        auto sensorBase = sensor.second.find(type);
++        if (sensorBase != sensor.second.end())
++        {
++            baseConfiguration = &(*sensorBase);
++            baseConfigMap = &baseConfiguration->second;
++            objectType = type;
++            break;
++        }
++    }
++    if (baseConfiguration == nullptr)
++    {
++        return false;
++    }
++
++    auto findSensorName = baseConfigMap->find("Name");
++    if (findSensorName == baseConfigMap->end())
++    {
++        std::cerr << "Failed to find configuration name\n";
++        return false;
++    }
++    sensorName = std::visit(VariantToStringVisitor(), findSensorName->second);
++
++    auto findSensorType = baseConfigMap->find("SensorType");
++    if (findSensorType == baseConfigMap->end())
++    {
++        std::cerr << sensorName << " missing sensor type\n";
++        return false;
++    }
++    sensorType = std::visit(VariantToStringVisitor(), findSensorType->second);
++
++    auto findSensorTypePath = sensorTypeTable.find(sensorType);
++    if (findSensorTypePath == sensorTypeTable.end())
++    {
++        std::cerr << sensorName << " invalid sensor type: " << sensorType
++                  << "\n";
++        return false;
++    }
++    dbusPath = sensorPathPrefix + findSensorTypePath->second +
++               boost::replace_all_copy(sensorName, " ", "_");
++
++    if (!parseThresholdsFromConfig(sensor.second, sensorThresholds))
++    {
++        std::cerr << "error populating thresholds for " << sensorName << "\n";
++    }
++
++    findLimits(limits, baseConfiguration);
++
++    auto findPowerState = baseConfigMap->find("PowerState");
++    if (findPowerState != baseConfigMap->end())
++    {
++        std::string powerState =
++            std::visit(VariantToStringVisitor(), findPowerState->second);
++        setReadState(powerState, readState);
++    }
++
++    return true;
++}
++
++bool findPathFromDriver(const SensorBaseConfigMap*& baseConfigMap,
++                        const std::string& sensorName,
++                        const std::string& dbusPath,
++                        const std::vector<fs::path>& paths,
++                        const std::string prefix, const std::string suffix,
++                        std::string& driverPath, uint64_t bus, uint64_t address)
++{
++    auto findIndex = baseConfigMap->find("Index");
++    if (findIndex == baseConfigMap->end())
++    {
++        std::cerr << sensorName << " missing index\n";
++        return false;
++    }
++    unsigned int index =
++        std::visit(VariantToUnsignedIntVisitor(), findIndex->second);
++
++    // In configuration index is 0 based and driver is 1 based.
++    auto filename = prefix + std::to_string(index + 1) + "_" + suffix;
++
++    for (const auto& path : paths)
++    {
++        if (boost::ends_with(path.string(), filename) == true)
++        {
++            if (bus != 0 && address != 0)
++            {
++                auto device = path.parent_path() / "device";
++                std::string deviceName = fs::canonical(device).stem();
++
++                size_t findDash = deviceName.find("-");
++                if (findDash == std::string::npos)
++                {
++                    // Not a i2c device path, skip it.
++                    continue;
++                }
++
++                uint64_t driverBus = std::stoll(deviceName.substr(0, findDash));
++                uint64_t driverAddress =
++                    std::stoll(deviceName.substr(findDash + 1), nullptr, 16);
++
++                if (driverBus != bus || driverAddress != address)
++                {
++                    continue;
++                }
++            }
++
++            driverPath = path.string();
++            return true;
++        }
++    }
++
++    addSensorFailSel(dbusPath, true);
++    return false;
++}
++
++bool findPathFromI2C(const SensorBaseConfigMap*& baseConfigMap,
++                     const std::string& sensorName, uint64_t& bus,
++                     uint64_t& address, std::string& i2cPath)
++{
++    auto findBus = baseConfigMap->find("Bus");
++    auto findAddress = baseConfigMap->find("Address");
++    if (findBus == baseConfigMap->end() || findAddress == baseConfigMap->end())
++    {
++        std::cerr << sensorName << " missing bus or address\n";
++        return false;
++    }
++
++    bus = std::get<uint64_t>(findBus->second);
++    address = std::get<uint64_t>(findAddress->second);
++
++    if (address >= 0x80)
++    {
++        std::cerr << "I2C slave addr is out of the range (7-bit addr): "
++                  << address << "\n";
++        return false;
++    }
++
++    i2cPath = "/dev/i2c-" + std::to_string(bus);
++
++    return true;
++}
+-- 
+2.32.0
+

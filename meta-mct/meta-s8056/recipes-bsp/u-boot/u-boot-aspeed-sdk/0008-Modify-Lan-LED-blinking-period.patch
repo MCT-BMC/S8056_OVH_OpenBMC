@@ -1,0 +1,24 @@
+From 2c0882920ae142c00c9ea8b914e0c068bb3ca572 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Tue, 13 Sep 2022 12:18:35 +0800
+Subject: [PATCH] Modify Lan LED blinking period
+
+---
+ drivers/net/phy/realtek.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/net/phy/realtek.c b/drivers/net/phy/realtek.c
+index 31f5096..4e0b1e4 100644
+--- a/drivers/net/phy/realtek.c
++++ b/drivers/net/phy/realtek.c
+@@ -185,6 +185,7 @@ static int rtl8211f_config(struct phy_device *phydev)
+ 		  MIIM_RTL8211F_PAGE_SELECT, 0xd04);
+ 	phy_write(phydev, MDIO_DEVAD_NONE, 0x10, 0x6d02);
+ 	phy_write(phydev, MDIO_DEVAD_NONE, 0x11, 0x0000);
++	phy_write(phydev, MDIO_DEVAD_NONE, 0x12, 0x03B2);
+ 	phy_write(phydev, MDIO_DEVAD_NONE,
+ 		  MIIM_RTL8211F_PAGE_SELECT, 0x0);
+ 
+-- 
+2.7.4
+

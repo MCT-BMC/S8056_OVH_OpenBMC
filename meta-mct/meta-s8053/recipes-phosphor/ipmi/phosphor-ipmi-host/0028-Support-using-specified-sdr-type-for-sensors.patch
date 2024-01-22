@@ -1,0 +1,94 @@
+From 6fbcdef872a439c4d3ebae9f9dd5d818f240a876 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Mon, 17 Oct 2022 12:20:38 +0800
+Subject: [PATCH] Support using specified sdr type for sensors
+
+Replace event only configuration from fixed reading type to sdr type in SDR table.
+---
+ dbus-sdr/sdrutils.cpp         | 32 ++++++++++++++++++++++++++++++++
+ dbus-sdr/sensorcommands.cpp   |  5 ++++-
+ include/dbus-sdr/sdrutils.hpp |  2 ++
+ 3 files changed, 38 insertions(+), 1 deletion(-)
+
+diff --git a/dbus-sdr/sdrutils.cpp b/dbus-sdr/sdrutils.cpp
+index dccde61..2220ee0 100755
+--- a/dbus-sdr/sdrutils.cpp
++++ b/dbus-sdr/sdrutils.cpp
+@@ -413,6 +413,38 @@ void getSensorEntityIdAndInstance(const std::string& path, uint8_t& entityId, ui
+     sdrStream.close();
+ }
+ 
++void getSensorSdrType(const std::string& path, uint8_t& sdrType)
++{
++    std::ifstream sdrStream(sdrFile);
++
++    if (!sdrStream.is_open())
++    {
++        std::cerr << "NO defined sensor number map found\n";
++        return ;
++    }
++
++    auto data = nlohmann::json::parse(sdrStream, nullptr, false);
++    if (data.is_discarded())
++    {
++        std::cerr << "syntax error in " << sdrFile << "\n";
++    }
++    else
++    {
++        int idx = 0;
++        while (!data[idx].is_null())
++        {
++            if (data[idx]["path"] == path)
++            {
++                sdrType =  std::stoul(std::string(data[idx]["sdrType"]), nullptr, 16);
++                break;
++            }
++            idx++;
++        }
++    }
++
++    sdrStream.close();
++}
++
+ std::string getPathFromSensorNumber(uint16_t sensorNum)
+ {
+     std::shared_ptr<SensorNumMap> sensorNumMapPtr;
+diff --git a/dbus-sdr/sensorcommands.cpp b/dbus-sdr/sensorcommands.cpp
+index 2fd0ed7..542e261 100755
+--- a/dbus-sdr/sensorcommands.cpp
++++ b/dbus-sdr/sensorcommands.cpp
+@@ -2129,6 +2129,9 @@ static int
+         return GENERAL_ERROR;
+     }
+ 
++    uint8_t recordType = get_sdr::SENSOR_DATA_FULL_RECORD;
++    getSensorSdrType(path,recordType);
++
+ #ifdef FEATURE_HYBRID_SENSORS
+     if (auto sensor = findStaticSensor(path);
+         sensor != ipmi::sensor::sensors.end() &&
+@@ -2160,7 +2163,7 @@ static int
+ #endif
+ 
+     // Contruct SDR type 3 record for type 3 sensor
+-    if (getSensorEventTypeFromPath(path) == 0x6f)
++    if (recordType == get_sdr::SENSOR_DATA_EVENT_RECORD)
+     {
+         get_sdr::SensorDataEventRecord record = {0};
+ 
+diff --git a/include/dbus-sdr/sdrutils.hpp b/include/dbus-sdr/sdrutils.hpp
+index bc7a265..fffa900 100755
+--- a/include/dbus-sdr/sdrutils.hpp
++++ b/include/dbus-sdr/sdrutils.hpp
+@@ -410,6 +410,8 @@ uint8_t getSensorEventTypeFromPath(const std::string& path);
+ 
+ void getSensorEntityIdAndInstance(const std::string& path, uint8_t& entityId, uint8_t& entityInstance);
+ 
++void getSensorSdrType(const std::string& path, uint8_t& sdrType);
++
+ std::string getPathFromSensorNumber(uint16_t sensorNum);
+ 
+ namespace ipmi
+-- 
+2.25.1
+

@@ -1,0 +1,47 @@
+From 1dfc6deffc242c2c0634523ad3a8f2e1e07acd48 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Mon, 18 Oct 2021 17:03:13 +0800
+Subject: [PATCH] Support getting BIOS version via searching specified BIOS
+ console output
+
+---
+ util.c | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+ mode change 100644 => 100755 util.c
+
+diff --git a/util.c b/util.c
+old mode 100644
+new mode 100755
+index a6c7461..5c280a3
+--- a/util.c
++++ b/util.c
+@@ -17,6 +17,8 @@
+ #include <err.h>
+ #include <unistd.h>
+ #include <time.h>
++#include <fcntl.h>
++#include <stdlib.h>
+ 
+ #include "console-server.h"
+ 
+@@ -60,6 +62,17 @@ int write_buf_to_log(int fd, const uint8_t *buf, size_t len)
+                         count++;
+                 }
+ 
++                const char* consoleOut = (const char *)(buf);
++                char *select = "BIOS";
++
++                if(strstr(consoleOut, select) != NULL) {
++                        printf("Found BIOS version string!\n");
++                        remove("/run/bios-version");
++                        int fdBios = open("/run/bios-version", O_RDWR | O_CREAT, 0644);
++                        rc = write(fdBios, buf + pos, count);
++                        rc = system("/usr/bin/env mct-bios-version-handler");
++                }
++
+                 rc = write(fd, buf + pos, count);
+                 if (rc <= 0) {
+                         warn("Write error");
+-- 
+2.7.4
+

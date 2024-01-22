@@ -1,0 +1,7 @@
+[Unit]
+Description=Intel ASD Service
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+ExecStart=/usr/bin/asd -n eth0 -u

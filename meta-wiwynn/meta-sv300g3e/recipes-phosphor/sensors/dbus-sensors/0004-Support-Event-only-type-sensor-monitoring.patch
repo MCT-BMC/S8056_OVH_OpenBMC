@@ -1,0 +1,525 @@
+From 0b08c785e02238923238bf8db16a65380745fef8 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Sun, 15 Mar 2020 15:40:00 +0800
+Subject: [PATCH] Support Event-only type sensor monitoring - ACPI power status
+ - Button event - End-of-Post evnet - IPMI power cycle - CPU state - BMC cold
+ reset - AC lost
+
+---
+ CMakeLists.txt                                |  17 ++
+ include/EventSensor.hpp                       |  80 +++++++++
+ .../xyz.openbmc_project.eventsensor.service   |  12 ++
+ src/EventSensor.cpp                           | 170 ++++++++++++++++++
+ src/EventSensorMain.cpp                       | 161 +++++++++++++++++
+ 5 files changed, 440 insertions(+)
+ create mode 100644 include/EventSensor.hpp
+ create mode 100644 service_files/xyz.openbmc_project.eventsensor.service
+ create mode 100644 src/EventSensor.cpp
+ create mode 100644 src/EventSensorMain.cpp
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 9d54988..453e700 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -42,6 +42,7 @@ option (DISABLE_EXIT_AIR "Disable installing Exit Air Temp sensor" OFF)
+ option (DISABLE_FAN "Disable installing fan sensor" OFF)
+ option (DISABLE_HWMON_TEMP "Disable installing hwmon temp sensor" OFF)
+ option (DISABLE_VR "Disable installing VR sensor" OFF)
++option (DISABLE_EVENT "Disable installing EVENT sensor" OFF)
+ option (DISABLE_INTRUSION "Disable installing intrusion sensor" OFF)
+ option (DISABLE_IPMB "Disable installing IPMB sensor" OFF)
+ option (DISABLE_MCUTEMP "Disable installing MCU temperature sensor" OFF)
+@@ -69,6 +70,8 @@ set (HWMON_TEMP_SRC_FILES src/Utils.cpp src/HwmonTempSensor.cpp
+ 
+ set (VR_SRC_FILES src/Utils.cpp src/VRSensor.cpp src/Thresholds.cpp)
+ 
++set (EVENT_SRC_FILES src/Utils.cpp src/EventSensor.cpp)
++
+ set (INTRUSION_SRC_FILES src/Utils.cpp src/ChassisIntrusionSensor.cpp)
+ 
+ set (IPMB_SRC_FILES src/Utils.cpp src/Thresholds.cpp)
+@@ -183,6 +186,10 @@ add_executable (vrsensor src/VRSensorMain.cpp ${VR_SRC_FILES})
+ add_dependencies (vrsensor sdbusplus-project)
+ target_link_libraries (vrsensor ${SENSOR_LINK_LIBS})
+ 
++add_executable (eventsensor src/EventSensorMain.cpp ${EVENT_SRC_FILES})
++add_dependencies (eventsensor sdbusplus-project)
++target_link_libraries (eventsensor ${SENSOR_LINK_LIBS} pthread)
++
+ add_executable (intrusionsensor src/IntrusionSensorMain.cpp
+                 ${INTRUSION_SRC_FILES})
+ add_dependencies (intrusionsensor sdbusplus-project)
+@@ -216,6 +223,7 @@ if (NOT YOCTO)
+     add_dependencies (fansensor ${EXTERNAL_PACKAGES})
+     add_dependencies (hwmontempsensor ${EXTERNAL_PACKAGES})
+     add_dependencies (vrsensor ${EXTERNAL_PACKAGES})
++    add_dependencies (eventsensor ${EXTERNAL_PACKAGES})
+     add_dependencies (intrusionsensor ${EXTERNAL_PACKAGES})
+     add_dependencies (ipmbsensor ${EXTERNAL_PACKAGES})
+     add_dependencies (mcutempsensor ${EXTERNAL_PACKAGES})
+@@ -272,6 +280,15 @@ if (NOT DISABLE_VR)
+     )
+ endif ()
+ 
++if (NOT DISABLE_EVENT)
++    install (TARGETS eventsensor DESTINATION bin)
++    install (
++        FILES
++            ${SERVICE_FILE_SRC_DIR}/xyz.openbmc_project.eventsensor.service
++            DESTINATION ${SERVICE_FILE_INSTALL_DIR}
++    )
++endif ()
++
+ if (NOT DISABLE_INTRUSION)
+     install (TARGETS intrusionsensor DESTINATION bin)
+     install (
+diff --git a/include/EventSensor.hpp b/include/EventSensor.hpp
+new file mode 100644
+index 0000000..2111dea
+--- /dev/null
++++ b/include/EventSensor.hpp
+@@ -0,0 +1,80 @@
++/*
++// Copyright (c) 2019 Wiwynn Corporation
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//      http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++*/
++
++#pragma once
++
++#include <unistd.h>
++#include <variant>
++#include <iostream>
++#include <systemd/sd-journal.h>
++#include <sdbusplus/asio/object_server.hpp>
++
++static constexpr char const *ipmiSelService = "xyz.openbmc_project.Logging.IPMI";
++static constexpr char const *ipmiSelPath = "/xyz/openbmc_project/Logging/IPMI";
++static constexpr char const *ipmiSelAddInterface = "xyz.openbmc_project.Logging.IPMI";
++static const std::string ipmiSelAddMessage = "SEL Entry";
++
++static const std::string sensorPathPrefix = "/xyz/openbmc_project/sensors/";
++
++struct sensorTypeMap
++{
++    std::string sensorName;
++    std::string sensorType;
++};
++
++static const std::vector<struct sensorTypeMap> sensorList = {
++    {.sensorName = "ACPI_Power_State", .sensorType = "acpi/"},
++    {.sensorName = "Button", .sensorType = "button/"},
++    {.sensorName = "End_of_Post", .sensorType = "systemevent/"},
++    {.sensorName = "IPMI_POWER_CYCLE", .sensorType = "fru_state/"},
++    {.sensorName = "CPU0_State", .sensorType = "processor/"},
++    {.sensorName = "CPU1_State", .sensorType = "processor/"},
++    {.sensorName = "BMC_Health", .sensorType = "mgmtsystemhealth/"},
++    {.sensorName = "Power_Unit", .sensorType = "powerunit/"}
++};
++
++enum class sensorListIdx : uint8_t
++{
++    ACPI_Power_State = 0,
++    Button = 1,
++    End_of_Post = 2,
++    IPMI_POWER_CYCLE = 3,
++    CPU0_State = 4,
++    CPU1_State = 5,
++    BMC_Health = 6,
++    Power_Unit = 7,
++};
++
++class EventOnlySensor
++{
++    public:
++        EventOnlySensor(sdbusplus::asio::object_server& objectServer,
++                        std::shared_ptr<sdbusplus::asio::connection>& conn,
++                        boost::asio::io_service& io, const std::string& sensorType,
++                        const std::string& sensorName);
++        ~EventOnlySensor();
++
++    private:
++        sdbusplus::asio::object_server& objServer;
++        std::string dbusPath;
++        std::shared_ptr<sdbusplus::asio::dbus_interface> sensorInterface;
++        std::shared_ptr<sdbusplus::asio::dbus_interface> senMethodInterface;
++
++        void bmcRebootEventLog(std::shared_ptr<sdbusplus::asio::connection>& conn);
++        void sysAClostEventLog(std::shared_ptr<sdbusplus::asio::connection>& conn);
++};
++
++bool isAcpiPowerOn(void);
+diff --git a/service_files/xyz.openbmc_project.eventsensor.service b/service_files/xyz.openbmc_project.eventsensor.service
+new file mode 100644
+index 0000000..d62a5a8
+--- /dev/null
++++ b/service_files/xyz.openbmc_project.eventsensor.service
+@@ -0,0 +1,12 @@
++[Unit]
++Description=IPMI Event-only Sensor
++StopWhenUnneeded=false
++After=xyz.openbmc_project.EntityManager.service
++
++[Service]
++Restart=always
++RestartSec=5
++ExecStart=/usr/bin/eventsensor
++
++[Install]
++WantedBy=multi-user.target
+diff --git a/src/EventSensor.cpp b/src/EventSensor.cpp
+new file mode 100644
+index 0000000..6ee846d
+--- /dev/null
++++ b/src/EventSensor.cpp
+@@ -0,0 +1,170 @@
++/*
++// Copyright (c) 2019 Wiwynn Corporation
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//      http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++*/
++
++#include "EventSensor.hpp"
++
++#include <unistd.h>
++#include <boost/algorithm/string/predicate.hpp>
++#include <boost/algorithm/string/replace.hpp>
++#include <boost/date_time/posix_time/posix_time.hpp>
++#include <iostream>
++#include <limits>
++#include <sdbusplus/asio/connection.hpp>
++#include <sdbusplus/asio/object_server.hpp>
++#include <string>
++#include <openbmc/libmisc.h>
++#include <future>
++#include <systemd/sd-journal.h>
++
++EventOnlySensor::EventOnlySensor(
++    sdbusplus::asio::object_server& objectServer,
++    std::shared_ptr<sdbusplus::asio::connection>& conn,
++    boost::asio::io_service& io, const std::string& sensorType,
++    const std::string& sensorName):objServer(objectServer)
++{
++    dbusPath = sensorPathPrefix + sensorType + sensorName;
++
++    sensorInterface = objectServer.add_interface(
++        dbusPath, "xyz.openbmc_project.Sensor.Value");
++    
++    double value = 0;
++    sensorInterface->register_property("Value", value);
++
++    if (!sensorInterface->initialize())
++    {
++        std::cerr << "error initializing value interface\n";
++    }
++
++    if (0 == sensorName.compare("BMC_Health"))
++    {
++        bmcRebootEventLog(conn);
++    }
++    else if (0 == sensorName.compare("Power_Unit"))
++    {
++        sysAClostEventLog(conn);
++    }
++}
++
++EventOnlySensor::~EventOnlySensor()
++{
++    objServer.remove_interface(sensorInterface);
++
++    if(senMethodInterface)
++    {
++        objServer.remove_interface(senMethodInterface);
++    }
++}
++
++/* BMC Reboot SEL Record */
++void EventOnlySensor::bmcRebootEventLog(
++    std::shared_ptr<sdbusplus::asio::connection>& conn)
++{
++    uint32_t regReadValue = 0;
++    uint32_t wdt1ToStusReg = 0x1e785010;
++    if (read_register(wdt1ToStusReg, &regReadValue) < 0)
++    {
++        std::cerr<<"failed to read register WDT10 \n";
++        return;
++    }
++
++    /* BMC reboots */
++    if( 0 != regReadValue)
++    {
++        // WDT event counter clear
++        uint32_t clsToCntValue = 0x76;
++        uint32_t wdt1ClrToStusReg = 0x1e785014;
++        write_register(wdt1ClrToStusReg, clsToCntValue);
++
++        // SEL Add
++        uint16_t genId = 0x20;
++        std::vector<uint8_t> eventData(3, 0xFF);
++        bool assert = true;
++
++        /* Sensor type: Management Subsystem Health (0x28)
++            Sensor specific offset: 02h - management controller off-line
++        */
++        eventData[0] = 0x2;
++
++        sdbusplus::message::message writeSEL = conn->new_method_call(
++            ipmiSelService, ipmiSelPath, ipmiSelAddInterface, "IpmiSelAdd");
++        writeSEL.append(ipmiSelAddMessage, dbusPath, eventData, assert, genId);
++
++        try
++        {
++            conn->call_noreply(writeSEL);
++        }
++        catch (sdbusplus::exception_t& e)
++        {
++            std::cerr<<"failed to log BMC Reboot SEL\n";
++        }
++    }
++}
++
++/* BMC AC lost SEL Record */
++void EventOnlySensor::sysAClostEventLog(
++    std::shared_ptr<sdbusplus::asio::connection>& conn)
++{
++    uint32_t regReadValue = 0;
++    uint32_t sysRstStusReg = 0x1e6e203c;   // SCU3C
++
++    if (read_register(sysRstStusReg, &regReadValue) < 0)
++    {
++        std::cerr<<"failed to read register SCU3C \n";
++        return;
++    }
++
++    /* AC lost */
++    if( 1 == (regReadValue & 0x1))
++    {
++        // Clear Reset status register
++        uint32_t scuProtKeyReg = 0x1e6e2000;
++        uint32_t protectionKey = 0x1688A8A8;
++        uint32_t clsValue = regReadValue & 0xFFFFFFFE;
++
++        // Unlock SCU
++        if (write_register(scuProtKeyReg, protectionKey) > 0)
++        {
++            // Clear Power on reset flag
++            write_register(sysRstStusReg, clsValue);
++
++            // Lock SCU
++            write_register(scuProtKeyReg, 0);
++        }
++
++        // SEL Add
++        uint16_t genId = 0x20;
++        std::vector<uint8_t> eventData(3, 0xFF);
++        bool assert = true;
++
++        /* Sensor type: Power Unit (0x09)
++           Sensor specific offset: 04h - AC lost / Power input lost
++        */
++        eventData[0] = 0x4;
++
++        sdbusplus::message::message writeSEL = conn->new_method_call(
++            ipmiSelService, ipmiSelPath, ipmiSelAddInterface, "IpmiSelAdd");
++        writeSEL.append(ipmiSelAddMessage, dbusPath, eventData, assert, genId);
++
++        try
++        {
++            conn->call_noreply(writeSEL);
++        }
++        catch (sdbusplus::exception_t& e)
++        {
++            std::cerr<<"failed to log AC lost SEL\n";
++        }
++    }
++}
+diff --git a/src/EventSensorMain.cpp b/src/EventSensorMain.cpp
+new file mode 100644
+index 0000000..94ed5b6
+--- /dev/null
++++ b/src/EventSensorMain.cpp
+@@ -0,0 +1,161 @@
++/*
++// Copyright (c) 2019 Wiwynn Corporation
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//      http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++*/
++
++#include "EventSensor.hpp"
++
++#include <boost/algorithm/string/predicate.hpp>
++#include <boost/algorithm/string/replace.hpp>
++#include <boost/container/flat_set.hpp>
++#include <filesystem>
++#include <fstream>
++#include <regex>
++#include <sdbusplus/asio/connection.hpp>
++#include <sdbusplus/asio/object_server.hpp>
++
++static bool acpiPowerStateOn = false;
++
++bool isAcpiPowerOn(void)
++{
++    return acpiPowerStateOn;
++}
++
++/* ACPI Event Monitor */
++static sdbusplus::bus::match::match startAcpiEventMonitor(
++    std::shared_ptr<sdbusplus::asio::connection>& systemBus)
++{
++    auto pgoodEventMatcherCallback = [&](
++                            sdbusplus::message::message &msg)
++    {
++        boost::container::flat_map<std::string, std::variant<int>> propertiesChanged;
++        std::string objName;
++        uint8_t idx = static_cast<uint8_t>(sensorListIdx::ACPI_Power_State);
++        std::string dbusPath = sensorPathPrefix
++                            + sensorList[idx].sensorType
++                            + sensorList[idx].sensorName;
++
++        if (msg.is_method_error())
++        {
++            std::cerr << "pgoodEvent callback method error\n";
++            return;
++        }
++
++        msg.read(objName, propertiesChanged);
++        std::string event = propertiesChanged.begin()->first;
++        int *pState = std::get_if<int>(&propertiesChanged.begin()->second);
++
++        if(!pState)
++        {
++            std::cerr << "failed to get pgood\n";
++            return;
++        }
++
++        if (event == "pgood")
++        {
++            // sd_journal_print(LOG_CRIT, "[Debug] - Status= %d\n", *pState);
++            uint16_t genId = 0x20;
++            bool assert = true;
++            std::vector<uint8_t> eventData(3, 0xFF);
++
++            if(1 == *pState)
++            {
++                acpiPowerStateOn = true;
++                eventData[0] = 0x0; //S0 - Working
++            }
++            else
++            {
++                acpiPowerStateOn = false;
++                eventData[0] = 0x5; //S5 - Off
++            }
++
++            sdbusplus::message::message selWrite = systemBus->new_method_call(
++                ipmiSelService, ipmiSelPath, ipmiSelAddInterface, "IpmiSelAdd");
++            selWrite.append(ipmiSelAddMessage, dbusPath, eventData, assert, genId);
++
++            try
++            {
++                systemBus->call(selWrite);
++            }
++            catch (sdbusplus::exception_t& e)
++            {
++                std::cerr << "failed to add acpi sel\n";
++            }
++        }
++    };
++
++    sdbusplus::bus::match::match pgoodEventMatcher(
++        static_cast<sdbusplus::bus::bus &>(*systemBus),
++        "type='signal',interface='org.freedesktop.DBus.Properties',member='"
++        "PropertiesChanged',arg0namespace='org.openbmc.control.Power'",
++        std::move(pgoodEventMatcherCallback));
++
++    return pgoodEventMatcher;
++}
++
++void createEventSensors(
++    boost::asio::io_service& io, sdbusplus::asio::object_server& objectServer,
++    boost::container::flat_map<std::string, std::unique_ptr<EventOnlySensor>>& sensors,
++    std::shared_ptr<sdbusplus::asio::connection>& dbusConnection)
++{
++    std::string sName;
++    std::string sType;
++
++    // for (std::string sensorName : sensorNames)
++    for(int i=0; i<sensorList.size(); i++)
++    {
++        sName = sensorList[i].sensorName;
++        sType = sensorList[i].sensorType;
++
++        sensors[sName] = std::make_unique<EventOnlySensor>(
++            objectServer, dbusConnection, io, sType, sName);
++    }
++}
++
++int main(int argc, char *argv[])
++{
++    boost::asio::io_service io;
++    auto systemBus = std::make_shared<sdbusplus::asio::connection>(io);
++    systemBus->request_name("xyz.openbmc_project.EventOnlySensor");
++    sdbusplus::asio::object_server objectServer(systemBus);
++    boost::container::flat_map<std::string, std::unique_ptr<EventOnlySensor>> sensors;
++
++    io.post([&]() {
++        createEventSensors(io, objectServer, sensors, systemBus);
++    });
++
++    // ACPI Power State Initialization
++    sdbusplus::message::message powerDbus = systemBus->new_method_call(
++        "org.openbmc.control.Power", "/org/openbmc/control/power0",
++        "org.freedesktop.DBus.Properties", "Get");
++    powerDbus.append("org.openbmc.control.Power", "pgood");
++
++    try
++    {
++        std::variant<int> state;
++        sdbusplus::message::message reply = systemBus->call(powerDbus);
++        reply.read(state);
++        acpiPowerStateOn = (1 == (std::get<int>(state))) ? true : false;
++    }
++    catch (sdbusplus::exception_t& e)
++    {
++        std::cerr << "unable to get pgood property\n" << std::endl;
++    }
++
++    // ACPI Power State event handler
++    sdbusplus::bus::match::match acpiEventMonitor =
++        startAcpiEventMonitor(systemBus);
++
++    io.run();
++}
+-- 
+2.24.1
+

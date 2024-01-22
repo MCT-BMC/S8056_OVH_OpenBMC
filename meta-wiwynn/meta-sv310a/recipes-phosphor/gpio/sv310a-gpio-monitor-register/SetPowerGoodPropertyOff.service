@@ -1,0 +1,9 @@
+[Unit]
+Description=Set Power Good Property Off
+
+[Service]
+Type=oneshot
+
+ExecStart=/usr/sbin/powergood.sh off
+
+ExecStopPost=/usr/bin/busctl set-property xyz.openbmc_project.GpioMonitor /xyz/openbmc_project/gpio/event xyz.openbmc_project.GpioEvent PowerGood s "Idle"

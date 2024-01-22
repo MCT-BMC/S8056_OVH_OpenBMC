@@ -1,0 +1,185 @@
+diff -Naur a/src/smbiosmdrv2.cpp b/src/smbiosmdrv2.cpp
+--- a/src/smbiosmdrv2.cpp	2019-06-19 16:06:01.582535508 +0800
++++ b/src/smbiosmdrv2.cpp	2019-06-19 16:07:14.006537007 +0800
+@@ -38,7 +38,7 @@
+ static void register_netfn_smbiosmdrv2_functions() __attribute__((constructor));
+ static sdbusplus::bus::bus bus(ipmid_get_sd_bus_connection());
+ 
+-int agentLookup(const uint16_t& agentId, const std::string& service)
++int gentLookup(const uint16_t& agentId, const std::string& service)
+ {
+     int agentIndex = -1;
+ 
+diff -Naur a/src/smbiosmdrv2handler.cpp b/src/smbiosmdrv2handler.cpp
+--- a/src/smbiosmdrv2handler.cpp	2019-06-19 16:06:01.582535508 +0800
++++ b/src/smbiosmdrv2handler.cpp	2019-06-19 16:24:36.438558581 +0800
+@@ -33,7 +33,6 @@
+ #include <string>
+ #include <vector>
+ #include <xyz/openbmc_project/Common/error.hpp>
+-#include <xyz/openbmc_project/Smbios/MDR_V2/error.hpp>
+ 
+ std::unique_ptr<MDRV2> mdrv2 = nullptr;
+ 
+@@ -74,10 +73,11 @@
+         sdbusplus::message::message reply = bus.call(method);
+         reply.read(value);
+     }
+-    catch (sdbusplus::exception_t &)
++    catch (sdbusplus::exception_t &e)
+     {
+         phosphor::logging::log<phosphor::logging::level::ERR>(
+-            "Error get property, sdbusplus call failed");
++            "Error get property, sdbusplus call failed",
++            phosphor::logging::entry("ERROR=%s", e.what()));
+         return -1;
+     }
+ 
+@@ -98,10 +98,11 @@
+         sdbusplus::message::message reply = bus.call(method);
+         reply.read(commonData);
+     }
+-    catch (sdbusplus::exception_t &)
++    catch (sdbusplus::exception_t &e)
+     {
+         phosphor::logging::log<phosphor::logging::level::ERR>(
+-            "Error sync dir common data with service");
++            "Error sync dir common data with service",
++            phosphor::logging::entry("ERROR=%s", e.what()));
+         return -1;
+     }
+ 
+@@ -142,10 +143,11 @@
+         sdbusplus::message::message reply = bus.call(method);
+         reply.read(idIndex);
+     }
+-    catch (sdbusplus::exception_t &)
++    catch (sdbusplus::exception_t &e)
+     {
+         phosphor::logging::log<phosphor::logging::level::ERR>(
+             "Error find id index",
++            phosphor::logging::entry("ERROR=%s", e.what()),
+             phosphor::logging::entry("SERVICE=%s", service.c_str()),
+             phosphor::logging::entry("PATH=%s", mdrv2Path));
+         return -1;
+@@ -320,17 +322,10 @@
+         sdbusplus::message::message reply = bus.call(method);
+         reply.read(dirInfo);
+     }
+-    catch (sdbusplus::xyz::openbmc_project::Smbios::MDR_V2::Error::
+-               InvalidParameter)
++    catch (sdbusplus::exception_t &e)
+     {
+         phosphor::logging::log<phosphor::logging::level::ERR>(
+-            "Error get dir - Invalid parameter");
+-        return IPMI_CC_PARM_OUT_OF_RANGE;
+-    }
+-    catch (sdbusplus::exception_t &)
+-    {
+-        phosphor::logging::log<phosphor::logging::level::ERR>(
+-            "Error get dir",
++            "Error get dir", phosphor::logging::entry("ERROR=%s", e.what()),
+             phosphor::logging::entry("SERVICE=%s", service.c_str()),
+             phosphor::logging::entry("PATH=%s", mdrv2Path));
+         return IPMI_CC_RESPONSE_ERROR;
+@@ -417,17 +412,10 @@
+         sdbusplus::message::message reply = bus.call(method);
+         reply.read(teminate);
+     }
+-    catch (sdbusplus::xyz::openbmc_project::Smbios::MDR_V2::Error::
+-               InvalidParameter)
++    catch (sdbusplus::exception_t &e)
+     {
+         phosphor::logging::log<phosphor::logging::level::ERR>(
+-            "Error send dir - Invalid parameter");
+-        return IPMI_CC_PARM_OUT_OF_RANGE;
+-    }
+-    catch (sdbusplus::exception_t &)
+-    {
+-        phosphor::logging::log<phosphor::logging::level::ERR>(
+-            "Error send dir",
++            "Error send dir", phosphor::logging::entry("ERROR=%s", e.what()),
+             phosphor::logging::entry("SERVICE=%s", service.c_str()),
+             phosphor::logging::entry("PATH=%s", mdrv2Path));
+         return IPMI_CC_RESPONSE_ERROR;
+@@ -497,10 +485,11 @@
+         sdbusplus::message::message reply = bus.call(method);
+         reply.read(res);
+     }
+-    catch (sdbusplus::exception_t &)
++    catch (sdbusplus::exception_t &e)
+     {
+         phosphor::logging::log<phosphor::logging::level::ERR>(
+             "Error get data info",
++            phosphor::logging::entry("ERROR=%s", e.what()),
+             phosphor::logging::entry("SERVICE=%s", service.c_str()),
+             phosphor::logging::entry("PATH=%s", mdrv2Path));
+         return IPMI_CC_RESPONSE_ERROR;
+@@ -550,19 +539,11 @@
+         sdbusplus::message::message reply = bus.call(method);
+         reply.read(dataInfo);
+     }
+-    catch (
+-        sdbusplus::xyz::openbmc_project::Smbios::MDR_V2::Error::UpdateInProgress
+-            &)
+-    {
+-        phosphor::logging::log<phosphor::logging::level::ERR>(
+-            "Send data info offer failed - not available to update data "
+-            "into agent at present");
+-        return ipmi::responseCommandNotAvailable();
+-    }
+-    catch (sdbusplus::exception_t &)
++    catch (sdbusplus::exception_t &e)
+     {
+         phosphor::logging::log<phosphor::logging::level::ERR>(
+             "Error send data info offer",
++            phosphor::logging::entry("ERROR=%s", e.what()),
+             phosphor::logging::entry("SERVICE=%s", service.c_str()),
+             phosphor::logging::entry("PATH=%s", mdrv2Path));
+         return ipmi::responseResponseError();
+@@ -642,10 +623,11 @@
+         sdbusplus::message::message reply = bus.call(method);
+         reply.read(entryChanged);
+     }
+-    catch (sdbusplus::exception_t &)
++    catch (sdbusplus::exception_t &e)
+     {
+         phosphor::logging::log<phosphor::logging::level::ERR>(
+             "Error send data info",
++            phosphor::logging::entry("ERROR=%s", e.what()),
+             phosphor::logging::entry("SERVICE=%s", service.c_str()),
+             phosphor::logging::entry("PATH=%s", mdrv2Path));
+         return IPMI_CC_RESPONSE_ERROR;
+@@ -905,7 +887,8 @@
+     catch (std::ofstream::failure &e)
+     {
+         phosphor::logging::log<phosphor::logging::level::ERR>(
+-            "Write data from flash error - write data error");
++            "Write data from flash error - write data error",
++            phosphor::logging::entry("ERROR=%s", e.what()));
+         return false;
+     }
+ 
+@@ -1229,7 +1212,8 @@
+         {
+             mdrv2->smbiosUnlock(idIndex);
+             phosphor::logging::log<phosphor::logging::level::ERR>(
+-                "Unable to access share memory");
++                "Write data from flash error - write data error",
++                phosphor::logging::entry("ERROR=%s", e.what()));
+             return ipmi::responseUnspecifiedError();
+         }
+         mdrv2->smbiosDir.dir[idIndex].common.size = dataLength;
+@@ -1327,10 +1311,11 @@
+         sdbusplus::message::message reply = bus.call(method);
+         reply.read(status);
+     }
+-    catch (sdbusplus::exception_t &)
++    catch (sdbusplus::exception_t &e)
+     {
+         phosphor::logging::log<phosphor::logging::level::ERR>(
+             "Error Sync data with service",
++            phosphor::logging::entry("ERROR=%s", e.what()),
+             phosphor::logging::entry("SERVICE=%s", service.c_str()),
+             phosphor::logging::entry("PATH=%s", mdrv2Path));
+         return ipmi::responseResponseError();

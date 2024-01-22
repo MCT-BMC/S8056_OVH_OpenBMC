@@ -1,0 +1,15 @@
+ [
+    {
+        "Name": "ThermalTrip",
+        "LineName": "THERMTRIP",
+        "EventMon": "FALLING",
+        "Continue": true,
+        "Target":
+        {
+            "FALLING": [
+                "gpio-prochot-thermtrip-assert@thermtrip.service"
+            ]
+        }
+    }
+ ]
+

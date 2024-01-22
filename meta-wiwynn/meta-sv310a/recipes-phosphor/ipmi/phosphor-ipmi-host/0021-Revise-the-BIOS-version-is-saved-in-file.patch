@@ -1,0 +1,184 @@
+From 7206127d2742f7ed132c6e847e497a444e4769fb Mon Sep 17 00:00:00 2001
+From: Ren Chen <ren_chen@wiwynn.com>
+Date: Wed, 19 Jan 2022 17:24:29 +0800
+Subject: [PATCH] Revise the BIOS version is saved in file
+
+- Save BIOS versioin in /var/lib/bios-firmware-version
+---
+ apphandler.cpp | 141 +++++++++++++++++--------------------------------
+ 1 file changed, 47 insertions(+), 94 deletions(-)
+
+diff --git a/apphandler.cpp b/apphandler.cpp
+index 1e519d5..c155f0a 100644
+--- a/apphandler.cpp
++++ b/apphandler.cpp
+@@ -1332,54 +1332,27 @@ ipmi::RspType<uint8_t,                // Parameter revision
+             return ipmi::responseParmNotSupported();
+         }
+ 
+-        std::vector<uint8_t> eepromVersionWithChecksum;
+-        // Read BIOS version datas from eeprom.
+-        try
+-        {
+-            eepromVersionWithChecksum = readEeprom(
+-                0, biosVersionStartOffset, biosVersionMaxLengthOnEEPROM);
+-        }
+-        catch (std::exception& e)
++        // Read BIOS version datas from dbus.
++        sdbusplus::bus::bus bus{ipmid_get_sd_bus_connection()};
++        auto propValue = ipmi::getDbusProperty(
++            bus, biosUpdateService, biosUpdatePath, versionIntf, "Version");
++
++        std::string version = std::get<std::string>(propValue);
++
++        std::vector<uint8_t> biosVersion(configParameterLength, 0);
++        /* bytes in selector 0
++        byte 0: Encoding value
++        byte 1: Length of BIOS version datas
++        byte 2-n: BIOS version datas (n <= 14)
++        Append zero's to remaining bytes.*/
++        biosVersion.at(0) = 0x0;
++        biosVersion.at(1) = version.length();
++        for (std::size_t i = 0; i < version.length(); i++)
+         {
+-            std::cerr << e.what() << "\n";
+-            return ipmi::responseUnspecifiedError();
++            biosVersion.at(i + 2) = version.at(i);
+         }
+ 
+-        size_t versionLength = eepromVersionWithChecksum.at(1);
+-        if (versionLength > smallChunkSize)
+-        {
+-            return ipmi::responseResponseError();
+-        }
+-        uint8_t checksumValue = eepromVersionWithChecksum.at(versionLength + 2);
+-
+-        // Re-calculate checksum for bios version datas.
+-        eepromVersionWithChecksum.resize(versionLength + configDataOverhead);
+-        uint8_t biosVersionChecksum =
+-            -(std::accumulate(eepromVersionWithChecksum.begin(),
+-                              eepromVersionWithChecksum.end(), 0));
+-
+-        // Compare checksum with which on eeprom.
+-        if (biosVersionChecksum == checksumValue)
+-        {
+-            /* bytes in selector 0
+-            byte 0: Encoding value
+-            byte 1: Length of BIOS version datas
+-            byte 2-n: BIOS version datas (n <= 14)
+-            Append zero's to remaining bytes.*/
+-            if (eepromVersionWithChecksum.size() < configParameterLength)
+-            {
+-                std::fill_n(std::back_inserter(eepromVersionWithChecksum),
+-                            configParameterLength -
+-                                eepromVersionWithChecksum.size(),
+-                            0x00);
+-            }
+-            return ipmi::responseSuccess(paramRevision, setSelector,
+-                                         eepromVersionWithChecksum);
+-        }
+-        else
+-        {
+-            return ipmi::responseResponseError();
+-        }
++        return ipmi::responseSuccess(paramRevision, setSelector, biosVersion);
+     }
+ 
+     if (sysInfoParamStore == nullptr)
+@@ -1501,64 +1474,44 @@ ipmi::RspType<> ipmiAppSetSystemInfo(ipmi::Context::ptr ctx,
+ 
+         // Get version length.
+         size_t versionLength = configData.at(1);
++        std::vector<char> charVersion;
++        charVersion.assign(configData.begin() + 2,
++                           configData.begin() + (versionLength + 2));
++        std::string stringVersion(charVersion.begin(), charVersion.end());
++
++        std::ofstream biosVersionFile("/var/lib/bios-firmware-version",
++                                      std::ios::out | std::ios::trunc);
++        if (!biosVersionFile.is_open())
++        {
++            log<level::ERR>("Failed to open BIOS Version File");
++            std::ofstream versionFile("/var/lib/bios-firmware-version",
++                                      std::ios::out | std::ios::trunc);
++            if (!versionFile.good())
++            {
++                log<level::DEBUG>("Failed to create BIOS version file");
++                return ipmi::responseUnspecifiedError();
++            }
++            versionFile << stringVersion;
++            versionFile.close();
++        }
++        else
++        {
++            biosVersionFile << stringVersion;
++            biosVersionFile.close();
++        }
+ 
+-        // Get version to calculate checksum.
+-        std::vector<uint8_t> setVersionWithChecksum;
+-        setVersionWithChecksum.assign(configData.begin(),
+-                                      configData.begin() +
+-                                          (versionLength + configDataOverhead));
+-        uint8_t biosVersionChecksum = std::accumulate(
+-            setVersionWithChecksum.begin(), setVersionWithChecksum.end(), 0);
+-        setVersionWithChecksum.emplace_back(-biosVersionChecksum);
+-
+-        // Read "version + checksum" from eeprom to compare with request data.
+-        std::vector<uint8_t> eepromVersionWithChecksum;
+         try
+         {
+-            eepromVersionWithChecksum =
+-                readEeprom(0, biosVersionStartOffset,
+-                           versionLength + configDataOverhead + 1);
++            // Set property to inform BMC updater.
++            sdbusplus::bus::bus bus{ipmid_get_sd_bus_connection()};
++            ipmi::setDbusProperty(bus, biosUpdateService, biosUpdatePath,
++                                  versionIntf, "Version", stringVersion);
+         }
+         catch (std::exception& e)
+         {
+             std::cerr << e.what() << "\n";
+             return ipmi::responseUnspecifiedError();
+         }
+-
+-        if (setVersionWithChecksum != eepromVersionWithChecksum)
+-        {
+-            try
+-            {
+-                // Version changed, write new version data into eeprom.
+-                writeEeprom(0, biosVersionStartOffset,
+-                            setVersionWithChecksum.data(),
+-                            setVersionWithChecksum.size());
+-            }
+-            catch (std::exception& e)
+-            {
+-                std::cerr << e.what() << "\n";
+-                return ipmi::responseUnspecifiedError();
+-            }
+-
+-            try
+-            {
+-                // Version changed, set property to inform BMC updater.
+-                std::vector<char> charVersion;
+-                charVersion.assign(configData.begin() + 2,
+-                                   configData.begin() + (versionLength + 2));
+-                std::string stringVersion(charVersion.begin(),
+-                                          charVersion.end());
+-
+-                sdbusplus::bus::bus bus{ipmid_get_sd_bus_connection()};
+-                ipmi::setDbusProperty(bus, biosUpdateService, biosUpdatePath,
+-                                      versionIntf, "Version", stringVersion);
+-            }
+-            catch (std::exception& e)
+-            {
+-                std::cerr << e.what() << "\n";
+-                return ipmi::responseUnspecifiedError();
+-            }
+-        }
+     }
+ 
+     if (!sysInfoParamStore)
+-- 
+2.34.1
+

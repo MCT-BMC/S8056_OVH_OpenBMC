@@ -1,0 +1,62 @@
+From 5136fc408c4e2ce474788ef2df5fd7f57194cc90 Mon Sep 17 00:00:00 2001
+From: "wendy.shi" <wendy.shi@mic.com.tw>
+Date: Wed, 30 Oct 2019 09:13:11 +0800
+Subject: [PATCH] add SEL log for Power Button Press
+
+---
+ src/button_handler.cpp | 25 +++++++++++++++++++++++++
+ 1 file changed, 25 insertions(+)
+ mode change 100644 => 100755 src/button_handler.cpp
+
+diff --git a/src/button_handler.cpp b/src/button_handler.cpp
+old mode 100644
+new mode 100755
+index 675f1ea..528a59b
+--- a/src/button_handler.cpp
++++ b/src/button_handler.cpp
+@@ -29,6 +29,13 @@ constexpr auto mapperObjPath = "/xyz/openbmc_project/object_mapper";
+ constexpr auto mapperService = "xyz.openbmc_project.ObjectMapper";
+ constexpr auto ledGroupBasePath = "/xyz/openbmc_project/led/groups/";
+ 
++static constexpr char const* ipmiSELService = "xyz.openbmc_project.Logging.IPMI";
++static constexpr char const* ipmiSELPath = "/xyz/openbmc_project/Logging/IPMI";
++static constexpr char const* ipmiSELAddInterface = "xyz.openbmc_project.Logging.IPMI";
++static const std::string ipmiSELAddMessage = "SEL Entry";
++static const std::string sensorPath = "/xyz/openbmc_project/sensors/pwr_button/POWER_BUTTON";
++static constexpr size_t selEvtDataMaxSize = 3;
++
+ Handler::Handler(sdbusplus::bus::bus& bus) : bus(bus)
+ {
+     try
+@@ -133,6 +140,11 @@ void Handler::powerPressed(sdbusplus::message::message& msg)
+ {
+     auto transition = Host::Transition::On;
+ 
++    uint16_t genid = 0x20;
++    bool assert = 1;
++    std::vector<uint8_t> eventData(selEvtDataMaxSize, 0xFF);
++    eventData[0] = 0;
++
+     try
+     {
+         if (poweredOn())
+@@ -142,6 +154,19 @@ void Handler::powerPressed(sdbusplus::message::message& msg)
+ 
+         log<level::INFO>("Handling power button press");
+ 
++        sdbusplus::message::message writeSEL = bus.new_method_call(
++            ipmiSELService, ipmiSELPath, ipmiSELAddInterface, "IpmiSelAdd");
++        writeSEL.append(ipmiSELAddMessage, sensorPath, eventData, assert,
++                    genid);
++        try
++        {
++            bus.call(writeSEL);
++        }
++        catch (sdbusplus::exception_t& e)
++        {
++            log<level::ERR>("call IpmiSelAdd failed");
++        }
++
+         sdbusplus::message::variant<std::string> state =
+             convertForMessage(transition);
+ 

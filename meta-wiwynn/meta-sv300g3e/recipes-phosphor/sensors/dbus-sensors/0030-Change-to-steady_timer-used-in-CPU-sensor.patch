@@ -1,0 +1,152 @@
+From 9134eb15fefc38dfec5f1e2760cafd75fff2c9e5 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Mon, 20 Apr 2020 10:40:06 +0800
+Subject: [PATCH 03/11] Change to steady_timer used in CPU sensor
+
+---
+ include/CPUSensor.hpp |  3 ++-
+ src/CPUSensor.cpp     |  5 ++---
+ src/CPUSensorMain.cpp | 27 +++++++++++++--------------
+ 3 files changed, 17 insertions(+), 18 deletions(-)
+
+diff --git a/include/CPUSensor.hpp b/include/CPUSensor.hpp
+index 27e501b..d425508 100644
+--- a/include/CPUSensor.hpp
++++ b/include/CPUSensor.hpp
+@@ -14,6 +14,7 @@
+ #include <string>
+ #include <variant>
+ #include <vector>
++#include <boost/asio/steady_timer.hpp>
+ 
+ class CPUSensor : public Sensor
+ {
+@@ -37,7 +38,7 @@ class CPUSensor : public Sensor
+   private:
+     sdbusplus::asio::object_server& objServer;
+     boost::asio::posix::stream_descriptor inputDev;
+-    boost::asio::deadline_timer waitTimer;
++    boost::asio::steady_timer waitTimer;
+     boost::asio::streambuf readBuf;
+     std::string nameTcontrol;
+     std::string path;
+diff --git a/src/CPUSensor.cpp b/src/CPUSensor.cpp
+index 8a368d1..f91ce27 100644
+--- a/src/CPUSensor.cpp
++++ b/src/CPUSensor.cpp
+@@ -22,7 +22,6 @@
+ 
+ #include <boost/algorithm/string/predicate.hpp>
+ #include <boost/algorithm/string/replace.hpp>
+-#include <boost/date_time/posix_time/posix_time.hpp>
+ #include <iostream>
+ #include <istream>
+ #include <limits>
+@@ -140,7 +139,7 @@ void CPUSensor::handleResponse(const boost::system::error_code& err)
+             return; // we're no longer valid
+         }
+         inputDev.assign(fd);
+-        waitTimer.expires_from_now(boost::posix_time::milliseconds(pollTime));
++        waitTimer.expires_from_now(boost::asio::chrono::milliseconds(pollTime));
+         waitTimer.async_wait([&](const boost::system::error_code& ec) {
+         if (ec == boost::asio::error::operation_aborted)
+         {
+@@ -278,7 +277,7 @@ void CPUSensor::handleResponse(const boost::system::error_code& err)
+         return; // we're no longer valid
+     }
+     inputDev.assign(fd);
+-    waitTimer.expires_from_now(boost::posix_time::milliseconds(pollTime));
++    waitTimer.expires_from_now(boost::asio::chrono::milliseconds(pollTime));
+     waitTimer.async_wait([&](const boost::system::error_code& ec) {
+         if (ec == boost::asio::error::operation_aborted)
+         {
+diff --git a/src/CPUSensorMain.cpp b/src/CPUSensorMain.cpp
+index 050b84f..9a13155 100644
+--- a/src/CPUSensorMain.cpp
++++ b/src/CPUSensorMain.cpp
+@@ -25,7 +25,6 @@
+ #include <boost/algorithm/string/replace.hpp>
+ #include <boost/container/flat_map.hpp>
+ #include <boost/container/flat_set.hpp>
+-#include <boost/date_time/posix_time/posix_time.hpp>
+ #include <boost/process/child.hpp>
+ #include <filesystem>
+ #include <fstream>
+@@ -98,8 +97,8 @@ static constexpr std::array<const char*, 2> hiddenProps = {
+     CPUSensor::labelTcontrol, "Tthrottle"};
+ 
+ void detectCpuAsync(
+-    boost::asio::deadline_timer& pingTimer,
+-    boost::asio::deadline_timer& creationTimer, boost::asio::io_service& io,
++    boost::asio::steady_timer& pingTimer,
++    boost::asio::steady_timer& creationTimer, boost::asio::io_service& io,
+     sdbusplus::asio::object_server& objectServer,
+     std::shared_ptr<sdbusplus::asio::connection>& dbusConnection,
+     boost::container::flat_set<CPUConfig>& cpuConfigs,
+@@ -446,8 +445,8 @@ void exportDevice(const CPUConfig& config)
+     std::cout << parameters << " on bus " << busStr << " is exported\n";
+ }
+ 
+-void detectCpu(boost::asio::deadline_timer& pingTimer,
+-               boost::asio::deadline_timer& creationTimer,
++void detectCpu(boost::asio::steady_timer& pingTimer,
++               boost::asio::steady_timer& creationTimer,
+                boost::asio::io_service& io,
+                sdbusplus::asio::object_server& objectServer,
+                std::shared_ptr<sdbusplus::asio::connection>& dbusConnection,
+@@ -550,7 +549,7 @@ void detectCpu(boost::asio::deadline_timer& pingTimer,
+     if (rescanDelaySeconds)
+     {
+         creationTimer.expires_from_now(
+-            boost::posix_time::seconds(rescanDelaySeconds));
++            boost::asio::chrono::seconds(rescanDelaySeconds));
+         creationTimer.async_wait([&](const boost::system::error_code& ec) {
+             if (ec == boost::asio::error::operation_aborted)
+             {
+@@ -574,14 +573,14 @@ void detectCpu(boost::asio::deadline_timer& pingTimer,
+ }
+ 
+ void detectCpuAsync(
+-    boost::asio::deadline_timer& pingTimer,
+-    boost::asio::deadline_timer& creationTimer, boost::asio::io_service& io,
++    boost::asio::steady_timer& pingTimer,
++    boost::asio::steady_timer& creationTimer, boost::asio::io_service& io,
+     sdbusplus::asio::object_server& objectServer,
+     std::shared_ptr<sdbusplus::asio::connection>& dbusConnection,
+     boost::container::flat_set<CPUConfig>& cpuConfigs,
+     ManagedObjectType& sensorConfigs)
+ {
+-    pingTimer.expires_from_now(boost::posix_time::seconds(1));
++    pingTimer.expires_from_now(boost::asio::chrono::seconds(1));
+     pingTimer.async_wait([&](const boost::system::error_code& ec) {
+         if (ec == boost::asio::error::operation_aborted)
+         {
+@@ -710,12 +709,12 @@ int main()
+     // systemBus->request_name("xyz.openbmc_project.CPUSensor");
+     sdbusplus::asio::object_server objectServer(systemBus);
+     std::vector<std::unique_ptr<sdbusplus::bus::match::match>> matches;
+-    boost::asio::deadline_timer pingTimer(io);
+-    boost::asio::deadline_timer creationTimer(io);
+-    boost::asio::deadline_timer filterTimer(io);
++    boost::asio::steady_timer pingTimer(io);
++    boost::asio::steady_timer creationTimer(io);
++    boost::asio::steady_timer filterTimer(io);
+     ManagedObjectType sensorConfigs;
+ 
+-    filterTimer.expires_from_now(boost::posix_time::seconds(1));
++    filterTimer.expires_from_now(boost::asio::chrono::seconds(1));
+     filterTimer.async_wait([&](const boost::system::error_code& ec) {
+         if (ec == boost::asio::error::operation_aborted)
+         {
+@@ -743,7 +742,7 @@ int main()
+             }
+ 
+             // this implicitly cancels the timer
+-            filterTimer.expires_from_now(boost::posix_time::seconds(1));
++            filterTimer.expires_from_now(boost::asio::chrono::seconds(1));
+             filterTimer.async_wait([&](const boost::system::error_code& ec) {
+                 if (ec == boost::asio::error::operation_aborted)
+                 {
+-- 
+2.24.1
+

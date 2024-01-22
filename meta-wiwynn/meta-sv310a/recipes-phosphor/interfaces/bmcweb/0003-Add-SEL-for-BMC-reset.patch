@@ -1,0 +1,86 @@
+From 136188c41b68bce2b00ce3410e3503f3a4a8f5c6 Mon Sep 17 00:00:00 2001
+From: Eli Huang <Eli_Huang@wiwynn.com>
+Date: Tue, 25 May 2021 14:49:42 +0800
+Subject: [PATCH] Add SEL for BMC reset
+
+%% original patch: 0003-Add-SEL-for-BMC-reset.patch
+---
+ redfish-core/lib/managers.hpp | 38 ++++++++++++++++++++++++++++-------
+ 1 file changed, 31 insertions(+), 7 deletions(-)
+
+diff --git a/redfish-core/lib/managers.hpp b/redfish-core/lib/managers.hpp
+index a92f490..53cd29e 100644
+--- a/redfish-core/lib/managers.hpp
++++ b/redfish-core/lib/managers.hpp
+@@ -30,9 +30,36 @@
+ #include <sstream>
+ #include <variant>
+ 
++constexpr char const* IPMI_SEL_SERVICE = "xyz.openbmc_project.Logging.IPMI";
++constexpr char const* IPMI_SEL_PATH = "/xyz/openbmc_project/Logging/IPMI";
++constexpr char const* IPMI_SEL_INTERFACE = "xyz.openbmc_project.Logging.IPMI";
++constexpr uint16_t selBMCGenID = 0x0020;
++
+ namespace redfish
+ {
+ 
++void addBmcHealthSel(std::vector<uint8_t> eventData)
++{
++    std::string message = "Reset BMC";
++    auto objectPath = "/xyz/openbmc_project/sensors/discrete/BMC_Health";
++    try
++    {
++        auto bus = sdbusplus::bus::new_system();
++        auto getMessage = bus.new_method_call(IPMI_SEL_SERVICE, IPMI_SEL_PATH,
++                                              IPMI_SEL_INTERFACE, "IpmiSelAdd");
++
++        getMessage.append(message, objectPath, eventData, true,
++                          selBMCGenID);
++
++        bus.call_noreply(getMessage);
++    }
++    catch (const sdbusplus::exception::SdBusError& e)
++    {
++        std::cerr << "Error to Add Sel : " << message
++                  << ",error code : " << e.what() << "\n";
++    }
++}
++
+ /**
+  * Function reboots the BMC.
+  *
+@@ -80,6 +107,9 @@ inline void
+     // Create the D-Bus variant for D-Bus call.
+     VariantType dbusPropertyValue(propertyValue);
+ 
++    std::vector <uint8_t> eventData = {0xA6, 0x2, 0x0};
++    addBmcHealthSel(eventData);
++
+     crow::connections::systemBus->async_method_call(
+         [asyncResp](const boost::system::error_code ec) {
+             // Use "Set" method to set the property value.
+@@ -105,7 +135,7 @@ inline void requestRoutesManagerResetAction(App& app)
+     /**
+      * Function handles POST method request.
+      * Analyzes POST body before sending Reset (Reboot) request data to D-Bus.
+-     * OpenBMC supports ResetType "GracefulRestart" and "ForceRestart".
++     * OpenBMC only supports ResetType "ForceRestart".
+      */
+ 
+     BMCWEB_ROUTE(app, "/redfish/v1/Managers/bmc/Actions/Manager.Reset/")
+@@ -123,12 +153,6 @@ inline void requestRoutesManagerResetAction(App& app)
+                     return;
+                 }
+ 
+-                if (resetType == "GracefulRestart")
+-                {
+-                    BMCWEB_LOG_DEBUG << "Proceeding with " << resetType;
+-                    doBMCGracefulRestart(asyncResp);
+-                    return;
+-                }
+                 if (resetType == "ForceRestart")
+                 {
+                     BMCWEB_LOG_DEBUG << "Proceeding with " << resetType;
+-- 
+2.32.0
+

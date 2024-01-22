@@ -1,0 +1,21 @@
+From 561fd2cd6df706f3c9dbb40adf4263e7501eca78 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Thu, 16 Dec 2021 19:33:45 +0800
+Subject: [PATCH] Add default bmc firmware version setting supported
+
+---
+ include/configs/ast-common.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/include/configs/ast-common.h b/include/configs/ast-common.h
+index 2ae16bea96..2c27fc0365 100755
+--- a/include/configs/ast-common.h
++++ b/include/configs/ast-common.h
+@@ -114,6 +114,7 @@
+ #define ASPEED_ENV_SETTINGS \
+ 	"verify=yes\0"	\
+ 	"spi_dma=yes\0" \
++	"bmc_version=v0.29-00-s8033\0" \
+ 	""
+ 
+ #endif	/* __AST_COMMON_CONFIG_H */

@@ -1,0 +1,132 @@
+From 6ba2c5cd6b07ac743d55df5368b30bfd353b3a8d Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Tue, 15 Mar 2022 16:30:24 +0800
+Subject: [PATCH 6/9] Improve power button press action and button lock defalut
+
+---
+ src/power_control.cpp | 56 +++++++++++++++++++++++----------------------------
+ 1 file changed, 25 insertions(+), 31 deletions(-)
+
+diff --git a/src/power_control.cpp b/src/power_control.cpp
+index a959529..4163c37 100755
+--- a/src/power_control.cpp
++++ b/src/power_control.cpp
+@@ -181,6 +181,8 @@ static boost::asio::steady_timer hscButtonDelayTimer(io);
+ // Time when post complete asset and delay to log SEL
+ static boost::asio::steady_timer postCompleteDelayTimer(io);
+ 
++boost::system::error_code cancelErrorCode = boost::asio::error::operation_aborted;
++
+ // GPIO Lines and Event Descriptors
+ static gpiod::line psPowerOKLine;
+ static boost::asio::posix::stream_descriptor psPowerOKEvent(io);
+@@ -2175,14 +2177,10 @@ static void powerButtonHandler(bool state)
+         powerButtonPressLog();
+         if (!powerButtonMask)
+         {
+-            /*sendPowerControlEvent(Event::powerButtonPressed);
+-            addRestartCause(RestartCause::powerButton);*/
+-            powerButtonEnabled = true;
+-
+             if(getChassisState(powerState) == "xyz.openbmc_project.State.Chassis.PowerState.On")
+             {
+                 powerButtonDelayTimer.expires_after(std::chrono::milliseconds(TimerMap["powerButtonDelayTimeMs"]));
+-                powerButtonDelayTimer.async_wait([powerButtonEnabled](const boost::system::error_code ec) {
++                powerButtonDelayTimer.async_wait([](const boost::system::error_code ec) {
+                     if (ec)
+                     {
+                         // operation_aborted is expected if timer is canceled before
+@@ -2194,12 +2192,9 @@ static void powerButtonHandler(bool state)
+                                 "ERROR_MSG", ec.message());
+                         }
+                     }
+-
+-                    if(powerButtonEnabled){
+-                        buttonLockLine.set_value(1);
+-                        sendPowerControlEvent(Event::powerButtonPressed);
+-                        addRestartCause(RestartCause::powerButton);
+-                    }
++                    buttonLockLine.set_value(1);
++                    sendPowerControlEvent(Event::powerButtonPressed);
++                    addRestartCause(RestartCause::powerButton);
+                 });
+             }
+             else
+@@ -2210,7 +2205,7 @@ static void powerButtonHandler(bool state)
+             }
+ 
+             hscButtonDelayTimer.expires_after(std::chrono::milliseconds(TimerMap["hscButtonDelayTimeMs"]));
+-            hscButtonDelayTimer.async_wait([powerButtonEnabled](const boost::system::error_code ec) {
++            hscButtonDelayTimer.async_wait([](const boost::system::error_code ec) {
+                 if (ec)
+                 {
+                     // operation_aborted is expected if timer is canceled before
+@@ -2221,23 +2216,21 @@ static void powerButtonHandler(bool state)
+                             "Power button (HSC feature) delay async_wait failed: {ERROR_MSG}",
+                             "ERROR_MSG", ec.message());
+                     }
++                    return;
+                 }
+-
+-                if(powerButtonEnabled){
+-                    auto method = conn->new_method_call("org.freedesktop.systemd1", "/org/freedesktop/systemd1",
+-                                                      "org.freedesktop.systemd1.Manager", "StartUnit");
+-                    auto hscService = "setting-hsc-register@Disable.service";
+-                    method.append(hscService, "replace");
+-                    try
+-                    {
+-                        auto reply = conn->call(method);
+-                    }
+-                    catch (std::exception& e)
+-                    {
+-                        lg2::error(
+-                            "Power button (HSC feature) start service failed: {ERROR_MSG}",
+-                            "ERROR_MSG", ec.message());
+-                    }
++                auto method = conn->new_method_call("org.freedesktop.systemd1", "/org/freedesktop/systemd1",
++                                                    "org.freedesktop.systemd1.Manager", "StartUnit");
++                auto hscService = "setting-hsc-register@Disable.service";
++                method.append(hscService, "replace");
++                try
++                {
++                    auto reply = conn->call(method);
++                }
++                catch (std::exception& e)
++                {
++                    lg2::error(
++                        "Power button (HSC feature) start service failed: {ERROR_MSG}",
++                        "ERROR_MSG", ec.message());
+                 }
+             });
+         }
+@@ -2250,8 +2243,8 @@ static void powerButtonHandler(bool state)
+     {
+         powerButtonEnabled = false;
+         buttonLockLine.set_value(0);
+-        powerButtonDelayTimer.cancel();
+-        hscButtonDelayTimer.cancel();
++        powerButtonDelayTimer.cancel(cancelErrorCode);
++        hscButtonDelayTimer.cancel(cancelErrorCode);
+     }
+ }
+ 
+@@ -2510,7 +2503,7 @@ static void postCompleteHandler(bool state)
+     {
+         sendPowerControlEvent(Event::postCompleteDeAssert);
+         setOperatingSystemState(OperatingSystemStateStage::Inactive);
+-        postCompleteDelayTimer.cancel();
++        postCompleteDelayTimer.cancel(cancelErrorCode);
+     }
+ }
+ 
+@@ -2992,6 +2985,7 @@ int main(int argc, char* argv[])
+     if (!buttonLockConfig.lineName.empty())
+     {
+         setGPIOOutput(buttonLockConfig.lineName, 0, buttonLockLine);
++        buttonLockLine.set_value(0);
+     }
+ 
+     // Initialize POWER_OUT and RESET_OUT GPIO.
+-- 
+2.7.4
+

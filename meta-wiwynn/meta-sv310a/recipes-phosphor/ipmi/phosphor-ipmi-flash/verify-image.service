@@ -1,0 +1,11 @@
+[Unit]
+Description=Verify BMC Image File
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env verify_image.sh
+
+[Install]
+RequiredBy=phosphor-ipmi-flash-bmc-verify.target
+
+

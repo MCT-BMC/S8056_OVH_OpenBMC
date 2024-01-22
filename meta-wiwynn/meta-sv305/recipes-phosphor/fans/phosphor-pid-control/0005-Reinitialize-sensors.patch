@@ -1,0 +1,771 @@
+From 95eae8879accbafa88b341f9b1d29dfdab1e9cc7 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Thu, 13 May 2021 15:14:59 +0800
+Subject: [PATCH 5/7] Reinitialize sensors
+
+---
+ conf.hpp                   |   1 +
+ dbus/dbuspassive.cpp       |  15 +++++-
+ dbus/dbuspassive.hpp       |  10 ++--
+ pid/builder.cpp            |  33 +++++++-----
+ pid/controller.hpp         |   3 ++
+ pid/fancontroller.hpp      |   4 ++
+ pid/pidcontroller.hpp      |   2 +
+ pid/stepwisecontroller.cpp |   7 +--
+ pid/stepwisecontroller.hpp |  29 +++++++---
+ pid/thermalcontroller.cpp  |   5 +-
+ pid/thermalcontroller.hpp  |  23 ++++++--
+ pid/zone.cpp               | 108 +++++++++++++++++++++++++++++++++++++
+ pid/zone.hpp               |  10 +++-
+ sensors/builder.cpp        |  24 ++++-----
+ sensors/host.cpp           |   7 ++-
+ sensors/host.hpp           |  12 ++---
+ sensors/pluggable.cpp      |   9 ++++
+ sensors/pluggable.hpp      |   7 ++-
+ sensors/sensor.hpp         |  18 +++++--
+ 19 files changed, 258 insertions(+), 69 deletions(-)
+
+diff --git a/conf.hpp b/conf.hpp
+index 538b9fd..a593dad 100644
+--- a/conf.hpp
++++ b/conf.hpp
+@@ -40,6 +40,7 @@ struct ControllerInfo
+     double setpoint;                 // initial setpoint for thermal.
+     ec::pidinfo pidInfo;             // pid details
+     ec::StepwiseInfo stepwiseInfo;
++    bool tjMaxAdjusted = false; // whether this info is adjusted by tjmax.
+ };
+ 
+ /*
+diff --git a/dbus/dbuspassive.cpp b/dbus/dbuspassive.cpp
+index 5f9c0df..d8c475c 100644
+--- a/dbus/dbuspassive.cpp
++++ b/dbus/dbuspassive.cpp
+@@ -35,8 +35,7 @@ namespace pid_control
+ 
+ std::unique_ptr<ReadInterface> DbusPassive::createDbusPassive(
+     sdbusplus::bus::bus& bus, const std::string& type, const std::string& id,
+-    std::unique_ptr<DbusHelperInterface> helper, const conf::SensorConfig* info,
+-    const std::shared_ptr<DbusPassiveRedundancy>& redundancy)
++    std::unique_ptr<DbusHelperInterface> helper, const conf::SensorConfig* info)
+ {
+     if (helper == nullptr)
+     {
+@@ -47,6 +46,18 @@ std::unique_ptr<ReadInterface> DbusPassive::createDbusPassive(
+         return nullptr;
+     }
+ 
++    std::shared_ptr<DbusPassiveRedundancy> redundancy;
++    if (type == "fan")
++    {
++        static std::shared_ptr<DbusPassiveRedundancy> redundancyObj =
++            std::make_shared<DbusPassiveRedundancy>(bus);
++        redundancy = redundancyObj;
++    }
++    else
++    {
++        redundancy = nullptr;
++    }
++
+     /* Need to get the scale and initial value */
+     /* service == busname */
+     std::string path = getSensorPath(type, id);
+diff --git a/dbus/dbuspassive.hpp b/dbus/dbuspassive.hpp
+index 7139cb6..790b43e 100644
+--- a/dbus/dbuspassive.hpp
++++ b/dbus/dbuspassive.hpp
+@@ -40,11 +40,11 @@ int dbusHandleSignal(sd_bus_message* msg, void* data, sd_bus_error* err);
+ class DbusPassive : public ReadInterface
+ {
+   public:
+-    static std::unique_ptr<ReadInterface> createDbusPassive(
+-        sdbusplus::bus::bus& bus, const std::string& type,
+-        const std::string& id, std::unique_ptr<DbusHelperInterface> helper,
+-        const conf::SensorConfig* info,
+-        const std::shared_ptr<DbusPassiveRedundancy>& redundancy);
++    static std::unique_ptr<ReadInterface>
++        createDbusPassive(sdbusplus::bus::bus& bus, const std::string& type,
++                          const std::string& id,
++                          std::unique_ptr<DbusHelperInterface> helper,
++                          const conf::SensorConfig* info);
+ 
+     DbusPassive(sdbusplus::bus::bus& bus, const std::string& type,
+                 const std::string& id,
+diff --git a/pid/builder.cpp b/pid/builder.cpp
+index 4345c45..72d70a0 100644
+--- a/pid/builder.cpp
++++ b/pid/builder.cpp
+@@ -84,23 +84,27 @@ std::unordered_map<int64_t, std::shared_ptr<ZoneInterface>>
+             for (const auto& i : info.inputs)
+             {
+                 auto sensor = mgr.getSensor(i);
+-                double tjMax = sensor->getTjMax();
+-                if (tjMax != 0)
++                if (sensor->isReadable())
+                 {
+-                    if (info.type == "temp")
++                    double tjMax = sensor->getTjMax();
++                    if (tjMax != 0)
+                     {
+-                        *(const_cast<double*>(&info.setpoint)) += tjMax;
+-                    }
+-                    else if ((info.type == "stepwise") ||
+-                             (info.type == "linear"))
+-                    {
+-                        for (auto& point : info.stepwiseInfo.reading)
++                        if (info.type == "temp")
++                        {
++                            *(const_cast<double*>(&info.setpoint)) += tjMax;
++                        }
++                        else if ((info.type == "stepwise") ||
++                                 (info.type == "linear"))
+                         {
+-                            *(const_cast<double*>(&point)) += tjMax;
++                            for (auto& point : info.stepwiseInfo.reading)
++                            {
++                                *(const_cast<double*>(&point)) += tjMax;
++                            }
+                         }
++                        // Only need to adjust once.
++                        *(const_cast<bool*>(&info.tjMaxAdjusted)) = true;
++                        break;
+                     }
+-                    // Only need to adjust once.
+-                    break;
+                 }
+             }
+ 
+@@ -130,7 +134,7 @@ std::unordered_map<int64_t, std::shared_ptr<ZoneInterface>>
+ 
+                 auto pid = ThermalController::createThermalPid(
+                     zone.get(), name, inputs, info.setpoint, info.pidInfo,
+-                    getThermalType(info.type));
++                    getThermalType(info.type), info.tjMaxAdjusted);
+ 
+                 zone->addThermalPID(std::move(pid));
+             }
+@@ -142,7 +146,8 @@ std::unordered_map<int64_t, std::shared_ptr<ZoneInterface>>
+                     zone->addThermalInput(i);
+                 }
+                 auto stepwise = StepwiseController::createStepwiseController(
+-                    zone.get(), name, info.type, inputs, info.stepwiseInfo);
++                    zone.get(), name, info.type, inputs, info.stepwiseInfo,
++                    info.tjMaxAdjusted);
+                 zone->addThermalPID(std::move(stepwise));
+             }
+ 
+diff --git a/pid/controller.hpp b/pid/controller.hpp
+index 35783b1..39237ff 100644
+--- a/pid/controller.hpp
++++ b/pid/controller.hpp
+@@ -4,6 +4,7 @@
+ #include "fan.hpp"
+ 
+ #include <string>
++#include <vector>
+ 
+ namespace pid_control
+ {
+@@ -32,6 +33,8 @@ struct Controller
+      * Return string will be Temp_CPU0.
+      */
+     virtual std::string getProfileName(void) const = 0;
++
++    virtual const std::vector<std::string>& getInputs() const = 0;
+ };
+ 
+ } // namespace pid_control
+diff --git a/pid/fancontroller.hpp b/pid/fancontroller.hpp
+index 39c7769..f4b3e75 100644
+--- a/pid/fancontroller.hpp
++++ b/pid/fancontroller.hpp
+@@ -33,6 +33,10 @@ class FanController : public PIDController
+     double inputProc(void) override;
+     double setptProc(void) override;
+     void outputProc(double value) override;
++    const std::vector<std::string>& getInputs() const override
++    {
++        return _inputs;
++    }
+ 
+     FanSpeedDirection getFanDirection(void) const
+     {
+diff --git a/pid/pidcontroller.hpp b/pid/pidcontroller.hpp
+index 0b43d40..2026f09 100644
+--- a/pid/pidcontroller.hpp
++++ b/pid/pidcontroller.hpp
+@@ -44,6 +44,8 @@ class PIDController : public Controller
+         return _profileName;
+     }
+ 
++    virtual const std::vector<std::string>& getInputs() const override = 0;
++
+     double getSetpoint(void)
+     {
+         return _setpoint;
+diff --git a/pid/stepwisecontroller.cpp b/pid/stepwisecontroller.cpp
+index 4d6d028..6484a1a 100644
+--- a/pid/stepwisecontroller.cpp
++++ b/pid/stepwisecontroller.cpp
+@@ -68,7 +68,8 @@ void StepwiseController::process(void)
+ 
+ std::unique_ptr<Controller> StepwiseController::createStepwiseController(
+     ZoneInterface* owner, const std::string& id, const std::string& type,
+-    const std::vector<std::string>& inputs, const ec::StepwiseInfo& initial)
++    const std::vector<std::string>& inputs, const ec::StepwiseInfo& initial,
++    bool tjMaxAdjusted)
+ {
+     // StepwiseController requires at least 1 input
+     if (inputs.empty())
+@@ -77,8 +78,8 @@ std::unique_ptr<Controller> StepwiseController::createStepwiseController(
+         return nullptr;
+     }
+ 
+-    auto thermal =
+-        std::make_unique<StepwiseController>(id, type, inputs, owner);
++    auto thermal = std::make_unique<StepwiseController>(id, type, inputs, owner,
++                                                        tjMaxAdjusted);
+     thermal->setStepwiseInfo(initial);
+ 
+     return thermal;
+diff --git a/pid/stepwisecontroller.hpp b/pid/stepwisecontroller.hpp
+index a2bd3cb..75fac59 100644
+--- a/pid/stepwisecontroller.hpp
++++ b/pid/stepwisecontroller.hpp
+@@ -17,18 +17,17 @@ class ZoneInterface;
+ class StepwiseController : public Controller
+ {
+   public:
+-    static std::unique_ptr<Controller>
+-        createStepwiseController(ZoneInterface* owner, const std::string& id,
+-                                 const std::string& type,
+-                                 const std::vector<std::string>& inputs,
+-                                 const ec::StepwiseInfo& initial);
++    static std::unique_ptr<Controller> createStepwiseController(
++        ZoneInterface* owner, const std::string& id, const std::string& type,
++        const std::vector<std::string>& inputs, const ec::StepwiseInfo& initial,
++        bool tjMaxAdjusted);
+ 
+     StepwiseController(const std::string& id, const std::string& type,
+                        const std::vector<std::string>& inputs,
+-                       ZoneInterface* owner) :
++                       ZoneInterface* owner, bool tjMaxAdjusted) :
+         Controller(),
+         _owner(owner), _id(id), _inputs(inputs),
+-        _profileName(id.substr(id.find("_") + 1))
++        _profileName(id.substr(id.find("_") + 1)), _tjMaxAdjusted(tjMaxAdjusted)
+     {
+         if (type == "stepwise")
+         {
+@@ -56,6 +55,11 @@ class StepwiseController : public Controller
+         return _profileName;
+     }
+ 
++    const std::vector<std::string>& getInputs() const override
++    {
++        return _inputs;
++    }
++
+     ec::StepwiseInfo& getStepwiseInfo(void)
+     {
+         return _stepwise_info;
+@@ -66,6 +70,16 @@ class StepwiseController : public Controller
+         _stepwise_info = value;
+     }
+ 
++    void setTjMaxAdjusted(bool value)
++    {
++        _tjMaxAdjusted = value;
++    }
++
++    bool getTjMaxAdjusted() const
++    {
++        return _tjMaxAdjusted;
++    }
++
+   protected:
+     ZoneInterface* _owner;
+ 
+@@ -75,6 +89,7 @@ class StepwiseController : public Controller
+     std::string _id;
+     std::vector<std::string> _inputs;
+     std::string _profileName;
++    bool _tjMaxAdjusted;
+     std::function<double(const std::vector<double>&, const std::vector<double>&,
+                          double)>
+         algorithmFunc;
+diff --git a/pid/thermalcontroller.cpp b/pid/thermalcontroller.cpp
+index b19e3cf..bc3db0a 100644
+--- a/pid/thermalcontroller.cpp
++++ b/pid/thermalcontroller.cpp
+@@ -42,7 +42,7 @@ bool isThermalType(const std::string& typeString)
+ std::unique_ptr<PIDController> ThermalController::createThermalPid(
+     ZoneInterface* owner, const std::string& id,
+     const std::vector<std::string>& inputs, double setpoint,
+-    const ec::pidinfo& initial, const ThermalType& type)
++    const ec::pidinfo& initial, const ThermalType& type, bool tjMaxAdjusted)
+ {
+     // ThermalController requires at least 1 input
+     if (inputs.empty())
+@@ -51,7 +51,8 @@ std::unique_ptr<PIDController> ThermalController::createThermalPid(
+         return nullptr;
+     }
+ 
+-    auto thermal = std::make_unique<ThermalController>(id, inputs, type, owner);
++    auto thermal = std::make_unique<ThermalController>(id, inputs, type, owner,
++                                                       tjMaxAdjusted);
+ 
+     ec::pid_info_t* info = thermal->getPIDInfo();
+     thermal->setSetpoint(setpoint);
+diff --git a/pid/thermalcontroller.hpp b/pid/thermalcontroller.hpp
+index 6144d49..473fbce 100644
+--- a/pid/thermalcontroller.hpp
++++ b/pid/thermalcontroller.hpp
+@@ -44,22 +44,39 @@ class ThermalController : public PIDController
+         createThermalPid(ZoneInterface* owner, const std::string& id,
+                          const std::vector<std::string>& inputs,
+                          double setpoint, const ec::pidinfo& initial,
+-                         const ThermalType& type);
++                         const ThermalType& type, bool tjMaxAdjusted);
+ 
+     ThermalController(const std::string& id,
+                       const std::vector<std::string>& inputs,
+-                      const ThermalType& type, ZoneInterface* owner) :
++                      const ThermalType& type, ZoneInterface* owner,
++                      bool tjMaxAdjusted) :
+         PIDController(id, owner),
+-        _inputs(inputs), type(type)
++        _inputs(inputs), type(type), _tjMaxAdjusted(tjMaxAdjusted)
+     {}
+ 
+     double inputProc(void) override;
+     double setptProc(void) override;
+     void outputProc(double value) override;
+ 
++    const std::vector<std::string>& getInputs() const override
++    {
++        return _inputs;
++    }
++
++    void setTjMaxAdjusted(bool value)
++    {
++        _tjMaxAdjusted = value;
++    }
++
++    bool getTjMaxAdjusted()
++    {
++        return _tjMaxAdjusted;
++    }
++
+   private:
+     std::vector<std::string> _inputs;
+     ThermalType type;
++    bool _tjMaxAdjusted;
+ };
+ 
+ } // namespace pid_control
+diff --git a/pid/zone.cpp b/pid/zone.cpp
+index 0762a6a..a566972 100644
+--- a/pid/zone.cpp
++++ b/pid/zone.cpp
+@@ -18,12 +18,15 @@
+ #include "zone.hpp"
+ 
+ #include "conf.hpp"
++#include "dbus/dbushelper.hpp"
++#include "dbus/dbuspassive.hpp"
+ #include "pid/controller.hpp"
+ #include "pid/ec/pid.hpp"
+ #include "pid/fancontroller.hpp"
+ #include "pid/stepwisecontroller.hpp"
+ #include "pid/thermalcontroller.hpp"
+ #include "pid/tuning.hpp"
++#include "sensors/pluggable.hpp"
+ 
+ #include <algorithm>
+ #include <chrono>
+@@ -429,6 +432,31 @@ void DbusPidZone::writeLog(const std::string& value)
+     return;
+ }
+ 
++bool DbusPidZone::checkFanSensor(Sensor* sensor)
++{
++    // If not readable, try to reinitialize fan sensor.
++    if (!sensor->isReadable())
++    {
++        auto info = sensor->getInfo();
++        auto ri = DbusPassive::createDbusPassive(
++            _mgr.getPassiveBus(), info->type, sensor->getName(),
++            std::make_unique<DbusHelper>(sdbusplus::bus::new_system()), info);
++        if (ri == nullptr)
++        {
++            _failSafeFans.insert(sensor->getName());
++            return false;
++        }
++        else
++        {
++            std::cerr << sensor->getName() << " start reinitializing\n";
++
++            dynamic_cast<PluggableSensor*>(sensor)->setReader(std::move(ri));
++        }
++    }
++
++    return true;
++}
++
+ /*
+  * TODO(venture) This is effectively updating the cache and should check if the
+  * values they're using to update it are new or old, or whatnot.  For instance,
+@@ -461,6 +489,12 @@ void DbusPidZone::updateFanTelemetry(void)
+     {
+         const auto& f = *it;
+         auto sensor = _mgr.getSensor(f);
++
++        if (!checkFanSensor(sensor))
++        {
++            continue;
++        }
++
+         ReadReturn r = sensor->read();
+         if (getDebugMode())
+         {
+@@ -591,6 +625,75 @@ void DbusPidZone::checkFanFailures(void)
+     }
+ }
+ 
++bool DbusPidZone::checkTempSensor(Sensor* sensor)
++{
++    // If not readable, try to reinitialize temperature sensor.
++    if (!sensor->isReadable())
++    {
++        auto info = sensor->getInfo();
++        auto ri = DbusPassive::createDbusPassive(
++            _mgr.getPassiveBus(), info->type, sensor->getName(),
++            std::make_unique<DbusHelper>(sdbusplus::bus::new_system()), info);
++        if (ri == nullptr)
++        {
++            _failSafeTemps.insert(sensor->getName());
++            return false;
++        }
++        else
++        {
++            std::cerr << sensor->getName() << " start reinitializing\n";
++
++            dynamic_cast<PluggableSensor*>(sensor)->setReader(std::move(ri));
++
++            double tjMax = sensor->getTjMax();
++            if (tjMax != 0)
++            {
++                for (auto& c : _thermals)
++                {
++                    for (const auto& input : c->getInputs())
++                    {
++                        if (input == sensor->getName())
++                        {
++                            std::string profileType =
++                                c->getID().substr(0, c->getID().find("_"));
++                            if (profileType == "PID")
++                            {
++                                // Adjust setpoint for PID profile.
++                                auto tc =
++                                    dynamic_cast<ThermalController*>(c.get());
++                                if (!tc->getTjMaxAdjusted())
++                                {
++                                    tc->setSetpoint(tc->getSetpoint() + tjMax);
++                                    tc->setTjMaxAdjusted(true);
++                                }
++                            }
++                            else
++                            {
++                                // Adjust reading for stepwise/linear profile.
++                                auto sc =
++                                    dynamic_cast<StepwiseController*>(c.get());
++                                if (!sc->getTjMaxAdjusted())
++                                {
++                                    for (auto& point :
++                                         sc->getStepwiseInfo().reading)
++                                    {
++                                        point += tjMax;
++                                    }
++                                    sc->setTjMaxAdjusted(true);
++                                }
++                            }
++
++                            break;
++                        }
++                    }
++                }
++            }
++        }
++    }
++
++    return true;
++}
++
+ void DbusPidZone::updateSensors(void)
+ {
+     using namespace std::chrono;
+@@ -602,6 +705,11 @@ void DbusPidZone::updateSensors(void)
+         const auto& t = *it;
+         auto sensor = _mgr.getSensor(t);
+ 
++        if (!checkTempSensor(sensor))
++        {
++            continue;
++        }
++
+         ReadReturn r = sensor->read();
+         if (getDebugMode())
+         {
+diff --git a/pid/zone.hpp b/pid/zone.hpp
+index 319a7f1..76797a2 100644
+--- a/pid/zone.hpp
++++ b/pid/zone.hpp
+@@ -37,7 +37,7 @@ class DbusPidZone : public ZoneInterface, public ModeObject
+   public:
+     DbusPidZone(int64_t zone, double minThermalOutput,
+                 conf::FailsafeSetting& failsafeSettings,
+-                conf::CycleTime cycleTime, const SensorManager& mgr,
++                conf::CycleTime cycleTime, SensorManager& mgr,
+                 sdbusplus::bus::bus& bus, const char* objPath, bool defer) :
+         ModeObject(bus, objPath, defer),
+         _zoneId(zone), _maximumSetPoint(),
+@@ -99,6 +99,12 @@ class DbusPidZone : public ZoneInterface, public ModeObject
+     /* Method for setting the debug mode over dbus */
+     bool debug(bool value) override;
+ 
++    /* Method for checking whether sensor is readable. If not try to
++     * re-initialize sensor
++     */
++    bool checkFanSensor(Sensor* sensor);
++    bool checkTempSensor(Sensor* sensor);
++
+   private:
+     std::ofstream _log;
+ 
+@@ -124,7 +130,7 @@ class DbusPidZone : public ZoneInterface, public ModeObject
+      */
+     std::set<std::string> _thermalInputs;
+     std::map<std::string, double> _cachedValuesByName;
+-    const SensorManager& _mgr;
++    SensorManager& _mgr;
+ 
+     std::vector<std::unique_ptr<Controller>> _fans;
+     std::vector<std::unique_ptr<Controller>> _thermals;
+diff --git a/sensors/builder.cpp b/sensors/builder.cpp
+index f4257ad..7efca84 100644
+--- a/sensors/builder.cpp
++++ b/sensors/builder.cpp
+@@ -73,18 +73,13 @@ SensorManager
+         switch (rtype)
+         {
+             case IOInterfaceType::DBUSPASSIVE:
+-                // we only need to make one match based on the dbus object
+-                static std::shared_ptr<DbusPassiveRedundancy> redundancy =
+-                    std::make_shared<DbusPassiveRedundancy>(
+-                        passiveListeningBus);
+-
+                 if (info->type == "fan")
+                 {
+                     ri = DbusPassive::createDbusPassive(
+                         passiveListeningBus, info->type, name,
+                         std::make_unique<DbusHelper>(
+                             sdbusplus::bus::new_system()),
+-                        info, redundancy);
++                        info);
+                 }
+                 else
+                 {
+@@ -92,13 +87,13 @@ SensorManager
+                         passiveListeningBus, info->type, name,
+                         std::make_unique<DbusHelper>(
+                             sdbusplus::bus::new_system()),
+-                        info, nullptr);
++                        info);
+                 }
+                 if (ri == nullptr)
+                 {
+-                    throw SensorBuildException(
+-                        "Failed to create dbus passive sensor: " + name +
+-                        " of type: " + info->type);
++                    std::cerr
++                        << "Failed to create dbus passive sensor: " << name
++                        << " of type: " << info->type;
+                 }
+                 break;
+             case IOInterfaceType::EXTERNAL:
+@@ -159,7 +154,7 @@ SensorManager
+             }
+ 
+             auto sensor = std::make_unique<PluggableSensor>(
+-                name, info->timeout, std::move(ri), std::move(wi));
++                name, info, std::move(ri), std::move(wi));
+             mgmr.addSensor(info->type, name, std::move(sensor));
+         }
+         else if (info->type == "temp" || info->type == "margin")
+@@ -177,16 +172,15 @@ SensorManager
+                  * The reason we handle this as a HostSensor is because it's
+                  * not quite pluggable; but maybe it could be.
+                  */
+-                auto sensor = HostSensor::createTemp(
+-                    name, info->timeout, hostSensorBus, info->readPath.c_str(),
+-                    deferSignals);
++                auto sensor = HostSensor::createTemp(name, info, hostSensorBus,
++                                                     deferSignals);
+                 mgmr.addSensor(info->type, name, std::move(sensor));
+             }
+             else
+             {
+                 wi = std::make_unique<ReadOnlyNoExcept>();
+                 auto sensor = std::make_unique<PluggableSensor>(
+-                    name, info->timeout, std::move(ri), std::move(wi));
++                    name, info, std::move(ri), std::move(wi));
+                 mgmr.addSensor(info->type, name, std::move(sensor));
+             }
+         }
+diff --git a/sensors/host.cpp b/sensors/host.cpp
+index 85a37dc..d1a0d2b 100644
+--- a/sensors/host.cpp
++++ b/sensors/host.cpp
+@@ -34,12 +34,11 @@ void scaleHelper(T& ptr, int64_t value)
+ }
+ 
+ std::unique_ptr<Sensor> HostSensor::createTemp(const std::string& name,
+-                                               int64_t timeout,
++                                               const conf::SensorConfig* info,
+                                                sdbusplus::bus::bus& bus,
+-                                               const char* objPath, bool defer)
++                                               bool defer)
+ {
+-    auto sensor =
+-        std::make_unique<HostSensor>(name, timeout, bus, objPath, defer);
++    auto sensor = std::make_unique<HostSensor>(name, info, bus, defer);
+     sensor->value(0);
+ 
+     // DegreesC and value of 0 are the defaults at present, therefore testing
+diff --git a/sensors/host.hpp b/sensors/host.hpp
+index 5c70526..8696588 100644
+--- a/sensors/host.hpp
++++ b/sensors/host.hpp
+@@ -41,14 +41,14 @@ class HostSensor : public Sensor, public ValueObject
+ {
+   public:
+     static std::unique_ptr<Sensor> createTemp(const std::string& name,
+-                                              int64_t timeout,
++                                              const conf::SensorConfig* info,
+                                               sdbusplus::bus::bus& bus,
+-                                              const char* objPath, bool defer);
++                                              bool defer);
+ 
+-    HostSensor(const std::string& name, int64_t timeout,
+-               sdbusplus::bus::bus& bus, const char* objPath, bool defer) :
+-        Sensor(name, timeout),
+-        ValueObject(bus, objPath, defer)
++    HostSensor(const std::string& name, const conf::SensorConfig* info,
++               sdbusplus::bus::bus& bus, bool defer) :
++        Sensor(name, info),
++        ValueObject(bus, info->readPath.c_str(), defer)
+     {}
+ 
+     ValueType value(ValueType value) override;
+diff --git a/sensors/pluggable.cpp b/sensors/pluggable.cpp
+index 6800ea5..76591fb 100644
+--- a/sensors/pluggable.cpp
++++ b/sensors/pluggable.cpp
+@@ -49,4 +49,13 @@ double PluggableSensor::activeRead(void)
+     return _reader->activeRead();
+ }
+ 
++bool PluggableSensor::isReadable(void)
++{
++    return (_reader.get() == nullptr) ? false : true;
++}
++
++void PluggableSensor::setReader(std::unique_ptr<ReadInterface> ri)
++{
++    _reader = std::move(ri);
++}
+ } // namespace pid_control
+diff --git a/sensors/pluggable.hpp b/sensors/pluggable.hpp
+index bf5dafd..5330a1f 100644
+--- a/sensors/pluggable.hpp
++++ b/sensors/pluggable.hpp
+@@ -15,10 +15,10 @@ namespace pid_control
+ class PluggableSensor : public Sensor
+ {
+   public:
+-    PluggableSensor(const std::string& name, int64_t timeout,
++    PluggableSensor(const std::string& name, const conf::SensorConfig* info,
+                     std::unique_ptr<ReadInterface> reader,
+                     std::unique_ptr<WriteInterface> writer) :
+-        Sensor(name, timeout),
++        Sensor(name, info),
+         _reader(std::move(reader)), _writer(std::move(writer))
+     {}
+ 
+@@ -28,6 +28,9 @@ class PluggableSensor : public Sensor
+     void write(double value, bool force, int64_t* written) override;
+     bool getFailed(void) override;
+     double getTjMax(void) override;
++    bool isReadable(void) override;
++
++    void setReader(std::unique_ptr<ReadInterface> ri);
+ 
+   private:
+     std::unique_ptr<ReadInterface> _reader;
+diff --git a/sensors/sensor.hpp b/sensors/sensor.hpp
+index 9f3bdc0..3d9356b 100644
+--- a/sensors/sensor.hpp
++++ b/sensors/sensor.hpp
+@@ -1,5 +1,6 @@
+ #pragma once
+ 
++#include "conf.hpp"
+ #include "interfaces.hpp"
+ 
+ #include <string>
+@@ -27,8 +28,8 @@ class Sensor
+         return (type == "fan") ? 0 : 2;
+     }
+ 
+-    Sensor(const std::string& name, int64_t timeout) :
+-        _name(name), _timeout(timeout)
++    Sensor(const std::string& name, const conf::SensorConfig* info) :
++        _name(name), _info(info)
+     {}
+ 
+     virtual ~Sensor()
+@@ -44,6 +45,10 @@ class Sensor
+     {
+         return 0;
+     }
++    virtual bool isReadable(void)
++    {
++        return true;
++    }
+ 
+     virtual void write(double value, bool force, int64_t* written)
+     {
+@@ -67,12 +72,17 @@ class Sensor
+      */
+     int64_t getTimeout(void) const
+     {
+-        return _timeout;
++        return _info->timeout;
++    }
++
++    const conf::SensorConfig* getInfo(void) const
++    {
++        return _info;
+     }
+ 
+   private:
+     std::string _name;
+-    int64_t _timeout;
++    const conf::SensorConfig* _info;
+ };
+ 
+ } // namespace pid_control
+-- 
+2.28.0
+

@@ -1,0 +1,67 @@
+From 0ae738afdef779cb2424fb04239bff33eafdf5b7 Mon Sep 17 00:00:00 2001
+From: Ren Chen <ren_chen@wiwynn.com>
+Date: Fri, 24 Dec 2021 17:28:02 +0800
+Subject: [PATCH] Fix DIMM temperature upper critical issue during host powers
+ off
+
+---
+ src/DIMMSensor.cpp | 5 +++--
+ src/Thresholds.cpp | 4 +---
+ 2 files changed, 4 insertions(+), 5 deletions(-)
+
+diff --git a/src/DIMMSensor.cpp b/src/DIMMSensor.cpp
+index 5d55536..8a0b450 100644
+--- a/src/DIMMSensor.cpp
++++ b/src/DIMMSensor.cpp
+@@ -30,7 +30,7 @@ static constexpr bool DEBUG = false;
+ 
+ static constexpr unsigned int sensorPollMs = 1000;
+ static constexpr int highDecimalBit = 3;
+-static constexpr int lowDecimalBit = 2;
++static constexpr int lowDecimalBit = 0;
+ static constexpr int decimalBase = 4;
+ 
+ DIMMSensor::DIMMSensor(const std::string& path, const std::string& objectType,
+@@ -170,8 +170,8 @@ bool DIMMSensor::visitDIMMReg(void)
+             {
+                 std::cerr << "Fail to r/w I2C device: " << path
+                           << ", Addr: " << unsigned(muxSetting.addr) << "\n";
+-                close_i2c_dev(fd);
+             }
++            close_i2c_dev(fd);
+             return false;
+         }
+     }
+@@ -199,6 +199,7 @@ bool DIMMSensor::visitDIMMReg(void)
+     double real_value = 0;
+     int isNegative = 1;
+     raw_value = (readBuf.at(0) << 8) + readBuf.at(1);
++    rawValue = raw_value;
+ 
+     if (raw_value & 0x1000)
+     {
+diff --git a/src/Thresholds.cpp b/src/Thresholds.cpp
+index 0de560e..0f61279 100644
+--- a/src/Thresholds.cpp
++++ b/src/Thresholds.cpp
+@@ -285,7 +285,6 @@ static std::vector<ChangeParam> checkThresholds(Sensor* sensor, double value)
+     {
+         return thresholdChanges;
+     }
+-
+     for (auto& threshold : sensor->thresholds)
+     {
+         // Use "Schmitt trigger" logic to avoid threshold trigger spam,
+@@ -542,8 +541,7 @@ void checkThresholdsPowerDelay(Sensor* sensor, ThresholdTimer& thresholdTimer)
+         //   first and when timer expires for the previous one, no additional
+         //   signal will be logged.
+         // 4. no delays for all high events.
+-        if (change.threshold.direction == thresholds::Direction::LOW &&
+-            sensor->isFirst == false)
++        if (sensor->isFirst == false)
+         {
+             if (change.asserted || thresholdTimer.hasActiveTimer(
+                                        change.threshold, !change.asserted))
+-- 
+2.32.0
+

@@ -1,0 +1,9 @@
+{
+    "gpio_configs": {
+        "power_config": {
+            "power_good_in": "PGOOD",
+            "power_up_outs": "",
+            "reset_outs": ""
+        }
+    }
+}

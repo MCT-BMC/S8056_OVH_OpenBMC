@@ -1,0 +1,14 @@
+[Unit]
+Description=DIMM Temp Sensor
+StopWhenUnneeded=false
+Requires=xyz.openbmc_project.EntityManager.service
+After=xyz.openbmc_project.EntityManager.service
+After=mct-power-handler.service
+
+[Service]
+Restart=always
+RestartSec=5
+ExecStart=/usr/bin/dimmtempsensor
+
+[Install]
+WantedBy=multi-user.target

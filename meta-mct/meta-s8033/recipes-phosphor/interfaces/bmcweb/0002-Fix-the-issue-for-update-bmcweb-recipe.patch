@@ -1,0 +1,155 @@
+From 2361c746e2062395fb051448bc02c56bfe0069ec Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Tue, 15 Mar 2022 17:21:53 +0800
+Subject: [PATCH 02/11] Fix the issue for update bmcweb recipe
+
+---
+ http/routing.hpp                      | 64 -----------------------------------
+ redfish-core/lib/account_service.hpp  | 16 ---------
+ redfish-core/lib/redfish_sessions.hpp |  4 +--
+ 3 files changed, 2 insertions(+), 82 deletions(-)
+ mode change 100644 => 100755 http/routing.hpp
+ mode change 100644 => 100755 redfish-core/lib/account_service.hpp
+ mode change 100644 => 100755 redfish-core/lib/redfish_sessions.hpp
+
+diff --git a/http/routing.hpp b/http/routing.hpp
+old mode 100644
+new mode 100755
+index 250cd33..86b74e1
+--- a/http/routing.hpp
++++ b/http/routing.hpp
+@@ -1350,78 +1350,14 @@ class Router
+                                      << " userRole = " << *userRolePtr;
+                 }
+ 
+-                const bool* remoteUserPtr = nullptr;
+-                auto remoteUserIter = userInfo.find("RemoteUser");
+-                if (remoteUserIter != userInfo.end())
+-                {
+-                    remoteUserPtr = std::get_if<bool>(&remoteUserIter->second);
+-                }
+-                if (remoteUserPtr == nullptr)
+-                {
+-                    BMCWEB_LOG_ERROR
+-                        << "RemoteUser property missing or wrong type";
+-                    asyncResp->res.result(
+-                        boost::beast::http::status::internal_server_error);
+-                    return;
+-                }
+-                bool remoteUser = *remoteUserPtr;
+-
+-                bool passwordExpired = false; // default for remote user
+-                if (!remoteUser)
+-                {
+-                    const bool* passwordExpiredPtr = nullptr;
+-                    auto passwordExpiredIter =
+-                        userInfo.find("UserPasswordExpired");
+-                    if (passwordExpiredIter != userInfo.end())
+-                    {
+-                        passwordExpiredPtr =
+-                            std::get_if<bool>(&passwordExpiredIter->second);
+-                    }
+-                    if (passwordExpiredPtr != nullptr)
+-                    {
+-                        passwordExpired = *passwordExpiredPtr;
+-                    }
+-                    else
+-                    {
+-                        BMCWEB_LOG_ERROR
+-                            << "UserPasswordExpired property is expected for"
+-                               " local user but is missing or wrong type";
+-                        asyncResp->res.result(
+-                            boost::beast::http::status::internal_server_error);
+-                        return;
+-                    }
+-                }
+-
+                 // Get the userprivileges from the role
+                 redfish::Privileges userPrivileges =
+                     redfish::getUserPrivileges(userRole);
+ 
+-                // Set isConfigureSelfOnly based on D-Bus results.  This
+-                // ignores the results from both pamAuthenticateUser and the
+-                // value from any previous use of this session.
+-                req.session->isConfigureSelfOnly = passwordExpired;
+-
+-                // Modifyprivileges if isConfigureSelfOnly.
+-                if (req.session->isConfigureSelfOnly)
+-                {
+-                    // Remove allprivileges except ConfigureSelf
+-                    userPrivileges = userPrivileges.intersection(
+-                        redfish::Privileges{"ConfigureSelf"});
+-                    BMCWEB_LOG_DEBUG << "Operation limited to ConfigureSelf";
+-                }
+-
+                 if (!rules[ruleIndex]->checkPrivileges(userPrivileges))
+                 {
+                     asyncResp->res.result(
+                         boost::beast::http::status::forbidden);
+-                    if (req.session->isConfigureSelfOnly)
+-                    {
+-                        redfish::messages::passwordChangeRequired(
+-                            asyncResp->res,
+-                            crow::utility::urlFromPieces(
+-                                "redfish", "v1", "AccountService", "Accounts",
+-                                req.session->username));
+-                    }
+                     return;
+                 }
+ 
+diff --git a/redfish-core/lib/account_service.hpp b/redfish-core/lib/account_service.hpp
+old mode 100644
+new mode 100755
+index 17f5fd3..f668c3e
+--- a/redfish-core/lib/account_service.hpp
++++ b/redfish-core/lib/account_service.hpp
+@@ -1814,22 +1814,6 @@ inline void requestAccountServiceRoutes(App& app)
+                                           "/redfish/v1/AccountService/Roles/" +
+                                               role}};
+                                 }
+-                                else if (property.first ==
+-                                         "UserPasswordExpired")
+-                                {
+-                                    const bool* userPasswordExpired =
+-                                        std::get_if<bool>(&property.second);
+-                                    if (userPasswordExpired == nullptr)
+-                                    {
+-                                        BMCWEB_LOG_ERROR
+-                                            << "UserPasswordExpired wasn't a bool";
+-                                        messages::internalError(asyncResp->res);
+-                                        return;
+-                                    }
+-                                    asyncResp->res
+-                                        .jsonValue["PasswordChangeRequired"] =
+-                                        *userPasswordExpired;
+-                                }
+                             }
+                         }
+                     }
+diff --git a/redfish-core/lib/redfish_sessions.hpp b/redfish-core/lib/redfish_sessions.hpp
+old mode 100644
+new mode 100755
+index a66f460..2860f5c
+--- a/redfish-core/lib/redfish_sessions.hpp
++++ b/redfish-core/lib/redfish_sessions.hpp
+@@ -173,7 +173,7 @@ inline void requestRoutesSession(App& app)
+ 
+                 int pamrc = pamAuthenticateUser(username, password);
+                 bool isConfigureSelfOnly = pamrc == PAM_NEW_AUTHTOK_REQD;
+-                if ((pamrc != PAM_SUCCESS) && !isConfigureSelfOnly)
++                if ((pamrc != PAM_SUCCESS))
+                 {
+                     messages::resourceAtUriUnauthorized(
+                         asyncResp->res, req.urlView,
+@@ -210,7 +210,7 @@ inline void requestRoutesSession(App& app)
+                     "Location",
+                     "/redfish/v1/SessionService/Sessions/" + session->uniqueId);
+                 asyncResp->res.result(boost::beast::http::status::created);
+-                if (session->isConfigureSelfOnly)
++                if (session->isConfigureSelfOnly || true)
+                 {
+                     messages::passwordChangeRequired(
+                         asyncResp->res, crow::utility::urlFromPieces(
+-- 
+2.7.4
+

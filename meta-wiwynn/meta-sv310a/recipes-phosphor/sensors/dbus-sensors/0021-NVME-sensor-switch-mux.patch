@@ -1,0 +1,265 @@
+From 030344ca43435c629a17807b3a142ffd68f18486 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Tue, 13 Jul 2021 13:39:57 +0800
+Subject: [PATCH] NVME sensor switch mux
+
+%% original patch: 0021-NVME-sensor-switch-mux.patch
+---
+ include/NVMESensor.hpp | 10 ++++++-
+ include/sensor.hpp     | 11 ++++++-
+ src/NVMESensor.cpp     | 68 +++++++++++++++++++++++++++++++++---------
+ src/NVMESensorMain.cpp | 35 +++++++++++++++++++++-
+ 4 files changed, 107 insertions(+), 17 deletions(-)
+
+diff --git a/include/NVMESensor.hpp b/include/NVMESensor.hpp
+index 36e41ec..bd845e6 100644
+--- a/include/NVMESensor.hpp
++++ b/include/NVMESensor.hpp
+@@ -54,7 +54,9 @@ class NVMESensor :
+                const std::string& sensorUnit, const std::string& dbusPath,
+                const double maxValue, const double minValue,
+                const PowerState readState, const uint8_t busId,
+-               const DeviceDetectInfo& detectInfo);
++               const DeviceDetectInfo& detectInfo, const bool useMux,
++               const uint8_t muxAddress, const uint8_t muxCmd,
++               const uint8_t cpldMuxAddress, const uint8_t cpldMuxCmd);
+     ~NVMESensor();
+     void setupRead(void);
+ 
+@@ -70,11 +72,17 @@ class NVMESensor :
+     boost::asio::steady_timer ssdPresentTimer;
+     uint8_t nvme_status;
+     DeviceDetectInfo detectInfo;
++    bool useMux;
++    uint8_t muxAddress;
++    uint8_t muxCmd;
++    uint8_t cpldMuxAddress;
++    uint8_t cpldMuxCmd;
+     bool isAbsent;
+     bool preIsAbsent;
+     bool isPowerOff;
+     int retry;
+     int checkDeviceAbsent(void);
++    int switchMux(uint8_t address, uint8_t cmd);
+     bool visitNVMEReg(void);
+     int32_t ConvertToRealTemp(uint8_t rawValue, int8_t* realValue);
+     void handleResponse(void);
+diff --git a/include/sensor.hpp b/include/sensor.hpp
+index d11c456..afaee10 100644
+--- a/include/sensor.hpp
++++ b/include/sensor.hpp
+@@ -92,6 +92,7 @@ struct Sensor
+     bool isUpperWarning = false;
+     bool isLowerCritical = false;
+     bool isLowerWarning = false;
++    bool stopMonitoring = false;
+ 
+     // This member variable provides a hook that can be used to receive
+     // notification whenever this Sensor's value is externally set via D-Bus.
+@@ -240,6 +241,14 @@ struct Sensor
+             "Value", value, [&](const double& newValue, double& oldValue) {
+                 return setSensorValue(newValue, oldValue);
+             });
++        sensorInterface->register_property(
++            "StopMonitoring", stopMonitoring,
++            [&](const bool& newValue, bool& oldValue) {
++                oldValue = newValue;
++                stopMonitoring = newValue;
++                return 1;
++            });
++
+         for (auto& threshold : thresholds)
+         {
+             std::shared_ptr<sdbusplus::asio::dbus_interface> iface;
+@@ -436,7 +445,7 @@ struct Sensor
+ 
+     void incrementError()
+     {
+-        if (!readingStateGood())
++        if (!readingStateGood() || stopMonitoring)
+         {
+             markAvailable(false);
+             return;
+diff --git a/src/NVMESensor.cpp b/src/NVMESensor.cpp
+index 6ef8dc2..c86fce4 100644
+--- a/src/NVMESensor.cpp
++++ b/src/NVMESensor.cpp
+@@ -30,8 +30,10 @@ NVMESensor::NVMESensor(const std::string& path, const std::string& objectType,
+                        const std::string& sensorUnit,
+                        const std::string& dbusPath, const double maxValue,
+                        const double minValue, const PowerState readState,
+-                       const uint8_t busId,
+-                       const DeviceDetectInfo& detectInfo) :
++                       const uint8_t busId, const DeviceDetectInfo& detectInfo,
++                       const bool useMux, const uint8_t muxAddress,
++                       const uint8_t muxCmd, const uint8_t cpldMuxAddress, 
++                       const uint8_t cpldMuxCmd) :
+     Sensor(boost::replace_all_copy(sensorName, " ", "_"),
+            std::move(_thresholds), sensorConfiguration, objectType, false,
+            maxValue, minValue, conn, readState, true),
+@@ -39,8 +41,9 @@ NVMESensor::NVMESensor(const std::string& path, const std::string& objectType,
+     waitTimer(io), path(path), sensorUnit(sensorUnit), busId(busId),
+     senValue(0), thresholdTimer(io, this), ssdAbsentTimer(io),
+     ssdPresentTimer(io), nvme_status(NVME_REPORTED_IN_RANGE),
+-    detectInfo(detectInfo), isAbsent(false), preIsAbsent(false),
+-    isPowerOff(false)
++    detectInfo(detectInfo),useMux(useMux), muxAddress(muxAddress),
++    muxCmd(muxCmd), cpldMuxAddress(cpldMuxAddress), cpldMuxCmd(cpldMuxCmd),
++    isAbsent(false), preIsAbsent(false), isPowerOff(true)
+ {
+     sensorInterface = objectServer.add_interface(
+         dbusPath, "xyz.openbmc_project.Sensor.Value");
+@@ -192,10 +195,8 @@ int NVMESensor::checkDeviceAbsent(void)
+         return -1;
+     }
+ 
+-    std::vector<uint8_t> cmdData;
+-    cmdData.assign(1, detectInfo.cmd);
+-    std::vector<uint8_t> readBuf;
+-    readBuf.assign(1, 0x0);
++    std::vector<uint8_t> cmdData(1, detectInfo.cmd);
++    std::vector<uint8_t> readBuf(1);
+     int res =
+         i2c_master_write_read(fd, detectInfo.addr, cmdData.size(),
+                               cmdData.data(), readBuf.size(), readBuf.data());
+@@ -212,8 +213,7 @@ int NVMESensor::checkDeviceAbsent(void)
+     close_i2c_dev(fd);
+ 
+     uint8_t raw_value = readBuf.at(0);
+-
+-    if (((raw_value >> detectInfo.bit) & 0x01) == 0) // 0 means in slot
++    if (((raw_value >> detectInfo.bit) & 0x03) != 0) // 0 means not in slot
+     {
+         isAbsent = false;
+     }
+@@ -224,12 +224,49 @@ int NVMESensor::checkDeviceAbsent(void)
+     return 0;
+ }
+ 
++int NVMESensor::switchMux(uint8_t address, uint8_t cmd)
++{
++    if (!useMux)
++    {
++      return 0;
++    }
++
++    int fd = -1;
++    std::vector<char> filename;
++    filename.assign(20, 0);
++    fd = open_i2c_dev(busId, filename.data(), filename.size(), 0);
++    if (fd < 0)
++    {
++        std::cerr << "Fail to open I2C device: " << path << "\n";
++        return -1;
++    }
++
++    std::vector<uint8_t> cmdData(1, cmd);
++    int res = i2c_master_write(fd, address, cmdData.size(), cmdData.data());
++    if (res < 0)
++    {
++        std::cerr << "Failed to switch mux device. Address = "
++                  << static_cast<int>(address)
++                  << ", Command = " << static_cast<int>(cmd) << "\n";
++        close_i2c_dev(fd);
++        return -1;
++    }
++    close_i2c_dev(fd);
++
++    return 0;
++}
++
+ bool NVMESensor::visitNVMEReg(void)
+ {
+     int res = -1;
+ 
+     if (readingStateGood())
+     {
++        if (stopMonitoring || (switchMux(muxAddress, muxCmd) < 0))
++        {
++            return false;
++        }
++
+         if (detectInfo.needToDetect)
+         {
+             res = checkDeviceAbsent();
+@@ -279,6 +316,11 @@ bool NVMESensor::visitNVMEReg(void)
+     int fd = -1;
+     if (sensorUnit == "temp")
+     {
++        if (switchMux(cpldMuxAddress, cpldMuxCmd) < 0)
++        {
++            return false;
++        }
++
+         std::vector<char> filename;
+         filename.assign(20, 0);
+ 
+@@ -288,10 +330,8 @@ bool NVMESensor::visitNVMEReg(void)
+             std::cerr << "Fail to open I2C device: " << path << "\n";
+             return false;
+         }
+-        std::vector<uint8_t> cmdData;
+-        cmdData.assign(1, nvme_mi_cmd_offset::temp);
+-        std::vector<uint8_t> readBuf;
+-        readBuf.assign(1, 0x0);
++        std::vector<uint8_t> cmdData(1, nvme_mi_cmd_offset::temp);
++        std::vector<uint8_t> readBuf(1);
+         res = i2c_master_write_read(fd, NVME_SLAVE_ADDRESS, cmdData.size(),
+                                     cmdData.data(), readBuf.size(),
+                                     readBuf.data());
+diff --git a/src/NVMESensorMain.cpp b/src/NVMESensorMain.cpp
+index 130af8f..6da1780 100644
+--- a/src/NVMESensorMain.cpp
++++ b/src/NVMESensorMain.cpp
+@@ -99,6 +99,38 @@ void createSensors(
+             deviceDetectInfo.needToDetect = false;
+         }
+ 
++        auto findMuxAddress = baseConfigMap->find("MuxAddress");
++
++
++        auto findMuxCmd = baseConfigMap->find("MuxCmd");
++
++        auto findCpldMuxAddress = baseConfigMap->find("CpldMuxAddress");
++
++
++        auto findCpldMuxCmd = baseConfigMap->find("CpldMuxCmd");
++
++        bool useMux = true;
++
++        if (findMuxAddress == baseConfigMap->end() ||
++            findMuxCmd == baseConfigMap->end() ||
++            findCpldMuxAddress == baseConfigMap->end() ||
++            findCpldMuxCmd == baseConfigMap->end())
++        {
++            useMux = false;
++        }
++
++        uint64_t cpldMuxAddress = 0;
++        uint64_t cpldMuxCmd = 0;
++        uint64_t muxCmd = 0;
++        uint64_t muxAddress = 0;
++
++        if (useMux)
++        {
++            cpldMuxAddress = std::get<uint64_t>(findCpldMuxAddress->second);
++            cpldMuxCmd = std::get<uint64_t>(findCpldMuxCmd->second);
++            muxCmd = std::get<uint64_t>(findMuxCmd->second);
++            muxAddress = std::get<uint64_t>(findMuxAddress->second);
++        }
+         // on rescans, only update sensors we were signaled by
+         auto findSensor = sensors.find(sensorName);
+         if (!firstScan && findSensor != sensors.end())
+@@ -127,7 +159,8 @@ void createSensors(
+         sensors[sensorName] = std::make_unique<NVMESensor>(
+             i2cPath, objectType, objectServer, dbusConnection, io, sensorName,
+             std::move(sensorThresholds), *interfacePath, sensorType, dbusPath,
+-            limits.second, limits.first, readState, bus, deviceDetectInfo);
++            limits.second, limits.first, readState, bus, deviceDetectInfo, useMux,
++            muxAddress, muxCmd, cpldMuxAddress, cpldMuxCmd);
+         sensors[sensorName]->setupRead();
+     }
+ }
+-- 
+2.32.0
+

@@ -1,0 +1,154 @@
+From 6f018f8e07af679dc21df3a5343ecffd27ff8844 Mon Sep 17 00:00:00 2001
+From: Jason <Jason_YX_Chang@wiwynn.com>
+Date: Fri, 10 Jan 2020 09:44:27 +0800
+Subject: [PATCH] Support GPIO interrupt
+
+---
+ gpio-util/meson.build |  2 +-
+ gpioMon.cpp           | 28 +++++++++++++++++++++-------
+ gpioMon.hpp           |  7 +++++--
+ gpioMonMain.cpp       |  5 +++--
+ presence/meson.build  |  2 +-
+ 5 files changed, 31 insertions(+), 13 deletions(-)
+
+diff --git a/gpio-util/meson.build b/gpio-util/meson.build
+index d14cbc3..dbad6c9 100644
+--- a/gpio-util/meson.build
++++ b/gpio-util/meson.build
+@@ -6,7 +6,7 @@ executable(
+     dependencies: [
+         phosphor_logging,
+     ],
+-    include_directories: '..',
++    include_directories: include_directories('..'),
+     implicit_include_directories: false,
+     install: true,
+ )
+diff --git a/gpioMon.cpp b/gpioMon.cpp
+index 2ab079a..176d371 100644
+--- a/gpioMon.cpp
++++ b/gpioMon.cpp
+@@ -18,6 +18,7 @@
+ 
+ #include <phosphor-logging/log.hpp>
+ #include <sdbusplus/bus.hpp>
++#include <iostream>
+ 
+ namespace phosphor
+ {
+@@ -68,17 +69,30 @@ void GpioMonitor::gpioEventHandler()
+     log<level::INFO>(logMessage.c_str());
+ 
+     /* Execute the target if it is defined. */
+-    if (!target.empty())
++    std::vector<std::string> targetsToStart;
++    if (gpioLineEvent.event_type == GPIOD_LINE_EVENT_RISING_EDGE)
+     {
+-        auto bus = sdbusplus::bus::new_default();
+-        auto method = bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_ROOT,
+-                                          SYSTEMD_INTERFACE, "StartUnit");
+-        method.append(target);
+-        method.append("replace");
++        targetsToStart = target["RISING"];
++    }
++    else
++    {
++        targetsToStart = target["FALLING"];
++    }
+ 
+-        bus.call_noreply(method);
++    if (!targetsToStart.empty())
++    {
++        auto bus = sdbusplus::bus::new_default();
++        for (auto &tar : targetsToStart)
++        {
++            auto method = bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_ROOT,
++                                              SYSTEMD_INTERFACE, "StartUnit");
++            method.append(tar);
++            method.append("replace");
++            bus.call_noreply(method);
++        }
+     }
+ 
++
+     /* if not required to continue monitoring then return */
+     if (!continueAfterEvent)
+     {
+diff --git a/gpioMon.hpp b/gpioMon.hpp
+index b07bb40..8c29741 100644
+--- a/gpioMon.hpp
++++ b/gpioMon.hpp
+@@ -4,6 +4,8 @@
+ 
+ #include <boost/asio/io_service.hpp>
+ #include <boost/asio/posix/stream_descriptor.hpp>
++#include <map>
++#include <vector>
+ 
+ namespace phosphor
+ {
+@@ -35,7 +37,8 @@ class GpioMonitor
+      *  @param[in] continueRun - Whether to continue after event occur
+      */
+     GpioMonitor(gpiod_line* line, gpiod_line_request_config& config,
+-                boost::asio::io_service& io, const std::string& target,
++                boost::asio::io_service& io, 
++                std::map<std::string, std::vector<std::string>> target,
+                 const std::string& lineMsg, bool continueRun) :
+         gpioLine(line),
+         gpioConfig(config), gpioEventDescriptor(io), target(target),
+@@ -55,7 +58,7 @@ class GpioMonitor
+     boost::asio::posix::stream_descriptor gpioEventDescriptor;
+ 
+     /** @brief Systemd unit to be started when the condition is met */
+-    const std::string target;
++    std::map<std::string, std::vector<std::string>> target;
+ 
+     /** @brief GPIO line name message */
+     std::string gpioLineMsg;
+diff --git a/gpioMonMain.cpp b/gpioMonMain.cpp
+index 4b8b052..251e0d5 100644
+--- a/gpioMonMain.cpp
++++ b/gpioMonMain.cpp
+@@ -21,6 +21,7 @@
+ #include <fstream>
+ #include <nlohmann/json.hpp>
+ #include <phosphor-logging/log.hpp>
++#include <iostream>
+ 
+ using namespace phosphor::logging;
+ 
+@@ -101,7 +102,7 @@ int main(int argc, char** argv)
+         bool flag = false;
+ 
+         /* target to start */
+-        std::string target;
++        std::map<std::string, std::vector<std::string>> target;
+ 
+         if (obj.find("LineName") == obj.end())
+         {
+@@ -170,7 +171,7 @@ int main(int argc, char** argv)
+          */
+         if (obj.find("Target") != obj.end())
+         {
+-            target = obj["Target"];
++                obj.at("Target").get_to(target);
+         }
+ 
+         /* Create a monitor object and let it do all the rest */
+diff --git a/presence/meson.build b/presence/meson.build
+index 1476e24..1e884e9 100644
+--- a/presence/meson.build
++++ b/presence/meson.build
+@@ -8,7 +8,7 @@ executable(
+         libevdev,
+         phosphor_logging,
+     ],
+-    include_directories: '..',
++    include_directories: include_directories('..'),
+     implicit_include_directories: false,
+     install: true,
+     link_with: [
+-- 
+2.24.1
+

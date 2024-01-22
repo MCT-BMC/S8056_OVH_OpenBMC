@@ -1,0 +1,87 @@
+From d2a323311f743a04d96d0db2bccd67db0e239b5b Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Mon, 20 Apr 2020 11:01:14 +0800
+Subject: [PATCH 08/11] Change to steady_timer used in NVME sensor
+
+---
+ include/NVMESensor.hpp | 3 ++-
+ src/NVMESensor.cpp     | 5 ++---
+ src/NVMESensorMain.cpp | 4 ++--
+ 3 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/include/NVMESensor.hpp b/include/NVMESensor.hpp
+index ff34537..08c6c6e 100644
+--- a/include/NVMESensor.hpp
++++ b/include/NVMESensor.hpp
+@@ -3,6 +3,7 @@
+ #include <Thresholds.hpp>
+ #include <sdbusplus/asio/object_server.hpp>
+ #include <sensor.hpp>
++#include <boost/asio/steady_timer.hpp>
+ 
+ #define NVME_SLAVE_ADDRESS 0x6A
+ 
+@@ -41,7 +42,7 @@ public:
+ 
+ private:
+     sdbusplus::asio::object_server& objServer;
+-    boost::asio::deadline_timer waitTimer;
++    boost::asio::steady_timer waitTimer;
+     boost::asio::streambuf readBuf;
+     std::string path;
+     std::vector<uint8_t> mux_channels;
+diff --git a/src/NVMESensor.cpp b/src/NVMESensor.cpp
+index d397c58..7718fc9 100644
+--- a/src/NVMESensor.cpp
++++ b/src/NVMESensor.cpp
+@@ -21,7 +21,6 @@
+ #include <NVMESensor.hpp>
+ #include <boost/algorithm/string/predicate.hpp>
+ #include <boost/algorithm/string/replace.hpp>
+-#include <boost/date_time/posix_time/posix_time.hpp>
+ #include <iostream>
+ #include <limits>
+ #include <sdbusplus/asio/connection.hpp>
+@@ -97,7 +96,7 @@ void NVMESensor::setupRead(void)
+         updateValueInvalid(true);
+         // updateValue(0);
+ 
+-        waitTimer.expires_from_now(boost::posix_time::milliseconds(sensorPollMs));
++        waitTimer.expires_from_now(boost::asio::chrono::milliseconds(sensorPollMs));
+         waitTimer.async_wait([&](const boost::system::error_code & ec) {
+         if (ec == boost::asio::error::operation_aborted)
+         {
+@@ -257,7 +256,7 @@ void NVMESensor::handleResponse()
+         updateValueInvalid(false);
+     }
+ 
+-    waitTimer.expires_from_now(boost::posix_time::milliseconds(sensorPollMs));
++    waitTimer.expires_from_now(boost::asio::chrono::milliseconds(sensorPollMs));
+     waitTimer.async_wait([&](const boost::system::error_code & ec) {
+         if (ec == boost::asio::error::operation_aborted)
+         {
+diff --git a/src/NVMESensorMain.cpp b/src/NVMESensorMain.cpp
+index a53a6ee..c8e7072 100644
+--- a/src/NVMESensorMain.cpp
++++ b/src/NVMESensorMain.cpp
+@@ -238,7 +238,7 @@ int main()
+         createSensors(io, objectServer, sensors, systemBus, nullptr);
+     });
+ 
+-    boost::asio::deadline_timer filterTimer(io);
++    boost::asio::steady_timer filterTimer(io);
+     std::function<void(sdbusplus::message::message&)> eventHandler =
+     [&](sdbusplus::message::message & message) {
+         if (message.is_method_error())
+@@ -248,7 +248,7 @@ int main()
+         }
+         sensorsChanged->insert(message.get_path());
+         // this implicitly cancels the timer
+-        filterTimer.expires_from_now(boost::posix_time::seconds(1));
++        filterTimer.expires_from_now(boost::asio::chrono::seconds(1));
+ 
+         filterTimer.async_wait([&](const boost::system::error_code & ec) {
+             if (ec == boost::asio::error::operation_aborted)
+-- 
+2.24.1
+

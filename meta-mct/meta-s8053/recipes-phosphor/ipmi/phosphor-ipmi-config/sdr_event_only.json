@@ -1,0 +1,227 @@
+[
+    {
+        "ownerId" : "0x01",
+        "sensorNumber" : "0x00",
+        "sensorType" : "0x0F",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "BIOS_PROGRESS"
+    },
+    {
+        "ownerId" : "0x01",
+        "sensorNumber" : "0x01",
+        "sensorType" : "0x1E",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "BOOT_ERROR"
+    },
+    {
+        "ownerId" : "0x01",
+        "sensorNumber" : "0x80",
+        "sensorType" : "0x12",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "BIOS_POST"
+    },
+    {
+        "ownerId" : "0x01",
+        "sensorNumber" : "0x81",
+        "sensorType" : "0x22",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "PWRBTN_OVERRIDE"
+    },
+    {
+        "ownerId" : "0x3F",
+        "sensorNumber" : "0x00",
+        "sensorType" : "0x0C",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "CPU_UMC3_CH_A0"
+    },
+    {
+        "ownerId" : "0x3F",
+        "sensorNumber" : "0x02",
+        "sensorType" : "0x0C",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "CPU_UMC4_CH_B0"
+    },
+    {
+        "ownerId" : "0x3F",
+        "sensorNumber" : "0x04",
+        "sensorType" : "0x0C",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "CPU_UMC0_CH_C0"
+    },
+    {
+        "ownerId" : "0x3F",
+        "sensorNumber" : "0x06",
+        "sensorType" : "0x0C",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "CPU_UMC5_CH_D0"
+    },
+    {
+        "ownerId" : "0x3F",
+        "sensorNumber" : "0x08",
+        "sensorType" : "0x0C",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "CPU_UMC1_CH_E0"
+    },
+    {
+        "ownerId" : "0x3F",
+        "sensorNumber" : "0x0A",
+        "sensorType" : "0x0C",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "CPU_UMC2_CH_F0"
+    },
+    {
+        "ownerId" : "0x3F",
+        "sensorNumber" : "0x0C",
+        "sensorType" : "0x0C",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "CPU_UMC9_CH_G0"
+    },
+    {
+        "ownerId" : "0x3F",
+        "sensorNumber" : "0x0E",
+        "sensorType" : "0x0C",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "CPU_UMC10_CH_H0"
+    },
+    {
+        "ownerId" : "0x3F",
+        "sensorNumber" : "0x10",
+        "sensorType" : "0x0C",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "CPU_UMC6_CH_I0"
+    },
+    {
+        "ownerId" : "0x3F",
+        "sensorNumber" : "0x12",
+        "sensorType" : "0x0C",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "CPU_UMC11_CH_J0"
+    },
+    {
+        "ownerId" : "0x3F",
+        "sensorNumber" : "0x14",
+        "sensorType" : "0x0C",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "CPU_UMC7_CH_K0"
+    },
+    {
+        "ownerId" : "0x3F",
+        "sensorNumber" : "0x16",
+        "sensorType" : "0x0C",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "CPU_UMC8_CH_L0"
+    },
+    {
+        "ownerId" : "0x37",
+        "sensorNumber" : "0x00",
+        "sensorType" : "0x07",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "PROCESSOR"
+    },
+    {
+        "ownerId" : "0x35",
+        "sensorNumber" : "0x00",
+        "sensorType" : "0x13",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "SMN"
+    },
+    {
+        "ownerId" : "0x21",
+        "sensorNumber" : "0x00",
+        "sensorType" : "0x13",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "PCIE_1"
+    },
+    {
+        "ownerId" : "0x21",
+        "sensorNumber" : "0x01",
+        "sensorType" : "0x13",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "PCIE_2"
+    },
+    {
+        "ownerId" : "0x21",
+        "sensorNumber" : "0x80",
+        "sensorType" : "0x13",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "PCIE_DEVICE"
+    },
+    {
+        "ownerId" : "0x21",
+        "sensorNumber" : "0x81",
+        "sensorType" : "0x13",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "OCP"
+    },
+    {
+        "ownerId" : "0x21",
+        "sensorNumber" : "0x82",
+        "sensorType" : "0x13",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "M2"
+    },
+    {
+        "ownerId" : "0x23",
+        "sensorNumber" : "0x00",
+        "sensorType" : "0x13",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "VGA"
+    },
+    {
+        "ownerId" : "0x25",
+        "sensorNumber" : "0x00",
+        "sensorType" : "0x13",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "NVME1"
+    },
+    {
+        "ownerId" : "0x25",
+        "sensorNumber" : "0x01",
+        "sensorType" : "0x13",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "NVME2"
+    },
+    {
+        "ownerId" : "0x25",
+        "sensorNumber" : "0x02",
+        "sensorType" : "0x13",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "NVME3"
+    },
+    {
+        "ownerId" : "0x25",
+        "sensorNumber" : "0x03",
+        "sensorType" : "0x13",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "NVME4"
+    }
+]
+

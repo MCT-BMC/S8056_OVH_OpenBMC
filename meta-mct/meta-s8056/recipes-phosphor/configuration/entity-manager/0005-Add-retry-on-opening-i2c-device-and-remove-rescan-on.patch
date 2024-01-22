@@ -1,0 +1,158 @@
+From 0d9d20ee68aa54273510c86123edb17d2b75df91 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Wed, 9 Nov 2022 13:18:51 +0800
+Subject: [PATCH] Add retry on opening i2c device and remove rescan on DC
+ cycle.
+
+---
+ src/FruDevice.cpp | 103 +++++++++++++++++++++++++++++++-----------------------
+ 1 file changed, 59 insertions(+), 44 deletions(-)
+
+diff --git a/src/FruDevice.cpp b/src/FruDevice.cpp
+index 8e2f5c1..ae2d45c 100755
+--- a/src/FruDevice.cpp
++++ b/src/FruDevice.cpp
+@@ -317,13 +317,28 @@ static int64_t readBlockData(int flag, int file, uint16_t address,
+ // with some tweaks.
+ static std::vector<uint8_t> processEeprom(int bus, int address)
+ {
++    int retry_count = 0, max_retry = 5, file;
+     auto path = getEepromPath(bus, address);
+ 
+-    int file = open(path.c_str(), O_RDONLY);
+-    if (file < 0)
++    while (retry_count <= max_retry)
+     {
+-        std::cerr << "Unable to open eeprom file: " << path << "\n";
+-        return {};
++        file = open(path.c_str(), O_RDONLY);
++        if (file < 0)
++        {
++            std::cerr << "Unable to open eeprom file: " << path << "\n";
++            retry_count++;
++            sleep(3);
++            if (retry_count > max_retry)
++            {
++                std::cerr << "Try to open eeprom file failed: " << path << "\n";
++                close(file);
++                return {};
++            } 
++        }
++        else
++        {
++            break;
++        }
+     }
+ 
+     std::string errorMessage = "eeprom at " + std::to_string(bus) +
+@@ -725,17 +740,32 @@ static void findI2CDevices(const std::vector<fs::path>& i2cBuses,
+             continue;
+         }
+ 
+-        auto file = open(i2cBus.c_str(), O_RDWR);
+-        if (file < 0)
++        int retry_count = 0, max_retry = 5, file;
++        while (retry_count <= max_retry)
+         {
+-            std::cerr << "unable to open i2c device " << i2cBus.string()
+-                      << "\n";
+-            continue;
++            file = open(i2cBus.c_str(), O_RDWR);
++            if (file < 0)
++            {
++                std::cerr << __func__ << "unable to open i2c device " << i2cBus.string()
++                        << "\n";
++                retry_count++;
++                sleep(3);
++                if (retry_count > max_retry)
++                {
++                    std::cerr << __func__ << "Try to open i2c file failed: " << i2cBus.string() << "\n";
++                    continue;
++                }
++            }
++            else
++            {
++                break;
++            }
+         }
+         unsigned long funcs = 0;
+ 
+         if (ioctl(file, I2C_FUNCS, &funcs) < 0)
+         {
++
+             std::cerr
+                 << "Error: Could not get the adapter functionality matrix bus "
+                 << bus << "\n";
+@@ -1069,13 +1099,27 @@ bool writeFRU(uint8_t bus, uint8_t address, const std::vector<uint8_t>& fru)
+     }
+ 
+     std::string i2cBus = "/dev/i2c-" + std::to_string(bus);
+-
+-    int file = open(i2cBus.c_str(), O_RDWR | O_CLOEXEC);
+-    if (file < 0)
++    int retry_count = 0, max_retry = 5, file;
++    while (retry_count <= max_retry)
+     {
+-        std::cerr << "unable to open i2c device " << i2cBus << "\n";
+-        throw DBusInternalError();
+-        return false;
++        file = open(i2cBus.c_str(), O_RDWR | O_CLOEXEC);
++        if (file < 0)
++        {
++            std::cerr << __func__ << "unable to open i2c device " << i2cBus
++                    << "\n";
++            retry_count++;
++            sleep(3);
++            if (retry_count > max_retry)
++            {
++                std::cerr << __func__ << "Try to open i2c file failed: " << i2cBus << "\n";
++                throw DBusInternalError();
++            return false;
++            }
++        }
++        else
++        {
++            break;
++        }
+     }
+     if (ioctl(file, I2C_SLAVE_FORCE, address) < 0)
+     {
+@@ -1600,35 +1644,6 @@ int main()
+     });
+     iface->initialize();
+ 
+-    std::function<void(sdbusplus::message::message & message)> eventHandler =
+-        [&](sdbusplus::message::message& message) {
+-            std::string objectName;
+-            boost::container::flat_map<
+-                std::string,
+-                std::variant<std::string, bool, int64_t, uint64_t, double>>
+-                values;
+-            message.read(objectName, values);
+-            auto findState = values.find("CurrentHostState");
+-            if (findState != values.end())
+-            {
+-                powerIsOn = boost::ends_with(
+-                    std::get<std::string>(findState->second), "Running");
+-            }
+-
+-            if (powerIsOn)
+-            {
+-                rescanBusses(busMap, dbusInterfaceMap, unknownBusObjectCount,
+-                             powerIsOn, objServer, systemBus);
+-            }
+-        };
+-
+-    sdbusplus::bus::match::match powerMatch = sdbusplus::bus::match::match(
+-        static_cast<sdbusplus::bus::bus&>(*systemBus),
+-        "type='signal',interface='org.freedesktop.DBus.Properties',path='/xyz/"
+-        "openbmc_project/state/"
+-        "host0',arg0='xyz.openbmc_project.State.Host'",
+-        eventHandler);
+-
+     int fd = inotify_init();
+     inotify_add_watch(fd, i2CDevLocation, IN_CREATE | IN_MOVED_TO | IN_DELETE);
+     std::array<char, 4096> readBuffer;
+-- 
+2.7.4
+

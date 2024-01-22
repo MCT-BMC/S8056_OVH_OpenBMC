@@ -1,0 +1,317 @@
+From fa487ff73f4cd317a93599ae470a17f5745cbb66 Mon Sep 17 00:00:00 2001
+From: Eric Chen <Eric_LC_Chen@wiwynn.com>
+Date: Wed, 18 Aug 2021 14:36:32 +0800
+Subject: [PATCH] Support SEL for CPU and memory utilization in
+ phosphor-health-monitor Description: - Add utilization sensors and record SEL
+ when CPU or memory utilization exceeds the warning/critical threshold.
+
+Design:
+- Add sensors "CPU_utilization" and "MEM_utilization" as event-only sensor in yaml and json configuration.
+- Add action to send SEL when checking CPU/memory threshold, following sensor table:
+ - Event Data 1:
+  - A7h - Utilization exceeds warning threshold
+  - A8h - Utilization exceeds critical threshold
+ - Event Data 2
+  - Current sensor utilization
+ - Event Data 3
+  - sensor threshold
+- Add new properties "Obj_path", "System_log" and "Sel_log" in bmc_health_config.json:
+ - "Obj_path": Health sensor path on d-bus
+   (in case does not exist in json, event record of missing Obj_path will be sent in journal and disable SEL log)
+ - "System_log" Enable/Disable event record in journal
+   (in case does not exist in json, default set to "true")
+ - "Sel_log" for Enable/Disable SEL
+   (in case does not exist in json, default set to "false")
+- Revise bmc_health_config.json to set new default threshold.
+ - CPU critical threshold 95%, warning threshold 90%.
+ - Memory critical threshold 90 %, warning threshold 80%.
+
+Test Case:
+1. Trigger warning/critical threshold asserted/de-asserted for CPU/memory utilization.
+2. Check error cases caused by bad configuration in json.
+
+Related item:
+- Health monitoring service for CPU/MEM utilization
+---
+ healthMonitor.cpp | 156 ++++++++++++++++++++++++++++++++++++++--------
+ healthMonitor.hpp |   9 ++-
+ 2 files changed, 138 insertions(+), 27 deletions(-)
+
+diff --git a/healthMonitor.cpp b/healthMonitor.cpp
+index 0956779..87f86dc 100644
+--- a/healthMonitor.cpp
++++ b/healthMonitor.cpp
+@@ -20,6 +20,16 @@ extern "C"
+ static constexpr bool DEBUG = false;
+ static constexpr uint8_t defaultHighThreshold = 100;
+ 
++constexpr char const* IPMI_SEL_SERVICE = "xyz.openbmc_project.Logging.IPMI";
++constexpr char const* IPMI_SEL_PATH = "/xyz/openbmc_project/Logging/IPMI";
++constexpr char const* IPMI_SEL_INTERFACE = "xyz.openbmc_project.Logging.IPMI";
++constexpr uint16_t selBMCGenID = 0x0020;
++
++constexpr uint8_t warningEventData = 0xA7;
++constexpr uint8_t criticalEventData = 0xA8;
++constexpr bool selAssert = true;
++constexpr bool selDeassert = false;
++
+ namespace phosphor
+ {
+ namespace health
+@@ -264,12 +274,67 @@ void HealthSensor::initHealthSensor()
+     /* Initialize unit value (Percent) for utilization sensor */
+     ValueIface::unit(ValueIface::Unit::Percent);
+ 
+-    setSensorValueToDbus(value);
+-
+     /* Start the timer for reading sensor data at regular interval */
+     readTimer.restart(std::chrono::milliseconds(sensorConfig.freq * 1000));
+ }
+ 
++void HealthSensor::sensorAddSel(uint8_t utilLevel, double utilReading,
++                                bool utilAssert)
++{
++    std::string message = sensorConfig.name;
++    double utilthreshold;
++
++    message.append(" utilization");
++
++    if (!utilAssert)
++    {
++        message.append(" is under");
++    }
++    else
++    {
++        message.append(" has exceeded");
++    }
++
++    if (utilLevel == warningEventData)
++    {
++        message.append(" warning");
++        utilthreshold = sensorConfig.warningHigh;
++    }
++    else if (utilLevel == criticalEventData)
++    {
++        message.append(" critical");
++        utilthreshold = sensorConfig.criticalHigh;
++    }
++
++    message.append(" high threshold");
++
++    auto object_path = sensorConfig.objPath;
++
++    if (object_path == "")
++    {
++        return;
++    }
++
++    std::vector<uint8_t> event_data = {utilLevel, (uint8_t)utilReading,
++                                       (uint8_t)utilthreshold};
++    try
++    {
++        auto bus = sdbusplus::bus::new_system();
++        auto methodCallMessage = bus.new_method_call(
++            IPMI_SEL_SERVICE, IPMI_SEL_PATH, IPMI_SEL_INTERFACE, "IpmiSelAdd");
++
++        methodCallMessage.append(message, object_path, event_data, utilAssert,
++                                 selBMCGenID);
++
++        bus.call_noreply(methodCallMessage);
++    }
++    catch (const sdbusplus::exception::SdBusError& e)
++    {
++        std::cerr << "Error to Add Sel : " << message
++                  << ",error code : " << e.what() << "\n";
++    }
++}
++
+ void HealthSensor::checkSensorThreshold(const double value)
+ {
+     if (sensorConfig.criticalHigh && (value > sensorConfig.criticalHigh))
+@@ -277,10 +342,18 @@ void HealthSensor::checkSensorThreshold(const double value)
+         if (!CriticalInterface::criticalAlarmHigh())
+         {
+             CriticalInterface::criticalAlarmHigh(true);
+-            if (sensorConfig.criticalLog)
+-                log<level::ERR>("ASSERT: Utilization Sensor has exceeded "
+-                                "critical high threshold",
+-                                entry("NAME = %s", sensorConfig.name.c_str()));
++            if (sensorConfig.criticalSelLog)
++            {
++                sensorAddSel(criticalEventData, value, selAssert);
++            }
++
++            if (sensorConfig.criticalSystemLog)
++            {
++                std::cerr << "ASSERT: utilization Sensor has exceeded critical "
++                             "high threshold ["
++                          << sensorConfig.name << " " << value << "%]"
++                          << "\n";
++            }
+         }
+     }
+     else
+@@ -288,10 +361,18 @@ void HealthSensor::checkSensorThreshold(const double value)
+         if (CriticalInterface::criticalAlarmHigh())
+         {
+             CriticalInterface::criticalAlarmHigh(false);
+-            if (sensorConfig.criticalLog)
+-                log<level::INFO>("DEASSERT: Utilization Sensor is under "
+-                                 "critical high threshold",
+-                                 entry("NAME = %s", sensorConfig.name.c_str()));
++            if (sensorConfig.criticalSelLog)
++            {
++                sensorAddSel(criticalEventData, value, selDeassert);
++            }
++
++            if (sensorConfig.criticalSystemLog)
++            {
++                std::cerr << "DEASSERT: utilization Sensor is under critical "
++                             "high threshold ["
++                          << sensorConfig.name << " " << value << "%]"
++                          << "\n";
++            }
+         }
+ 
+         /* if warning high value is not set then return */
+@@ -302,19 +383,35 @@ void HealthSensor::checkSensorThreshold(const double value)
+             (!WarningInterface::warningAlarmHigh()))
+         {
+             WarningInterface::warningAlarmHigh(true);
+-            if (sensorConfig.warningLog)
+-                log<level::ERR>("ASSERT: Utilization Sensor has exceeded "
+-                                "warning high threshold",
+-                                entry("NAME = %s", sensorConfig.name.c_str()));
++            if (sensorConfig.warningSelLog)
++            {
++                sensorAddSel(warningEventData, value, selAssert);
++            }
++
++            if (sensorConfig.warningSystemLog)
++            {
++                std::cerr << "ASSERT: utilization Sensor has exceeded warning "
++                             "high threshold ["
++                          << sensorConfig.name << " " << value << "%]"
++                          << "\n";
++            }
+         }
+         else if ((value <= sensorConfig.warningHigh) &&
+                  (WarningInterface::warningAlarmHigh()))
+         {
+             WarningInterface::warningAlarmHigh(false);
+-            if (sensorConfig.warningLog)
+-                log<level::INFO>("DEASSERT: Utilization Sensor is under "
+-                                 "warning high threshold",
+-                                 entry("NAME = %s", sensorConfig.name.c_str()));
++            if (sensorConfig.warningSelLog)
++            {
++                sensorAddSel(warningEventData, value, selDeassert);
++            }
++
++            if (sensorConfig.warningSystemLog)
++            {
++                std::cerr << "DEASSERT: utilization Sensor is under warning "
++                             "high threshold ["
++                          << sensorConfig.name << " " << value << "%]"
++                          << "\n";
++            }
+         }
+     }
+ }
+@@ -348,8 +445,6 @@ void HealthSensor::readHealthSensor()
+     {
+         /* Add new item at the back */
+         valQueue.push_back(value);
+-        /* Set this new value to dbus */
+-        setSensorValueToDbus(value);
+         sensorConfig.countOverWindow++;
+     }
+     else
+@@ -375,9 +470,10 @@ void printConfig(HealthConfig& cfg)
+     std::cout << "Freq: " << (int)cfg.freq << "\n";
+     std::cout << "Window Size: " << (int)cfg.windowSize << "\n";
+     std::cout << "Critical value: " << (int)cfg.criticalHigh << "\n";
+-    std::cout << "warning value: " << (int)cfg.warningHigh << "\n";
+-    std::cout << "Critical log: " << (int)cfg.criticalLog << "\n";
+-    std::cout << "Warning log: " << (int)cfg.warningLog << "\n";
++    std::cout << "Critical SEL log: " << (int)cfg.criticalSelLog << "\n";
++    std::cout << "Critical system log: " << (int)cfg.criticalSystemLog << "\n";
++    std::cout << "Warning SEL log: " << (int)cfg.warningSelLog << "\n";
++    std::cout << "Warning system log: " << (int)cfg.warningSystemLog << "\n";
+     std::cout << "Critical Target: " << cfg.criticalTgt << "\n";
+     std::cout << "Warning Target: " << cfg.warningTgt << "\n\n";
+     std::cout << "Path : " << cfg.path << "\n\n";
+@@ -431,6 +527,8 @@ void HealthMon::getConfigData(Json& data, HealthConfig& cfg)
+ 
+     /* Default window size sensor queue is 1 */
+     cfg.windowSize = data.value("Window_size", 1);
++    // Get object path for utilization SEL
++    cfg.objPath = data.value("Obj_path", "");
+ 
+     auto threshold = data.value("Threshold", empty);
+     if (!threshold.empty())
+@@ -440,14 +538,16 @@ void HealthMon::getConfigData(Json& data, HealthConfig& cfg)
+         {
+             cfg.criticalHigh =
+                 criticalData.value("Value", defaultHighThreshold);
+-            cfg.criticalLog = criticalData.value("Log", true);
++            cfg.criticalSystemLog = criticalData.value("System_log", true);
++            cfg.criticalSelLog = criticalData.value("Sel_log", false);
+             cfg.criticalTgt = criticalData.value("Target", "");
+         }
+         auto warningData = threshold.value("Warning", empty);
+         if (!warningData.empty())
+         {
+             cfg.warningHigh = warningData.value("Value", defaultHighThreshold);
+-            cfg.warningLog = warningData.value("Log", false);
++            cfg.warningSystemLog = warningData.value("System_log", true);
++            cfg.warningSelLog = warningData.value("Sel_log", false);
+             cfg.warningTgt = warningData.value("Target", "");
+         }
+     }
+@@ -478,6 +578,12 @@ std::vector<HealthConfig> HealthMon::getHealthConfig()
+             HealthConfig cfg = HealthConfig();
+             cfg.name = j.key();
+             getConfigData(j.value(), cfg);
++            if (cfg.objPath == "")
++            {
++                std::cerr << "Fail to get " << cfg.name
++                          << " health sensor object path"
++                          << "\n";
++            }
+             if (isStorageOrInode)
+             {
+                 struct statvfs buffer
+diff --git a/healthMonitor.hpp b/healthMonitor.hpp
+index b117a7d..6668426 100644
+--- a/healthMonitor.hpp
++++ b/healthMonitor.hpp
+@@ -34,11 +34,14 @@ struct HealthConfig
+     std::string name;
+     uint16_t freq;
+     uint16_t windowSize;
++    std::string objPath;
+     uint16_t countOverWindow;
+     double criticalHigh;
+     double warningHigh;
+-    bool criticalLog;
+-    bool warningLog;
++    bool criticalSystemLog;
++    bool criticalSelLog;
++    bool warningSystemLog;
++    bool warningSelLog;
+     std::string criticalTgt;
+     std::string warningTgt;
+     std::string path;
+@@ -79,6 +82,8 @@ class HealthSensor : public healthIfaces
+     void setSensorThreshold(double criticalHigh, double warningHigh);
+     /** @brief Check Sensor threshold and update alarm and log */
+     void checkSensorThreshold(const double value);
++    /** @brief Add event SEL for warning/critical utilization */
++    void sensorAddSel(uint8_t utilLevel, double utilReading, bool utilAssert);
+ 
+   private:
+     /** @brief sdbusplus bus client connection. */
+-- 
+2.32.0
+

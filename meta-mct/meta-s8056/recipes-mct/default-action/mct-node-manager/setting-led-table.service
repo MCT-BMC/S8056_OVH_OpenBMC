@@ -1,0 +1,11 @@
+[Unit]
+Description= Set led group table
+After=xyz.openbmc_project.ObjectMapper.service
+After=mapper-wait@-mct-node-manager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env setting-led-table.sh
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,86 @@
+From 931d6983ca6848c18e3d2240eafa63dbee71442b Mon Sep 17 00:00:00 2001
+From: Ren Chen <ren_chen@wiwynn.com>
+Date: Wed, 19 Jan 2022 13:53:27 +0800
+Subject: [PATCH] Revise BIOS version behavior
+
+- Save BIOS version in /var/lib/bios-firmware-version
+- Set BIOS version to "UNKNOW" when BIOS firmware is updating.
+---
+ activation.cpp   | 21 +++++++++++++++++++++
+ item_updater.cpp | 21 ++++++++++++++++++++-
+ 2 files changed, 41 insertions(+), 1 deletion(-)
+
+diff --git a/activation.cpp b/activation.cpp
+index 873ee26..a3aea7a 100644
+--- a/activation.cpp
++++ b/activation.cpp
+@@ -106,6 +106,27 @@ auto Activation::activation(Activations value) -> Activations
+                     std::make_unique<ActivationProgress>(bus, path);
+             }
+ 
++            std::string biosVersionFilePath = "/var/lib/bios-firmware-version";
++            std::string version = "UNKNOWN";
++            parent.versions.find(versionId)->second->version(version);
++            std::ifstream biosVersionFile(biosVersionFilePath);
++            if (!biosVersionFile.is_open())
++            {
++                std::ofstream versionFile(biosVersionFilePath,
++                    std::ios::out | std::ios::trunc);
++                if (!versionFile.good())
++                {
++                    log<level::DEBUG>("Failed to create BIOS version file");
++                }
++                versionFile << version;
++                versionFile.close();
++            }
++            else
++            {
++                biosVersionFile >> version;
++                biosVersionFile.close();
++            }
++
+             // Enable systemd signals
+             subscribeToSystemdSignals();
+ 
+diff --git a/item_updater.cpp b/item_updater.cpp
+index 43b42f5..d21cf70 100644
+--- a/item_updater.cpp
++++ b/item_updater.cpp
+@@ -634,7 +634,7 @@ void ItemUpdater::processCPLDImage()
+ void ItemUpdater::processBIOSImage()
+ {
+     using VersionClass = phosphor::software::manager::Version;
+-    std::string version = "NULL";
++    std::string version = "UNKNOWN";
+     std::string id = "BIOS";
+     auto purpose = server::Version::VersionPurpose::Host;
+     auto path = fs::path(SOFTWARE_OBJPATH) / id;
+@@ -654,6 +654,25 @@ void ItemUpdater::processBIOSImage()
+     // association.
+     createUpdateableAssociation(path);
+ 
++    std::string biosVersionFilePath = "/var/lib/bios-firmware-version";
++    std::ifstream biosVersionFile(biosVersionFilePath);
++    if (!biosVersionFile.is_open())
++    {
++        std::ofstream versionFile(biosVersionFilePath,
++            std::ios::out | std::ios::trunc);
++        if (!versionFile.good())
++        {
++            log<level::DEBUG>("Failed to create BIOS version file");
++        }
++        versionFile << version;
++        versionFile.close();
++    }
++    else
++    {
++        biosVersionFile >> version;
++        biosVersionFile.close();
++    }
++
+     // Create Version instance for this version.
+     auto versionPtr = std::make_unique<VersionClass>(
+         bus, path, version, purpose, "", "",
+-- 
+2.34.1
+

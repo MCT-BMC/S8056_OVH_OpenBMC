@@ -1,0 +1,24 @@
+From 9238f6344237f927c005bb8860145ff4a8282b6d Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Fri, 25 Feb 2022 15:04:33 +0800
+Subject: [PATCH] Add additional information for updating progress
+
+---
+ yaml/xyz/openbmc_project/Software/ActivationProgress.interface.yaml | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/yaml/xyz/openbmc_project/Software/ActivationProgress.interface.yaml b/yaml/xyz/openbmc_project/Software/ActivationProgress.interface.yaml
+index edb01d8..ca5d1a2 100644
+--- a/yaml/xyz/openbmc_project/Software/ActivationProgress.interface.yaml
++++ b/yaml/xyz/openbmc_project/Software/ActivationProgress.interface.yaml
+@@ -7,3 +7,7 @@ properties:
+       description: >
+         An integer between 0 and 100 representing the percentage complete of
+         the current step in software update.
++    - name: AdditionalInfo
++      type: string
++      description: >
++        An additional information in software update.
+-- 
+2.7.4
+

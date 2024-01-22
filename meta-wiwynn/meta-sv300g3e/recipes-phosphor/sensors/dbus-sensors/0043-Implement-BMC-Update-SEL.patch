@@ -1,0 +1,31 @@
+From 35a45c7e18e552e1764a99576c0bd9deabcde594 Mon Sep 17 00:00:00 2001
+From: Varun Sampat <vsampat@twitter.com>
+Date: Mon, 15 Jun 2020 20:48:09 -0400
+Subject: [PATCH] Implement BMC Update SEL
+
+---
+ include/EventSensor.hpp | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/include/EventSensor.hpp b/include/EventSensor.hpp
+index c6b875a..d40dafa 100644
+--- a/include/EventSensor.hpp
++++ b/include/EventSensor.hpp
+@@ -64,7 +64,8 @@ static const std::vector<struct sensorTypeMap> sensorList = {
+     {.sensorName = "BMC_Health", .sensorType = "mgmtsystemhealth/"},
+     {.sensorName = "Power_Unit", .sensorType = "powerunit/"},
+     {.sensorName = "Processor_fail", .sensorType = "processor/"},
+-    {.sensorName = "EventLogging", .sensorType = "sel_log/"}
++    {.sensorName = "EventLogging", .sensorType = "sel_log/"},
++    {.sensorName = "BMC_FW_UPDATE", .sensorType = "versionchange/"}
+ };
+ 
+ enum class sensorListIdx : uint8_t
+@@ -79,6 +80,7 @@ enum class sensorListIdx : uint8_t
+     Power_Unit = 7,
+     Processor_fail = 8,
+     EventLogging = 9,
++    BMC_FW_UPDATE = 10,
+ };
+ 
+ class EventOnlySensor

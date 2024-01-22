@@ -1,0 +1,33 @@
+From 4b0861edbf3c1c572b83e63d10acccf113520f45 Mon Sep 17 00:00:00 2001
+From: Ray Lue <ray.lue@mic.com.tw>
+Date: Tue, 11 Jun 2019 10:26:04 +0800
+Subject: [PATCH] [s7106]update ME channel config of new ipmb service
+
+---
+ ipmb-channels.json | 11 ++---------
+ 1 file changed, 2 insertions(+), 9 deletions(-)
+
+diff --git a/ipmb-channels.json b/ipmb-channels.json
+index ee4a373..a51847b 100644
+--- a/ipmb-channels.json
++++ b/ipmb-channels.json
+@@ -2,17 +2,10 @@
+   "channels": [
+     {
+       "type": "me",
+-      "master-path": "/dev/i2c-5",
+-      "slave-path": "/sys/bus/i2c/devices/5-1010/slave-mqueue",
++      "master-path": "/dev/i2c-1",
++      "slave-path": "/sys/bus/i2c/devices/1-0010/slave-mqueue",
+       "bmc-addr": 32,
+       "remote-addr": 44
+-    },
+-    {
+-      "type": "ipmb",
+-      "master-path": "/dev/i2c-0",
+-      "slave-path": "/sys/bus/i2c/devices/0-1010/slave-mqueue",
+-      "bmc-addr": 32,
+-      "remote-addr": 88
+     }
+   ]
+ }

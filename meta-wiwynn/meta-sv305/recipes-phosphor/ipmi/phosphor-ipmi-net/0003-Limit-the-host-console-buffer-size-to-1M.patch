@@ -1,0 +1,42 @@
+From ac5e22a7c60b8b658905da65a2d3c611dd770062 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Wed, 14 Oct 2020 16:46:51 +0800
+Subject: [PATCH] Limit the host console buffer size to 1M
+
+---
+ sol/console_buffer.hpp | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/sol/console_buffer.hpp b/sol/console_buffer.hpp
+index 51383cf..ffb1b0a 100644
+--- a/sol/console_buffer.hpp
++++ b/sol/console_buffer.hpp
+@@ -10,6 +10,12 @@ namespace sol
+ 
+ using ConsoleBuffer = std::deque<uint8_t>;
+ 
++/* Max host console buffer size: 1M
++   Erase size: 100K
++*/
++constexpr unsigned long int maxHostConsoleBufferSize = 1048576;
++constexpr uint32_t bufferEraseSize = 102400;
++
+ /** @class ConsoleData
+  *
+  *  The console data is the buffer that holds the data that comes from the host
+@@ -50,6 +56,12 @@ class ConsoleData
+     void write(const std::vector<uint8_t>& input)
+     {
+         data.insert(data.end(), input.begin(), input.end());
++
++        // Keep data buffer size smaller than maxHostConsoleBufferSize
++        if (data.size() >= maxHostConsoleBufferSize)
++        {
++            data.erase(data.begin(), data.begin() + bufferEraseSize);
++        }
+     }
+ 
+     /** @brief Erase console buffer.
+-- 
+2.24.1
+

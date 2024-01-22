@@ -1,0 +1,1970 @@
+{
+    "Exposes": [
+        {
+            "Name": "SYS Inlet Temp",
+            "SensorType": "temp",
+            "Bus": 3,
+            "Address": "0x4D",
+            "Type": "TMP75"
+        },
+        {
+            "Name": "MB Inlet Temp",
+            "SensorType": "temp",
+            "Bus": 3,
+            "Address": "0x49",
+            "Type": "TMP75"
+        },
+        {
+            "Name": "MB Outlet Temp",
+            "SensorType": "temp",
+            "Bus": 2,
+            "Address": "0x48",
+            "Type": "TMP75"
+        },
+        {
+            "Index": 0,
+            "Name": "P5V STBY",
+            "SensorType": "in",
+            "ScaleFactor": 0.2717,
+            "MaxReading": 7,
+            "MinReading": 0,
+            "PowerState": "Always",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 5.481
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 4.727
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 1,
+            "Name": "P3V3 STBY",
+            "SensorType": "in",
+            "ScaleFactor": 0.4107,
+            "MaxReading": 5,
+            "MinReading": 0,
+            "PowerState": "Always",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 3.61
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 2.99
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 2,
+            "Name": "P12V",
+            "SensorType": "in",
+            "ScaleFactor": 0.1124,
+            "MaxReading": 5,
+            "MinReading": 0,
+            "PowerState": "BiosPost",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 12.92
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 10.836
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 3,
+            "Name": "P5V",
+            "SensorType": "in",
+            "ScaleFactor": 0.2717,
+            "MaxReading": 7,
+            "MinReading": 0,
+            "PowerState": "BiosPost",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 5.481
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 4.524
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 4,
+            "Name": "P3V3",
+            "SensorType": "in",
+            "ScaleFactor": 0.4107,
+            "MaxReading": 5,
+            "MinReading": 0,
+            "PowerState": "BiosPost",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 3.61
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 2.992
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 5,
+            "Name": "P3V BAT",
+            "SensorType": "in",
+            "ScaleFactor": 0.3333,
+            "MaxReading": 5,
+            "MinReading": 0,
+            "PowerState": "Always",
+            "PollRate": 3600,
+            "BridgeGpio": [
+                {
+                    "Name": "FM_BMC_BATTERY_SENSE_EN_N",
+                    "Polarity": "Low",
+                    "EnableTimeMs": 100
+                }
+            ],
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 3.61
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 2.58
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 6,
+            "Name": "P2V5 BMC",
+            "SensorType": "in",
+            "ScaleFactor": 0.5236,
+            "MaxReading": 4,
+            "MinReading": 0,
+            "PowerState": "Always",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 2.744
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 2.262
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 7,
+            "Name": "P1V2 BMC",
+            "SensorType": "in",
+            "ScaleFactor": 1,
+            "MaxReading": 2,
+            "MinReading": 0,
+            "PowerState": "Always",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 1.316
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 1.085
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 8,
+            "Name": "P1V15 BMC",
+            "SensorType": "in",
+            "ScaleFactor": 1,
+            "MaxReading": 2,
+            "MinReading": 0,
+            "PowerState": "Always",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 1.267
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 1.036
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 9,
+            "Name": "P1V5 RTC",
+            "SensorType": "in",
+            "ScaleFactor": 1,
+            "MaxReading": 3,
+            "MinReading": 0,
+            "PowerState": "Always",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 1.692
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 1.305
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 11,
+            "Name": "P3V3 NIC",
+            "SensorType": "in",
+            "ScaleFactor": 0.4107,
+            "MaxReading": 5,
+            "MinReading": 0,
+            "PowerState": "BiosPost",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 3.61
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 2.992
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 12,
+            "Name": "P12V NIC",
+            "SensorType": "in",
+            "ScaleFactor": 0.1124,
+            "MaxReading": 17,
+            "MinReading": 0,
+            "PowerState": "BiosPost",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 12.92
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 10.836
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 0,
+            "Name": "CPU CORE VR Temp",
+            "Label": "temp1",
+            "SensorType": "temp",
+            "MaxReading": 127,
+            "MinReading": -128,
+            "PowerState": "BiosPost",
+            "Bus": 5,
+            "Address": "0x61",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 100
+                }
+            ],
+            "Type": "ISL69247"
+        },
+        {
+            "Index": 0,
+            "Name": "CPU SOC VR Temp",
+            "Label": "temp1",
+            "SensorType": "temp",
+            "MaxReading": 127,
+            "MinReading": -128,
+            "PowerState": "BiosPost",
+            "Bus": 5,
+            "Address": "0x63",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 100
+                }
+            ],
+            "Type": "ISL69242"
+        },
+        {
+            "Index": 0,
+            "Name": "MEM ABCD VR Temp",
+            "Label": "temp1",
+            "SensorType": "temp",
+            "MaxReading": 127,
+            "MinReading": -128,
+            "PowerState": "BiosPost",
+            "Bus": 5,
+            "Address": "0x64",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 100
+                }
+            ],
+            "Type": "ISL68223"
+        },
+        {
+            "Index": 0,
+            "Name": "MEM EFGH VR Temp",
+            "Label": "temp1",
+            "SensorType": "temp",
+            "MaxReading": 127,
+            "MinReading": -128,
+            "PowerState": "BiosPost",
+            "Bus": 5,
+            "Address": "0x65",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 100
+                }
+            ],
+            "Type": "ISL68223"
+        },
+        {
+            "Index": 2,
+            "Name": "CPU CORE VR POUT",
+            "Label": "pout1",
+            "SensorType": "power",
+            "MaxReading": 410,
+            "MinReading": 0,
+            "PowerState": "BiosPost",
+            "Bus": 5,
+            "Address": "0x61",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 269.31
+                }
+            ],
+            "Type": "ISL69247"
+        },
+        {
+            "Index": 2,
+            "Name": "CPU SOC VR POUT",
+            "Label": "pout1",
+            "SensorType": "power",
+            "MaxReading": 130,
+            "MinReading": 0,
+            "PowerState": "BiosPost",
+            "Bus": 5,
+            "Address": "0x63",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 99.84
+                }
+            ],
+            "Type": "ISL69242"
+        },
+        {
+            "Index": 2,
+            "Name": "MEM ABCD VR POUT",
+            "Label": "pout1",
+            "SensorType": "power",
+            "MaxReading": 255,
+            "MinReading": 0,
+            "PowerState": "BiosPost",
+            "Bus": 5,
+            "Address": "0x64",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 119.7
+                }
+            ],
+            "Type": "ISL68223"
+        },
+        {
+            "Index": 2,
+            "Name": "MEM EFGH VR POUT",
+            "Label": "pout1",
+            "SensorType": "power",
+            "MaxReading": 255,
+            "MinReading": 0,
+            "PowerState": "BiosPost",
+            "Bus": 5,
+            "Address": "0x65",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 119.7
+                }
+            ],
+            "Type": "ISL68223"
+        },
+        {
+            "Index": 2,
+            "Name": "CPU CORE VR Curr",
+            "Label": "iout1",
+            "SensorType": "curr",
+            "MaxReading": 385,
+            "MinReading": 0,
+            "PowerState": "BiosPost",
+            "Bus": 5,
+            "Address": "0x61",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 279.21
+                }
+            ],
+            "Type": "ISL69247"
+        },
+        {
+            "Index": 2,
+            "Name": "CPU SOC VR Curr",
+            "Label": "iout1",
+            "SensorType": "curr",
+            "MaxReading": 130,
+            "MinReading": 0,
+            "PowerState": "BiosPost",
+            "Bus": 5,
+            "Address": "0x63",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 89.79
+                }
+            ],
+            "Type": "ISL69242"
+        },
+        {
+            "Index": 2,
+            "Name": "MEM ABCD VR Curr",
+            "Label": "iout1",
+            "SensorType": "curr",
+            "MaxReading": 230,
+            "MinReading": 0,
+            "PowerState": "BiosPost",
+            "Bus": 5,
+            "Address": "0x64",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 99.84
+                }
+            ],
+            "Type": "ISL68223"
+        },
+        {
+            "Index": 2,
+            "Name": "MEM EFGH VR Curr",
+            "Label": "iout1",
+            "SensorType": "curr",
+            "MaxReading": 230,
+            "MinReading": 0,
+            "PowerState": "BiosPost",
+            "Bus": 5,
+            "Address": "0x65",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 99.84
+                }
+            ],
+            "Type": "ISL68223"
+        },
+        {
+            "Index": 2,
+            "Name": "CPU CORE VR Volt",
+            "Label": "vout1",
+            "SensorType": "in",
+            "MaxReading": 2,
+            "MinReading": 0,
+            "PowerState": "BiosPost",
+            "Bus": 5,
+            "Address": "0x61",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 1.4
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 0.406
+                }
+
+            ],
+            "Type": "ISL69247"
+        },
+        {
+            "Index": 2,
+            "Name": "CPU SOC VR Volt",
+            "Label": "vout1",
+            "SensorType": "in",
+            "MaxReading": 2,
+            "MinReading": 0,
+            "PowerState": "BiosPost",
+            "Bus": 5,
+            "Address": "0x63",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 1.2
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 0.6
+                }
+
+            ],
+            "Type": "ISL69242"
+        },
+        {
+            "Index": 2,
+            "Name": "MEM ABCD VR Volt",
+            "Label": "vout1",
+            "SensorType": "in",
+            "MaxReading": 2,
+            "MinReading": 0,
+            "PowerState": "BiosPost",
+            "Bus": 5,
+            "Address": "0x64",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 1.295
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 1.106
+                }
+
+            ],
+            "Type": "ISL68223"
+        },
+        {
+            "Index": 2,
+            "Name": "MEM EFGH VR Volt",
+            "Label": "vout1",
+            "SensorType": "in",
+            "MaxReading": 2,
+            "MinReading": 0,
+            "PowerState": "BiosPost",
+            "Bus": 5,
+            "Address": "0x65",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 1.295
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 1.106
+                }
+
+            ],
+            "Type": "ISL68223"
+        },
+        {
+            "Index": 0,
+            "Name": "CPU Temp",
+            "SensorType": "temp",
+            "PowerState": "BiosPost",
+            "TctlMax" : 100,
+            "MaxReading": 255,
+            "MinReading": 0,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 93
+                }
+            ],
+            "Type": "CPU"
+        },
+        {
+            "Name": "DIMM A0 Temp",
+            "Bus": 9,
+            "Register": "0x05",
+            "Address": "0x18",
+            "SensorType" : "temp",
+            "MuxAddr" : "0x70",
+            "MuxCmd" : "0x04",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 78
+                }
+            ],
+            "Type": "DIMM"
+        },
+        {
+            "Name": "DIMM B0 Temp",
+            "Bus": 9,
+            "Register": "0x05",
+            "Address": "0x1a",
+            "SensorType" : "temp",
+            "MuxAddr" : "0x70",
+            "MuxCmd" : "0x04",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 78
+                }
+            ],
+            "Type": "DIMM"
+        },
+        {
+            "Name": "DIMM C0 Temp",
+            "Bus": 9,
+            "Register": "0x05",
+            "Address": "0x1c",
+            "SensorType" : "temp",
+            "MuxAddr" : "0x70",
+            "MuxCmd" : "0x04",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 78
+                }
+            ],
+            "Type": "DIMM"
+        },
+        {
+            "Name": "DIMM D0 Temp",
+            "Bus": 9,
+            "Register": "0x05",
+            "Address": "0x1e",
+            "SensorType" : "temp",
+            "MuxAddr" : "0x70",
+            "MuxCmd" : "0x04",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 78
+                }
+            ],
+            "Type": "DIMM"
+        },
+        {
+            "Name": "DIMM E0 Temp",
+            "Bus": 9,
+            "Register": "0x05",
+            "Address": "0x18",
+            "SensorType" : "temp",
+            "MuxAddr" : "0x70",
+            "MuxCmd" : "0x05",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 78
+                }
+            ],
+            "Type": "DIMM"
+        },
+        {
+            "Name": "DIMM F0 Temp",
+            "Bus": 9,
+            "Register": "0x05",
+            "Address": "0x1a",
+            "SensorType" : "temp",
+            "MuxAddr" : "0x70",
+            "MuxCmd" : "0x05",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 78
+                }
+            ],
+            "Type": "DIMM"
+        },
+        {
+            "Name": "DIMM G0 Temp",
+            "Bus": 9,
+            "Register": "0x05",
+            "Address": "0x1c",
+            "SensorType" : "temp",
+            "MuxAddr" : "0x70",
+            "MuxCmd" : "0x05",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 78
+                }
+            ],
+            "Type": "DIMM"
+        },
+        {
+            "Name": "DIMM H0 Temp",
+            "Bus": 9,
+            "Register": "0x05",
+            "Address": "0x1e",
+            "SensorType" : "temp",
+            "MuxAddr" : "0x70",
+            "MuxCmd" : "0x05",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 78
+                }
+            ],
+            "Type": "DIMM"
+        },
+        {
+            "Name": "pattern 1",
+            "PowerState": "Always",
+            "SensorType": "pattern",
+            "MaxReading" : 255,
+            "MinReading" : 0,
+            "Match": [
+               {
+                    "Content": ""
+               }
+            ],
+            "Type": "Pattern"
+        },
+        {
+            "Name": "pattern 2",
+            "PowerState": "Always",
+            "SensorType": "pattern",
+            "MaxReading" : 255,
+            "MinReading" : 0,
+            "Match": [
+               {
+                    "Content": ""
+               }
+            ],
+            "Type": "Pattern"
+        },
+        {
+            "Name": "pattern 3",
+            "PowerState": "Always",
+            "SensorType": "pattern",
+            "MaxReading" : 255,
+            "MinReading" : 0,
+            "Match": [
+               {
+                    "Content": ""
+               }
+            ],
+            "Type": "Pattern"
+        },
+        {
+            "Name": "pattern 4",
+            "PowerState": "Always",
+            "SensorType": "pattern",
+            "MaxReading" : 255,
+            "MinReading" : 0,
+            "Match": [
+               {
+                    "Content": ""
+               }
+            ],
+            "Type": "Pattern"
+        },
+        {
+            "Name": "SSD0 Temp",
+            "Bus": 7,
+            "MuxAddress": "0x73",
+            "MuxCmd": "0x01",
+            "CpldMuxAddress": "0x75",
+            "CpldMuxCmd": "0x01",
+            "SensorType": "temp",
+            "DetectName":"SSD0_Presence",
+            "DetectBus" : 7,
+            "DetectAddr" : "0x5c",
+            "DetectCmd" : "0x05",
+            "DetectBit" : 0,
+            "MaxReading": 255,
+            "MinReading": 0,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 69
+                }
+            ],
+            "Type": "NVME"
+        },
+        {
+            "Name": "SSD1 Temp",
+            "Bus": 7,
+            "MuxAddress": "0x73",
+            "MuxCmd": "0x01",
+            "CpldMuxAddress": "0x75",
+            "CpldMuxCmd": "0x02",
+            "SensorType": "temp",
+            "DetectName":"SSD1_Presence",
+            "DetectBus" : 7,
+            "DetectAddr" : "0x5c",
+            "DetectCmd" : "0x05",
+            "DetectBit" : 2,
+            "MaxReading": 255,
+            "MinReading": 0,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 69
+                }
+            ],
+            "Type": "NVME"
+        },
+        {
+            "Name": "M2 Temp",
+            "Bus": 15,
+            "SensorType": "temp",
+            "MaxReading": 255,
+            "MinReading": 0,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 76
+                }
+            ],
+            "Type": "NVME"
+        },
+        {
+            "Index": 0,
+            "Name": "HSC Temp",
+            "Label": "temp1",
+            "SensorType": "temp",
+            "MaxReading": 127,
+            "MinReading": -128,
+            "PowerState": "BiosPost",
+            "Bus": 5,
+            "Address": "0x11",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 100
+                }
+            ],
+            "Type": "ADM1278"
+        },
+        {
+            "Index": 0,
+            "Name": "HSC Input Power",
+            "Label": "pin",
+            "SensorType": "power",
+            "MaxReading": 690,
+            "MinReading": 0,
+            "PowerState": "BiosPost",
+            "Bus": 5,
+            "Address": "0x11",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 580.8
+                }
+            ],
+            "Type": "ADM1278"
+        },
+        {
+            "Index": 1,
+            "Name": "HSC Output Volt",
+            "Label": "vout1",
+            "SensorType": "in",
+            "MaxReading": 16,
+            "MinReading": 0,
+            "PowerState": "BiosPost",
+            "Bus": 5,
+            "Address": "0x11",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 12.92
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 11.356
+                }
+            ],
+            "Type": "ADM1278"
+        },
+        {
+            "Index": 0,
+            "Name": "HSC Input Volt",
+            "Label": "vin",
+            "SensorType": "in",
+            "MaxReading": 16,
+            "MinReading": 0,
+            "PowerState": "BiosPost",
+            "Bus": 5,
+            "Address": "0x11",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 12.92
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 11.356
+                }
+            ],
+            "Type": "ADM1278"
+        },
+        {
+            "Index": 0,
+            "Name": "HSC Output Curr",
+            "Label": "iout1",
+            "SensorType": "curr",
+            "MaxReading": 50,
+            "MinReading": 0,
+            "PowerState": "BiosPost",
+            "Bus": 5,
+            "Address": "0x11",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 48.9
+                }
+            ],
+            "Type": "ADM1278"
+        },
+        {
+            "Name": "PDB Temp 1",
+            "SensorType": "temp",
+            "Bus": 14,
+            "Address": "0x4c",
+            "Type": "TMP75"
+        },
+        {
+            "Name": "PDB Temp 2",
+            "SensorType": "temp",
+            "Bus": 14,
+            "Address": "0x4d",
+            "Type": "TMP75"
+        },
+        {
+            "Index": 0,
+            "Name": "PDB HSC Temp",
+            "Label": "temp1",
+            "SensorType": "temp",
+            "MaxReading": 127,
+            "MinReading": -128,
+            "PowerState": "BiosPost",
+            "Bus": 14,
+            "Address": "0x11",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 100
+                }
+            ],
+            "Type": "ADM1278"
+        },
+        {
+            "Index": 0,
+            "Name": "PDB HSC PIN",
+            "Label": "pin",
+            "SensorType": "power",
+            "MaxReading": 1200,
+            "MinReading": 0,
+            "PowerState": "BiosPost",
+            "Bus": 14,
+            "Address": "0x11",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 998.4
+                }
+            ],
+            "Type": "ADM1278"
+        },
+        {
+            "Index": 0,
+            "Name": "PDB HSC VIN",
+            "Label": "vin",
+            "SensorType": "in",
+            "MaxReading": 16,
+            "MinReading": 0,
+            "PowerState": "BiosPost",
+            "Bus": 14,
+            "Address": "0x11",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 12.92
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 11.356
+                }
+            ],
+            "Type": "ADM1278"
+        },
+        {
+            "Index": 0,
+            "Name": "PDB HSC IOUT",
+            "Label": "iout1",
+            "SensorType": "curr",
+            "MaxReading": 100,
+            "MinReading": 0,
+            "PowerState": "BiosPost",
+            "Bus": 14,
+            "Address": "0x11",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 83.16
+                }
+            ],
+            "Type": "ADM1278"
+        },
+        {
+            "Name": "P12V Fan012 POUT",
+            "SensorType": "power",
+            "Label": "pout",
+            "MaxReading": 150,
+            "MinReading": 0,
+            "RLoad": 13700,
+            "PowerState": "Always",
+            "Bus": 14,
+            "Address": "0x47",
+            "Type": "MAX16550"
+        },
+        {
+            "Name": "P12V Fan345 POUT",
+            "SensorType": "power",
+            "Label": "pout",
+            "MaxReading": 150,
+            "MinReading": 0,
+            "RLoad": 13700,
+            "PowerState": "Always",
+            "Bus": 14,
+            "Address": "0x51",
+            "Type": "MAX16550"
+        },
+        {
+            "Name": "SYS FAN R0",
+            "Bus": 14,
+            "Address": "0x20",
+            "Index": 1,
+            "SensorType": "fan",
+            "PowerState": "Always",
+            "MaxReading": 32640,
+            "MinReading": 0,
+            "Sled": 2,
+            "Presence":
+            {
+                "Polarity": "Low",
+                "PinName": "FAN1_PRSNT_N",
+                "SelSensorName": "FAN0_Presence"
+            },
+            "Thresholds": [
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 1680
+                }
+            ],
+            "Type": "I2CFan"
+        },
+        {
+            "Name": "SYS FAN F0",
+            "Bus": 14,
+            "Address": "0x20",
+            "Index": 0,
+            "SensorType": "fan",
+            "PowerState": "Always",
+            "MaxReading": 32640,
+            "MinReading": 0,
+            "Sled": 2,
+            "Presence":
+            {
+                "Polarity": "Low",
+                "PinName": "FAN1_PRSNT_N",
+                "SelSensorName": "FAN0_Presence"
+            },
+            "Thresholds": [
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 2100
+                }
+            ],
+            "Type": "I2CFan"
+        },
+        {
+            "Name": "SYS FAN R1",
+            "Bus": 14,
+            "Address": "0x20",
+            "Index": 3,
+            "SensorType": "fan",
+            "PowerState": "Always",
+            "MaxReading": 32640,
+            "MinReading": 0,
+            "Sled": 2,
+            "Presence":
+            {
+                "Polarity": "Low",
+                "PinName": "FAN2_PRSNT_N",
+                "SelSensorName": "FAN1_Presence"
+            },
+            "Thresholds": [
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 1680
+                }
+            ],
+            "Type": "I2CFan"
+        },
+        {
+            "Name": "SYS FAN F1",
+            "Bus": 14,
+            "Address": "0x20",
+            "Index": 2,
+            "SensorType": "fan",
+            "PowerState": "Always",
+            "MaxReading": 32640,
+            "MinReading": 0,
+            "Sled": 2,
+            "Presence":
+            {
+                "Polarity": "Low",
+                "PinName": "FAN2_PRSNT_N",
+                "SelSensorName": "FAN1_Presence"
+            },
+            "Thresholds": [
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 2100
+                }
+            ],
+            "Type": "I2CFan"
+        },
+        {
+            "Name": "SYS FAN R2",
+            "Bus": 14,
+            "Address": "0x20",
+            "Index": 5,
+            "SensorType": "fan",
+            "PowerState": "Always",
+            "MaxReading": 32640,
+            "MinReading": 0,
+            "Sled": 2,
+            "Presence":
+            {
+                "Polarity": "Low",
+                "PinName": "FAN3_PRSNT_N",
+                "SelSensorName": "FAN2_Presence"
+            },
+            "Thresholds": [
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 1680
+                }
+            ],
+            "Type": "I2CFan"
+        },
+        {
+            "Name": "SYS FAN F2",
+            "Bus": 14,
+            "Address": "0x20",
+            "Index": 4,
+            "SensorType": "fan",
+            "PowerState": "Always",
+            "MaxReading": 32640,
+            "MinReading": 0,
+            "Sled": 2,
+            "Presence":
+            {
+                "Polarity": "Low",
+                "PinName": "FAN3_PRSNT_N",
+                "SelSensorName": "FAN2_Presence"
+            },
+            "Thresholds": [
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 2100
+                }
+            ],
+            "Type": "I2CFan"
+        },
+        {
+            "Name": "SYS FAN R3",
+            "Bus": 14,
+            "Address": "0x23",
+            "Index": 1,
+            "SensorType": "fan",
+            "PowerState": "Always",
+            "MaxReading": 32640,
+            "MinReading": 0,
+            "Sled": 1,
+            "Presence":
+            {
+                "Polarity": "Low",
+                "PinName": "FAN4_PRSNT_N",
+                "SelSensorName": "FAN3_Presence"
+            },
+            "Thresholds": [
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 1680
+                }
+            ],
+            "Type": "I2CFan"
+        },
+        {
+            "Name": "SYS FAN F3",
+            "Bus": 14,
+            "Address": "0x23",
+            "Index": 0,
+            "SensorType": "fan",
+            "PowerState": "Always",
+            "MaxReading": 32640,
+            "MinReading": 0,
+            "Sled": 1,
+            "Presence":
+            {
+                "Polarity": "Low",
+                "PinName": "FAN4_PRSNT_N",
+                "SelSensorName": "FAN3_Presence"
+            },
+            "Thresholds": [
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 2100
+                }
+            ],
+            "Type": "I2CFan"
+        },
+        {
+            "Name": "SYS FAN R4",
+            "Bus": 14,
+            "Address": "0x23",
+            "Index": 3,
+            "SensorType": "fan",
+            "PowerState": "Always",
+            "MaxReading": 32640,
+            "MinReading": 0,
+            "Sled": 1,
+            "Presence":
+            {
+                "Polarity": "Low",
+                "PinName": "FAN5_PRSNT_N",
+                "SelSensorName": "FAN4_Presence"
+            },
+            "Thresholds": [
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 1680
+                }
+            ],
+            "Type": "I2CFan"
+        },
+        {
+            "Name": "SYS FAN F4",
+            "Bus": 14,
+            "Address": "0x23",
+            "Index": 2,
+            "SensorType": "fan",
+            "PowerState": "Always",
+            "MaxReading": 32640,
+            "MinReading": 0,
+            "Sled": 1,
+            "Presence":
+            {
+                "Polarity": "Low",
+                "PinName": "FAN5_PRSNT_N",
+                "SelSensorName": "FAN4_Presence"
+            },
+            "Thresholds": [
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 2100
+                }
+            ],
+            "Type": "I2CFan"
+        },
+        {
+            "Name": "SYS FAN R5",
+            "Bus": 14,
+            "Address": "0x23",
+            "Index": 5,
+            "SensorType": "fan",
+            "PowerState": "Always",
+            "MaxReading": 32640,
+            "MinReading": 0,
+            "Sled": 1,
+            "Presence":
+            {
+                "Polarity": "Low",
+                "PinName": "FAN6_PRSNT_N",
+                "SelSensorName": "FAN5_Presence"
+            },
+            "Thresholds": [
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 1680
+                }
+            ],
+            "Type": "I2CFan"
+        },
+        {
+            "Name": "SYS FAN F5",
+            "Bus": 14,
+            "Address": "0x23",
+            "Index": 4,
+            "SensorType": "fan",
+            "PowerState": "Always",
+            "MaxReading": 32640,
+            "MinReading": 0,
+            "Sled": 1,
+            "Presence":
+            {
+                "Polarity": "Low",
+                "PinName": "FAN6_PRSNT_N",
+                "SelSensorName": "FAN5_Presence"
+            },
+            "Thresholds": [
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 2100
+                }
+            ],
+            "Type": "I2CFan"
+        },
+        {
+            "Name": "Fan PWM0",
+            "Bus": 14,
+            "Address": "0x20",
+            "MaxReading": 100,
+            "MinReading": 0,
+            "Index": 0,
+            "Sled": 2,
+            "SensorType": "pwm",
+            "PowerState": "Always",
+            "Type": "I2CFan"
+        },
+        {
+            "Name": "Fan PWM1",
+            "Bus": 14,
+            "Address": "0x20",
+            "MaxReading": 100,
+            "MinReading": 0,
+            "Index": 1,
+            "Sled": 2,
+            "SensorType": "pwm",
+            "PowerState": "Always",
+            "Type": "I2CFan"
+        },
+        {
+            "Name": "Fan PWM2",
+            "Bus": 14,
+            "Address": "0x20",
+            "MaxReading": 100,
+            "MinReading": 0,
+            "Index": 2,
+            "Sled": 2,
+            "SensorType": "pwm",
+            "PowerState": "Always",
+            "Type": "I2CFan"
+        },
+        {
+            "Name": "Fan PWM3",
+            "Bus": 14,
+            "Address": "0x23",
+            "MaxReading": 100,
+            "MinReading": 0,
+            "Index": 0,
+            "Sled": 1,
+            "SensorType": "pwm",
+            "PowerState": "Always",
+            "Type": "I2CFan"
+        },
+        {
+            "Name": "Fan PWM4",
+            "Bus": 14,
+            "Address": "0x23",
+            "MaxReading": 100,
+            "MinReading": 0,
+            "Index": 1,
+            "Sled": 1,
+            "SensorType": "pwm",
+            "PowerState": "Always",
+            "Type": "I2CFan"
+        },
+        {
+            "Name": "Fan PWM5",
+            "Bus": 14,
+            "Address": "0x23",
+            "MaxReading": 100,
+            "MinReading": 0,
+            "Index": 2,
+            "Sled": 1,
+            "SensorType": "pwm",
+            "PowerState": "Always",
+            "Type": "I2CFan"
+        },
+        {
+            "Name": "PDB FRONT Temp",
+            "SensorType": "temp",
+            "Bus": 25,
+            "Address": "0x4E",
+            "PollRate": 3,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 105
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 0
+                }
+            ],
+            "UseLock": true,
+            "Type": "TMP75"
+        },
+        {
+            "Name": "PDB REAR Temp",
+            "SensorType": "temp",
+            "Bus": 25,
+            "Address": "0x4F",
+            "PollRate": 1,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 105
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 0
+                }
+            ],
+            "UseLock": true,
+            "Type": "TMP75"
+        },
+        {
+            "Index": 0,
+            "Name": "PDB STBY Volt",
+            "Label": "in1",
+            "SensorType": "in",
+            "MaxReading": 14.8,
+            "MinReading": 0,
+            "PowerState": "Always",
+            "Bus": 26,
+            "Address": "0x42",
+            "PollRate": 3,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 12.6
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 11.4
+                }
+            ],
+            "UseLock": true,
+            "Type": "INA219"
+        },
+        {
+            "Index": 0,
+            "Name": "PDB STBY Power",
+            "Label": "power1",
+            "SensorType": "power",
+            "MaxReading": 85,
+            "MinReading": 0,
+            "PowerState": "Always",
+            "Bus": 26,
+            "Address": "0x42",
+            "PollRate": 3,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 72
+                }
+            ],
+            "UseLock": true,
+            "Type": "INA219"
+        },
+        {
+            "Index": 0,
+            "Name": "PDB 48V HSC Temp",
+            "Label": "temp1",
+            "SensorType": "temp",
+            "MaxReading": 127,
+            "MinReading": -128,
+            "PowerState": "Always",
+            "Bus": 27,
+            "Address": "0x10",
+            "PollRate": 1,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 110
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 0
+                }
+            ],
+            "UseLock": true,
+            "Type": "ADM1272"
+        },
+        {
+            "Index": 0,
+            "Name": "PDB 48V HSC PIN",
+            "Label": "pin",
+            "SensorType": "power",
+            "MaxReading": 1500,
+            "MinReading": 0,
+            "PowerState": "Always",
+            "Bus": 27,
+            "Address": "0x10",
+            "PollRate": 3,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 1200
+                }
+            ],
+            "UseLock": true,
+            "Type": "ADM1272"
+        },
+        {
+            "Index": 1,
+            "Name": "PDB 48V HSC VOUT",
+            "Label": "vout1",
+            "SensorType": "in",
+            "MaxReading": 16,
+            "MinReading": 0,
+            "PowerState": "Always",
+            "Bus": 27,
+            "Address": "0x10",
+            "PollRate": 3,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 59
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 41
+                }
+            ],
+            "UseLock": true,
+            "Type": "ADM1272"
+        },
+        {
+            "Index": 0,
+            "Name": "PDB 48V HSC VIN",
+            "Label": "vin",
+            "SensorType": "in",
+            "MaxReading": 75,
+            "MinReading": 0,
+            "PowerState": "Always",
+            "Bus": 27,
+            "Address": "0x10",
+            "PollRate": 3,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 59
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 41
+                }
+            ],
+            "UseLock": true,
+            "Type": "ADM1272"
+        },
+        {
+            "Index": 0,
+            "Name": "PDB 48V HSC POUT",
+            "Label": "pout1",
+            "SensorType": "power",
+            "MaxReading": 1500,
+            "MinReading": 0,
+            "PowerState": "Always",
+            "Bus": 27,
+            "Address": "0x10",
+            "PollRate": 3,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 1200
+                }
+            ],
+            "UseLock": true,
+            "Type": "ADM1272"
+        },
+        {
+            "Index": 0,
+            "Name": "PDB 48V VIN",
+            "Label": "vin",
+            "SensorType": "in",
+            "MaxReading": 72,
+            "MinReading": 0,
+            "PowerState": "Always",
+            "Bus": 28,
+            "Address": "0x5a",
+            "PollRate": 3,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 59
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 41
+                }
+            ],
+            "UseLock": true,
+            "Type": "RAA228006"
+        },
+        {
+            "Index": 2,
+            "Name": "PDB 12V VOUT",
+            "Label": "vout1",
+            "SensorType": "in",
+            "MaxReading": 15,
+            "MinReading": 0,
+            "PowerState": "Always",
+            "Bus": 28,
+            "Address": "0x5a",
+            "PollRate": 3,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 12.81
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 11.59
+                }
+            ],
+            "UseLock": true,
+            "Type": "RAA228006"
+        },
+        {
+            "Index": 1,
+            "Name": "PDB 12V IOUT",
+            "Label": "iout1",
+            "SensorType": "curr",
+            "MaxReading": 111,
+            "MinReading": 0,
+            "PowerState": "Always",
+            "Bus": 28,
+            "Address": "0x5a",
+            "PollRate": 3,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 105
+                }
+            ],
+            "UseLock": true,
+            "Type": "RAA228006"
+        },
+        {
+            "Index": 0,
+            "Name": "PDB 12V NTC Temp",
+            "Label": "temp1",
+            "SensorType": "temp",
+            "MaxReading": 127,
+            "MinReading": -128,
+            "PowerState": "Always",
+            "Bus": 28,
+            "Address": "0x5a",
+            "PollRate": 3,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 105
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 0
+                }
+            ],
+            "UseLock": true,
+            "Type": "RAA228006"
+        },
+        {
+            "Index": 1,
+            "Name": "PDB 12V INT Temp",
+            "Label": "temp2",
+            "SensorType": "temp",
+            "MaxReading": 127,
+            "MinReading": -128,
+            "PowerState": "Always",
+            "Bus": 28,
+            "Address": "0x5a",
+            "PollRate": 1,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 110
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 0
+                }
+            ],
+            "UseLock": true,
+            "Type": "RAA228006"
+        }
+    ],
+    "Fru":[
+        {
+            "Name": "MB FRU",
+            "Size": 512,
+            "Index": 0,
+            "Bus": 3,
+            "Address": "0x50",
+            "ReadOnly": false
+        },
+        {
+            "Name": "NIC FRU",
+            "Size": 512,
+            "Index": 3,
+            "Bus": 18,
+            "Address": "0x50",
+            "ReadOnly": true
+        },
+        {
+            "Name": "PDB 48V FRU",
+            "Size": 512,
+            "Index": 4,
+            "Bus": 14,
+            "Address": "0x54",
+            "ReadOnly": false
+        },
+        {
+            "Name": "PDB FRU",
+            "Size": 512,
+            "Index": 5,
+            "Bus": 14,
+            "Address": "0x52",
+            "ReadOnly": false
+        }
+    ],
+    "Name": "SV310A Main Board",
+    "Probe": "xyz.openbmc_project.FruDevice({'NAME': 'MB FRU'})",
+    "Type": "Board",
+    "xyz.openbmc_project.Inventory.Decorator.Asset": {
+        "Manufacturer": "$PRODUCT_MANUFACTURER",
+        "Model": "$PRODUCT_PRODUCT_NAME",
+        "PartNumber": "$PRODUCT_PART_NUMBER",
+        "SerialNumber": "$PRODUCT_SERIAL_NUMBER"
+    }
+}

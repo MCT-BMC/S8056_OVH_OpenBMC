@@ -1,0 +1,60 @@
+From c24ceb1a4e4c5408efcecf82edcc2d3705f149e7 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Mon, 2 Mar 2020 23:41:52 +0800
+Subject: [PATCH] Correct the response of in-band bridge IPMB command
+
+---
+ src/bridgingcommands.cpp | 18 +++++++++++++-----
+ 1 file changed, 13 insertions(+), 5 deletions(-)
+
+diff --git a/src/bridgingcommands.cpp b/src/bridgingcommands.cpp
+index 9cc8879..a31cdad 100644
+--- a/src/bridgingcommands.cpp
++++ b/src/bridgingcommands.cpp
+@@ -251,7 +251,7 @@ ipmi_return_codes Bridging::handleIpmbChannel(sSendMessageReq *sendMsgReq,
+     std::tie(status, netFn, lun, cmd, cc, dataReceived) = ipmbResponse;
+ 
+     auto respReceived =
+-        IpmbResponse(ipmbRequest.rqSA, netFn, lun, ipmbRequest.address,
++        IpmbResponse(ipmbRequest.rqSA, netFn, ipmbRequest.rqLun, ipmbRequest.address,
+                      ipmbRequest.seq, lun, cmd, cc, dataReceived);
+ 
+     // check IPMB layer status
+@@ -379,14 +379,21 @@ ipmi_return_codes Bridging::getMessageHandler(ipmi_request_t request,
+     }
+ 
+     // set message fields
+-    getMsgRes->privilegeLvlSet(SYSTEM_INTERFACE);
+-    getMsgRes->channelNumSet(targetChannelSystemInterface);
++    // getMsgRes->privilegeLvlSet(SYSTEM_INTERFACE);
++    // getMsgRes->channelNumSet(targetChannelSystemInterface);
++
++    // Set channel to IPMB (0x6) with None Privilege
++    getMsgRes->channelData &= 0x0F;
++    getMsgRes->channelNumSet(targetChannelOtherLan);
+ 
+     // construct response
+     respQueueItem->ipmbToi2cConstruct(getMsgResData, dataLen);
+     responseQueue.erase(respQueueItem);
+ 
+-    *dataLen = *dataLen + sizeof(sGetMessageRes);
++    // No need to return the rqAddr (0x20)
++    std::memmove(getMsgResData, getMsgResData+1, (*dataLen - 1));
++    *dataLen = (*dataLen - 1) + sizeof(sGetMessageRes);
++
+     return IPMI_CC_OK;
+ }
+ 
+@@ -405,7 +412,8 @@ ipmi_return_codes Bridging::getMessageFlagsHandler(ipmi_request_t request,
+     std::memset(getMsgFlagsRes, 0, sizeof(sGetMessageFlagsResp));
+ 
+     // preserve current (legacy) behaviour
+-    getMsgFlagsRes->eventMessageBitSet(1);
++    // getMsgFlagsRes->eventMessageBitSet(1);
++    getMsgFlagsRes->eventMessageBitSet(0);
+ 
+     // set message fields
+     if (responseQueue.size() > 0)
+-- 
+2.24.1
+

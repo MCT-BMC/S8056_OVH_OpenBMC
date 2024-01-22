@@ -1,0 +1,24 @@
+From cd25f1f314c88063f62b2f9e37ee2d44a1e3bf44 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Wed, 31 Aug 2022 11:44:48 +0800
+Subject: [PATCH] Uboot: Disable RTL8211f EEE LED feature
+
+---
+ drivers/net/phy/realtek.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/net/phy/realtek.c b/drivers/net/phy/realtek.c
+index f14c912..31f5096 100644
+--- a/drivers/net/phy/realtek.c
++++ b/drivers/net/phy/realtek.c
+@@ -184,6 +184,7 @@ static int rtl8211f_config(struct phy_device *phydev)
+ 	phy_write(phydev, MDIO_DEVAD_NONE,
+ 		  MIIM_RTL8211F_PAGE_SELECT, 0xd04);
+ 	phy_write(phydev, MDIO_DEVAD_NONE, 0x10, 0x6d02);
++	phy_write(phydev, MDIO_DEVAD_NONE, 0x11, 0x0000);
+ 	phy_write(phydev, MDIO_DEVAD_NONE,
+ 		  MIIM_RTL8211F_PAGE_SELECT, 0x0);
+ 
+-- 
+2.7.4
+

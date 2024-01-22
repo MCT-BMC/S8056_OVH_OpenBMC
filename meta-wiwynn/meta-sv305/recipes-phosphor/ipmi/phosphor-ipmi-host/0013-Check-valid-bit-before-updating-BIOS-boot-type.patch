@@ -1,0 +1,37 @@
+From cafe4d7a28b2a6028d2c1e3ea83b728af3d060c2 Mon Sep 17 00:00:00 2001
+From: Ren_Chen <Ren_Chen@wiwynn.com>
+Date: Fri, 27 Nov 2020 17:43:38 +0800
+Subject: [PATCH] Check valid bit before updating BIOS boot type
+
+---
+ chassishandler.cpp | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/chassishandler.cpp b/chassishandler.cpp
+index 40d3896..0bc0fa4 100644
+--- a/chassishandler.cpp
++++ b/chassishandler.cpp
+@@ -1841,6 +1841,7 @@ ipmi::RspType<ipmi::message::Payload>
+                 bootOptionParam |= setParmBootFlagsBootTypeUefi;
+             }
+ 
++
+             response.pack(bootOptionParameter, reserved1, bootOptionParam,
+                           uint2_t{}, uint4_t{bootOption}, uint2_t{}, uint8_t{},
+                           uint8_t{}, uint8_t{});
+@@ -1967,7 +1968,11 @@ ipmi::RspType<> ipmiChassisSetSysBootOptions(ipmi::Context::ptr ctx,
+         constexpr auto oneTimePath =
+             "/xyz/openbmc_project/control/host0/boot/one_time";
+ 
+-        uefiboot = biosBootType;
++        /* make sure paremeter is valid */
++        if (validFlag)
++        {
++            uefiboot = biosBootType;
++        }
+ 
+         try
+         {
+-- 
+2.28.0
+

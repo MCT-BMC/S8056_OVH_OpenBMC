@@ -1,0 +1,2 @@
+FILESEXTRAPATHS_prepend_sv300g3e := "${THISDIR}/${PN}:"
+OBMC_CONSOLE_HOST_TTY = "ttyS2"

@@ -1,0 +1,10 @@
+[Unit]
+Description=SV300G3-E switch to multi-user.target
+
+[Service]
+Type=idle
+ExecStart=/usr/sbin/sv300g3e-to-multi-user-target.sh
+SyslogIdentifier=sv300g3e-to-multi-user-target
+
+[Install]
+WantedBy=rescue.target

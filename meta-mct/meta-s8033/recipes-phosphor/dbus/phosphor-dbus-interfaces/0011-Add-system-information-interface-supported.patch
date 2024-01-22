@@ -1,0 +1,76 @@
+From a3f90ce51beffb7a1676758e4a9402d791cd2fd6 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Tue, 14 Dec 2021 16:39:59 +0800
+Subject: [PATCH] Add system information interface supported
+
+---
+ gen/xyz/openbmc_project/OEM/SystmeInfo/meson.build | 13 +++++++++++++
+ gen/xyz/openbmc_project/OEM/meson.build            | 15 +++++++++++++++
+ xyz/openbmc_project/OEM/SystmeInfo.interface.yaml  |  9 +++++++++
+ 3 files changed, 37 insertions(+)
+ create mode 100755 gen/xyz/openbmc_project/OEM/SystmeInfo/meson.build
+ create mode 100755 xyz/openbmc_project/OEM/SystmeInfo.interface.yaml
+
+diff --git a/gen/xyz/openbmc_project/OEM/SystmeInfo/meson.build b/gen/xyz/openbmc_project/OEM/SystmeInfo/meson.build
+new file mode 100755
+index 0000000..0d18913
+--- /dev/null
++++ b/gen/xyz/openbmc_project/OEM/SystmeInfo/meson.build
+@@ -0,0 +1,13 @@
++# Generated file; do not modify.
++generated_sources += custom_target(
++    'xyz/openbmc_project/OEM/SystmeInfo__cpp'.underscorify(),
++    input: [ meson.source_root() / 'xyz/openbmc_project/OEM/SystmeInfo.interface.yaml',  ],
++    output: [ 'server.cpp', 'server.hpp', 'client.hpp',  ],
++    command: [
++        sdbuspp_gen_meson_prog, '--command', 'cpp',
++        '--output', meson.current_build_dir(),
++        '--tool', sdbusplusplus_prog,
++        '--directory', meson.source_root(),
++        'xyz/openbmc_project/OEM/SystmeInfo',
++    ],
++)
+diff --git a/gen/xyz/openbmc_project/OEM/meson.build b/gen/xyz/openbmc_project/OEM/meson.build
+index 90bdaf3..0e68c2d 100755
+--- a/gen/xyz/openbmc_project/OEM/meson.build
++++ b/gen/xyz/openbmc_project/OEM/meson.build
+@@ -27,4 +27,19 @@ generated_others += custom_target(
+         'xyz/openbmc_project/OEM/SensorStatus',
+     ],
+     build_by_default: true,
++)
++
++subdir('SystmeInfo')
++generated_others += custom_target(
++    'xyz/openbmc_project/OEM/SystmeInfo__markdown'.underscorify(),
++    input: [ meson.source_root() / 'xyz/openbmc_project/OEM/SystmeInfo.interface.yaml',  ],
++    output: [ 'SystmeInfo.md' ],
++    command: [
++        sdbuspp_gen_meson_prog, '--command', 'markdown',
++        '--output', meson.current_build_dir(),
++        '--tool', sdbusplusplus_prog,
++        '--directory', meson.source_root(),
++        'xyz/openbmc_project/OEM/SystmeInfo',
++    ],
++    build_by_default: true,
+ )
+\ No newline at end of file
+diff --git a/xyz/openbmc_project/OEM/SystmeInfo.interface.yaml b/xyz/openbmc_project/OEM/SystmeInfo.interface.yaml
+new file mode 100755
+index 0000000..8e8d758
+--- /dev/null
++++ b/xyz/openbmc_project/OEM/SystmeInfo.interface.yaml
+@@ -0,0 +1,9 @@
++description: >
++    Implement to provide system information attributes for IPMI system information command.
++
++properties:
++    - name: SystemInformation
++      type: string
++      description: >
++         System information for IPMI command
++# vim: tabstop=8 expandtab shiftwidth=4 softtabstop=4
+\ No newline at end of file
+-- 
+2.7.4
+

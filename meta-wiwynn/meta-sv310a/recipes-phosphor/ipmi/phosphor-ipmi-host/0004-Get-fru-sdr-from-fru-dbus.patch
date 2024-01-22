@@ -1,0 +1,262 @@
+From 6e552be627892e34ccc20741eaf6b4950cb5bf16 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Fri, 16 Oct 2020 15:19:15 +0800
+Subject: [PATCH] Get fru sdr from fru dbus.
+
+---
+ sensorhandler.cpp | 188 ++++++++++++++++++++++++++++++++++++++--------
+ 1 file changed, 157 insertions(+), 31 deletions(-)
+
+diff --git a/sensorhandler.cpp b/sensorhandler.cpp
+index 5c95bd9..f9b17e5 100644
+--- a/sensorhandler.cpp
++++ b/sensorhandler.cpp
+@@ -9,6 +9,7 @@
+ #include <systemd/sd-bus.h>
+ 
+ #include <bitset>
++#include <boost/process.hpp>
+ #include <cmath>
+ #include <cstring>
+ #include <ipmid/api.hpp>
+@@ -36,6 +37,20 @@ extern const IdInfoMap sensors;
+ } // namespace sensor
+ } // namespace ipmi
+ 
++using DbusVariant = std::variant<std::string, bool, uint8_t, uint16_t, int16_t,
++                                 uint32_t, int32_t, uint64_t, int64_t, double>;
++using ObjectType = boost::container::flat_map<
++    std::string, boost::container::flat_map<std::string, DbusVariant>>;
++using ManagedObjectType =
++    boost::container::flat_map<sdbusplus::message::object_path, ObjectType>;
++using ManagedEntry = std::pair<sdbusplus::message::object_path, ObjectType>;
++
++// Mapping fru id to fru dbus object.
++std::map<uint8_t, ObjectType> fruDeviceMap;
++
++ManagedObjectType fruDbus;
++
++static std::vector<sdbusplus::bus::match::match> fruMatches;
+ extern const FruMap frus;
+ 
+ using namespace phosphor::logging;
+@@ -1005,23 +1020,144 @@ ipmi_ret_t ipmi_event_get_sdr(ipmi_request_t request, ipmi_response_t response,
+     return IPMI_CC_OK;
+ }
+ 
++void updateFruDeviceMap()
++{
++    fruDeviceMap.clear();
++    for (const auto& fru : fruDbus)
++    {
++        auto fruIface = fru.second.find("xyz.openbmc_project.FruDevice");
++        if (fruIface != fru.second.end())
++        {
++            auto indexFind = fruIface->second.find("INDEX");
++            if (indexFind != fruIface->second.end())
++            {
++                uint8_t fruIndex = std::get<uint32_t>(indexFind->second);
++                fruDeviceMap[fruIndex] = fru.second;
++            }
++        }
++    }
++}
++
++void getFruDbus(const std::shared_ptr<sdbusplus::asio::connection>& bus,
++                boost::asio::yield_context& yield)
++{
++    boost::system::error_code ec;
++
++    fruDbus = bus->yield_method_call<ManagedObjectType>(
++        yield, ec, "xyz.openbmc_project.FruDevice", "/",
++        "org.freedesktop.DBus.ObjectManager", "GetManagedObjects");
++    if (ec)
++    {
++        std::cerr << "GetMangagedObjects for fru device failed."
++                  << "ERROR = " << ec.message() << "\n";
++        return;
++    }
++
++    updateFruDeviceMap();
++}
++
++void startFruMatch(void)
++{
++    if (fruMatches.size())
++    {
++        return;
++    }
++
++    fruMatches.reserve(2);
++
++    auto bus = getSdBus();
++    fruMatches.emplace_back(*bus,
++                            "type='signal',arg0path='/xyz/openbmc_project/"
++                            "FruDevice/',member='InterfacesAdded'",
++                            [](sdbusplus::message::message& message) {
++                                sdbusplus::message::object_path path;
++                                ObjectType object;
++                                try
++                                {
++                                    message.read(path, object);
++                                }
++                                catch (sdbusplus::exception_t&)
++                                {
++                                    return;
++                                }
++                                auto findType = object.find(
++                                    "xyz.openbmc_project.FruDevice");
++                                if (findType == object.end())
++                                {
++                                    return;
++                                }
++
++                                fruDbus[path] = object;
++                                updateFruDeviceMap();
++                            });
++
++    fruMatches.emplace_back(*bus,
++                            "type='signal',arg0path='/xyz/openbmc_project/"
++                            "FruDevice/',member='InterfacesRemoved'",
++                            [](sdbusplus::message::message& message) {
++                                sdbusplus::message::object_path path;
++                                std::set<std::string> interfaces;
++                                try
++                                {
++                                    message.read(path, interfaces);
++                                }
++                                catch (sdbusplus::exception_t&)
++                                {
++                                    return;
++                                }
++                                auto findType = interfaces.find(
++                                    "xyz.openbmc_project.FruDevice");
++                                if (findType == interfaces.end())
++                                {
++                                    return;
++                                }
++
++                                fruDbus.erase(path);
++                                updateFruDeviceMap();
++                            });
++
++    // call once to populate
++    boost::asio::spawn(*getIoContext(), [](boost::asio::yield_context yield) {
++        getFruDbus(getSdBus(), yield);
++    });
++}
++
+ ipmi_ret_t ipmi_fru_get_sdr(ipmi_request_t request, ipmi_response_t response,
+                             ipmi_data_len_t data_len)
+ {
+     auto req = reinterpret_cast<get_sdr::GetSdrReq*>(request);
+     auto resp = reinterpret_cast<get_sdr::GetSdrResp*>(response);
+-    get_sdr::SensorDataFruRecord record{};
+-    auto dataLength = 0;
++    get_sdr::SensorDataFruRecord record;
++    size_t dataLength = 0;
+ 
+-    auto fru = frus.begin();
+-    uint8_t fruID{};
+     auto recordID = get_sdr::request::get_record_id(req);
++    uint8_t fruID = recordID - FRU_RECORD_ID_START;
++    auto fruDeviceFind = fruDeviceMap.find(fruID);
++    if (fruDeviceFind == fruDeviceMap.end())
++    {
++        return IPMI_CC_INVALID_FIELD_REQUEST;
++    }
+ 
+-    fruID = recordID - FRU_RECORD_ID_START;
+-    fru = frus.find(fruID);
+-    if (fru == frus.end())
++    auto fruData = fruDeviceFind->second.find("xyz.openbmc_project.FruDevice");
++
++    std::string deviceID;
++    auto findProductName = fruData->second.find("BOARD_PRODUCT_NAME");
++    auto findBoardName = fruData->second.find("PRODUCT_PRODUCT_NAME");
++    if (findProductName != fruData->second.end())
+     {
+-        return IPMI_CC_SENSOR_INVALID;
++        deviceID = std::get<std::string>(findProductName->second);
++    }
++    else if (findBoardName != fruData->second.end())
++    {
++        deviceID = std::get<std::string>(findBoardName->second);
++    }
++    else
++    {
++        deviceID = "UNKNOWN";
++    }
++    if (deviceID.size() > get_sdr::FRU_RECORD_DEVICE_ID_MAX_LENGTH)
++    {
++        deviceID = deviceID.substr(0, get_sdr::FRU_RECORD_DEVICE_ID_MAX_LENGTH);
+     }
+ 
+     /* Header */
+@@ -1031,35 +1167,23 @@ ipmi_ret_t ipmi_fru_get_sdr(ipmi_request_t request, ipmi_response_t response,
+     record.header.record_length = sizeof(record.key) + sizeof(record.body);
+ 
+     /* Key */
++    record.key.deviceAddress = BMCSlaveAddress;
+     record.key.fruID = fruID;
+     record.key.accessLun |= IPMI_LOGICAL_FRU;
+-    record.key.deviceAddress = BMCSlaveAddress;
++    record.key.channelNumber = 0x0;
+ 
+     /* Body */
+-    record.body.entityID = fru->second[0].entityID;
+-    record.body.entityInstance = fru->second[0].entityInstance;
++    record.body.reserved = 0x0;
+     record.body.deviceType = fruInventoryDevice;
+     record.body.deviceTypeModifier = IPMIFruInventory;
++    record.body.entityID = 0x0; // Not need sensor to FRU lookup
++    record.body.entityInstance = 0x1;
++    record.body.oem = 0x0;
++    record.body.deviceIDLen = deviceID.size();
++    deviceID.copy(record.body.deviceID, deviceID.size());
+ 
+-    /* Device ID string */
+-    auto deviceID =
+-        fru->second[0].path.substr(fru->second[0].path.find_last_of('/') + 1,
+-                                   fru->second[0].path.length());
+-
+-    if (deviceID.length() > get_sdr::FRU_RECORD_DEVICE_ID_MAX_LENGTH)
+-    {
+-        get_sdr::body::set_device_id_strlen(
+-            get_sdr::FRU_RECORD_DEVICE_ID_MAX_LENGTH, &(record.body));
+-    }
+-    else
+-    {
+-        get_sdr::body::set_device_id_strlen(deviceID.length(), &(record.body));
+-    }
+-
+-    strncpy(record.body.deviceID, deviceID.c_str(),
+-            get_sdr::body::get_device_id_strlen(&(record.body)));
+-
+-    if (++fru == frus.end())
++    /* Set next record id */
++    if (++fruDeviceFind == fruDeviceMap.end())
+     {
+         // we have reached till end of fru, so assign the next record id to
+         // 512(Max fru ID = 511) + Entity Record ID(may start with 0).
+@@ -1075,7 +1199,7 @@ ipmi_ret_t ipmi_fru_get_sdr(ipmi_request_t request, ipmi_response_t response,
+     else
+     {
+         get_sdr::response::set_next_record_id(
+-            (FRU_RECORD_ID_START + fru->first), resp);
++            (FRU_RECORD_ID_START + fruDeviceFind->first), resp);
+     }
+ 
+     // Check for invalid offset size
+@@ -1551,6 +1675,8 @@ ipmi_ret_t ipmiSensorSetSensorThresholds(ipmi_netfn_t netfn, ipmi_cmd_t cmd,
+ 
+ void register_netfn_sen_functions()
+ {
++    startFruMatch();
++
+     // <Platform Event Message>
+     ipmi_register_callback(NETFUN_SENSOR, IPMI_CMD_PLATFORM_EVENT, nullptr,
+                            ipmicmdPlatformEvent, PRIVILEGE_OPERATOR);
+-- 
+2.28.0
+

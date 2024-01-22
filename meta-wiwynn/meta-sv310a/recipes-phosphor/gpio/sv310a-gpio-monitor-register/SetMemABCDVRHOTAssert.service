@@ -1,0 +1,9 @@
+[Unit]
+Description=Set Mem ABCD VR HOT Assert
+
+[Service]
+Type=oneshot
+
+ExecStart=/usr/bin/busctl call "xyz.openbmc_project.Logging.IPMI" "/xyz/openbmc_project/Logging/IPMI" "xyz.openbmc_project.Logging.IPMI" "IpmiSelAdd" ssaybq "Prochot" "/xyz/openbmc_project/sensors/event/Prochot" 0x03 0x18 0xff 0xff yes 0x20
+
+ExecStopPost=/usr/bin/busctl set-property xyz.openbmc_project.GpioMonitor /xyz/openbmc_project/gpio/event xyz.openbmc_project.GpioEvent VR_VDD_MEM_ABCD_SUS_VRHOT_N s "Idle"

@@ -1,0 +1,304 @@
+From eb9557d614cf594c44cd85a7771ceb5d3e15a70f Mon Sep 17 00:00:00 2001
+From: Janny Au <janny.au@mic.com.tw>
+Date: Thu, 10 Mar 2022 15:26:43 +0800
+Subject: [PATCH] Implement-Heart-Beat-LED
+
+---
+ arch/arm/boot/dts/aspeed-g5.dtsi         |   7 +
+ drivers/misc/Kconfig                     |   6 +
+ drivers/misc/Makefile                    |   1 +
+ drivers/misc/aspeed-g5-hbled.c           | 229 +++++++++++++++++++++++
+ include/dt-bindings/clock/aspeed-clock.h |   1 +
+ 5 files changed, 244 insertions(+)
+ create mode 100755 drivers/misc/aspeed-g5-hbled.c
+
+diff --git a/arch/arm/boot/dts/aspeed-g5.dtsi b/arch/arm/boot/dts/aspeed-g5.dtsi
+index 7495f93c5069..682d9862e5fa 100644
+--- a/arch/arm/boot/dts/aspeed-g5.dtsi
++++ b/arch/arm/boot/dts/aspeed-g5.dtsi
+@@ -555,6 +555,13 @@ i2c: bus@1e78a000 {
+ 				#size-cells = <1>;
+ 				ranges = <0 0x1e78a000 0x1000>;
+ 			};
++
++            hbled: hbled@1e6c0000 {
++                compatible = "aspeed,ast2500-hbled";
++                #address-cells = <1>;
++                #size-cells = <0>;
++                reg = <0x1e6c0000 0x1000>;
++            };
+ 		};
+ 	};
+ };
+diff --git a/drivers/misc/Kconfig b/drivers/misc/Kconfig
+index 13e3afdbcc40..e966da723621 100644
+--- a/drivers/misc/Kconfig
++++ b/drivers/misc/Kconfig
+@@ -491,6 +491,12 @@ config NPCM7XX_JTAG_MASTER
+ 	help
+ 	  Control PSPI/GPIO to transmit jtag signals to support jtag master function.
+ 
++config ASPEED_G5_HBLED
++    tristate "Aspeed ast2500 Heart Beat (HBLED#) support"
++    depends on (ARCH_ASPEED || COMPILE_TEST) && REGMAP && MFD_SYSCON
++    help
++      Provides a driver to control the signal of HBLED#
++
+ source "drivers/misc/c2port/Kconfig"
+ source "drivers/misc/eeprom/Kconfig"
+ source "drivers/misc/cb710/Kconfig"
+diff --git a/drivers/misc/Makefile b/drivers/misc/Makefile
+index 53726c86460c..28001d01439e 100644
+--- a/drivers/misc/Makefile
++++ b/drivers/misc/Makefile
+@@ -62,3 +62,4 @@ obj-$(CONFIG_HI6421V600_IRQ)	+= hi6421v600-irq.o
+ obj-$(CONFIG_NPCM7XX_LPC_BPC)	+= npcm7xx-lpc-bpc.o
+ obj-$(CONFIG_NPCM7XX_PCI_MBOX)	+= npcm7xx-pci-mbox.o
+ obj-$(CONFIG_NPCM7XX_JTAG_MASTER)	+= npcm7xx-jtag-master.o
++obj-$(CONFIG_ASPEED_G5_HBLED)   += aspeed-g5-hbled.o
+diff --git a/drivers/misc/aspeed-g5-hbled.c b/drivers/misc/aspeed-g5-hbled.c
+new file mode 100755
+index 000000000000..157451a60919
+--- /dev/null
++++ b/drivers/misc/aspeed-g5-hbled.c
+@@ -0,0 +1,229 @@
++/*
++ * Copyright 2018 MiTAC Corporation
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version
++ * 2 of the License, or (at your option) any later version.
++ */
++
++#include <linux/miscdevice.h>
++#include <linux/mm.h>
++#include <linux/module.h>
++#include <linux/of_address.h>
++#include <linux/platform_device.h>
++#include <linux/poll.h>
++#include <linux/regmap.h>
++
++
++#define DEVICE_NAME	"aspeed-hbled"
++
++#define HW_HEART_BEAT_STS_REG 0x60
++#define HEART_BEAT_LED_OUTPUY 0x64
++#define	VICE4 0xE4
++
++#define BIT_SW_BLINKING_MODE (1<<4)
++#define BIT_SW_LED_OUTPUT (1<<0)
++
++struct aspeed_hbled_data {
++    struct regmap *regmap;
++};
++static struct aspeed_hbled_data *phbled_data;
++
++static char hbled_mode[10]="hwmod";
++
++static int regmap_aspeed_hbled_reg_write(void *context, unsigned int reg,
++                         unsigned int val)
++{
++    void __iomem *regs = (void __iomem *)context;
++
++    writel(val, regs + reg);
++    return 0;
++}
++
++static int regmap_aspeed_hbled_reg_read(void *context, unsigned int reg,
++                        unsigned int *val)
++{
++    void __iomem *regs = (void __iomem *)context;
++
++    *val = readl(regs + reg);
++    return 0;
++}
++
++static const struct regmap_config aspeed_hbled_regmap_config = {
++    .reg_bits = 32,
++    .val_bits = 32,
++    .reg_stride = 4,
++    .max_register = VICE4,
++    .reg_write = regmap_aspeed_hbled_reg_write,
++    .reg_read = regmap_aspeed_hbled_reg_read,
++    .fast_io = true,
++};
++
++
++static ssize_t hbled_store(struct class *class,
++                struct class_attribute *attr,
++                const char *buf, size_t len)
++{  
++		//printk("hbled_store() is called, buf=%s, strlen(buf)=%d.\n", buf, strlen(buf));
++		unsigned int val = 0;
++		int rc = 0;
++
++		if(strstr(buf, "hwmod") != NULL){
++			memset(hbled_mode, 0, sizeof(hbled_mode));
++			strncpy(hbled_mode, "hwmod", 5);
++
++			rc = regmap_read(phbled_data->regmap, HW_HEART_BEAT_STS_REG, &val);
++		    if(rc) return rc;
++
++			val &= ~BIT_SW_BLINKING_MODE;
++			rc = regmap_write(phbled_data->regmap, HW_HEART_BEAT_STS_REG, val);
++			if(rc) return rc;
++		}
++		else if(strstr(buf, "swmod_on") != NULL){
++			memset(hbled_mode, 0, sizeof(hbled_mode));
++			strncpy(hbled_mode, "swmod_on", 8);
++			
++			//switch sw mode
++			rc = regmap_read(phbled_data->regmap, HW_HEART_BEAT_STS_REG, &val);
++            if (rc)
++                return rc;
++			if(!(val & BIT_SW_BLINKING_MODE)){
++	            val |= BIT_SW_BLINKING_MODE;
++    	        rc = regmap_write(phbled_data->regmap, HW_HEART_BEAT_STS_REG, val);
++				if (rc)
++    	            return rc;
++			}
++			
++			//Set LED to bright
++			rc = regmap_read(phbled_data->regmap, HEART_BEAT_LED_OUTPUY, &val);
++			if (rc)
++                return rc;
++            if(!(val & BIT_SW_LED_OUTPUT)){
++                val |= BIT_SW_LED_OUTPUT;
++                rc = regmap_write(phbled_data->regmap, HEART_BEAT_LED_OUTPUY, val);
++                if (rc)
++                    return rc;
++            }
++		}
++		else if(strstr(buf, "swmod_off") != NULL){
++			 memset(hbled_mode, 0, sizeof(hbled_mode));
++            strncpy(hbled_mode, "swmod_off", 9);
++
++			//switch sw mode
++            rc = regmap_read(phbled_data->regmap, HW_HEART_BEAT_STS_REG, &val);
++            if (rc)
++                return rc;
++            if(!(val & BIT_SW_BLINKING_MODE)){
++                val |= BIT_SW_BLINKING_MODE;
++                rc = regmap_write(phbled_data->regmap, HW_HEART_BEAT_STS_REG, val);
++                if (rc)
++                    return rc;
++            }
++
++			//Set LED to dark
++            rc = regmap_read(phbled_data->regmap, HEART_BEAT_LED_OUTPUY, &val);
++            if (rc)
++                return rc;
++            if(val & BIT_SW_LED_OUTPUT){
++                val &= ~BIT_SW_LED_OUTPUT;
++                rc = regmap_write(phbled_data->regmap, HEART_BEAT_LED_OUTPUY, val);
++                if (rc)
++                    return rc;
++            }
++        }
++		else{
++			return -EINVAL;
++		}
++		
++        return len;
++}  
++  
++static ssize_t hbled_show(struct class *class,
++                struct class_attribute *attr,
++                char *buf)
++{  
++		//printk("hbled_show() is called, hbled_mode=%s, strlen(hbled_mode)=%d\n", hbled_mode, strlen(hbled_mode));
++        return sprintf(buf, "%s\n", hbled_mode);
++}  
++static CLASS_ATTR_RW(hbled);
++  
++static struct attribute *mct_class_attrs[] = {
++    &class_attr_hbled.attr,
++    NULL,
++};
++
++ATTRIBUTE_GROUPS(mct_class);
++
++static struct class hbled_class = {
++    .name =     "mct",
++    .owner =    THIS_MODULE,
++
++    .class_groups = mct_class_groups,
++};
++ 
++static int aspeed_hbled_probe(struct platform_device *pdev)
++{
++	int status=0;
++	struct device *dev = &pdev->dev;
++	struct resource *res;
++	void __iomem *regs;
++
++	printk("%s: aspeed_hbled_probe...\n", DEVICE_NAME);
++
++   	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++	if(!res){
++        return -ENOENT;
++	}
++
++	regs = devm_ioremap_resource(dev, res);
++    
++	if(IS_ERR(regs)){
++        return PTR_ERR(regs);
++	}
++
++	phbled_data = devm_kzalloc(dev, sizeof(*phbled_data), GFP_KERNEL);
++
++	if(!phbled_data){
++        return -ENOMEM;
++	}
++    phbled_data->regmap = devm_regmap_init(dev, NULL, (__force void *)regs,
++            &aspeed_hbled_regmap_config);
++	
++	if(IS_ERR(phbled_data->regmap)){
++        return PTR_ERR(phbled_data->regmap);
++	}
++
++	platform_set_drvdata(pdev, phbled_data);
++
++	status = class_register(&hbled_class);
++	if(status < 0){		
++		return status;
++	}
++	
++	return 0;
++}
++
++static int aspeed_hbled_remove(struct platform_device *pdev)
++{
++	class_unregister(&hbled_class);	
++	return 0;
++}
++
++static const struct of_device_id aspeed_hbled_match[] = {
++	{ .compatible = "aspeed,ast2500-hbled" },
++	{ },
++};
++
++static struct platform_driver aspeed_hbled_driver = {
++	.driver = {
++		.name		= DEVICE_NAME,
++		.of_match_table = aspeed_hbled_match,
++	},
++	.probe = aspeed_hbled_probe,
++	.remove = aspeed_hbled_remove,
++};
++
++module_platform_driver(aspeed_hbled_driver);
++
++MODULE_DEVICE_TABLE(of, aspeed_hbled_match);
+diff --git a/include/dt-bindings/clock/aspeed-clock.h b/include/dt-bindings/clock/aspeed-clock.h
+index 9ff4f6e4558c..52ec864c3c6a 100644
+--- a/include/dt-bindings/clock/aspeed-clock.h
++++ b/include/dt-bindings/clock/aspeed-clock.h
+@@ -52,5 +52,6 @@
+ #define ASPEED_RESET_I2C		7
+ #define ASPEED_RESET_AHB		8
+ #define ASPEED_RESET_CRT1		9
++#define ASPEED_RESET_VIDEO             10
+ 
+ #endif

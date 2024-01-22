@@ -1,0 +1,531 @@
+From 50fffcc7b74b4d476170eb56e716bcd162f18990 Mon Sep 17 00:00:00 2001
+From: Eli Huang <Eli_Huang@wiwynn.com>
+Date: Fri, 25 Dec 2020 17:22:50 +0800
+Subject: [PATCH] Add pattern match sensor
+
+---
+ include/PatternMatchSensor.hpp                |  44 +++++
+ include/SensorPaths.hpp                       |   1 +
+ include/sensor.hpp                            |   3 +-
+ meson_options.txt                             |   1 +
+ service_files/meson.build                     |   1 +
+ .../xyz.openbmc_project.patternsensor.service |  14 ++
+ src/PatternMatchSensor.cpp                    | 162 +++++++++++++++++
+ src/PatternMatchSensorMain.cpp                | 168 ++++++++++++++++++
+ src/SensorPaths.cpp                           |   4 +
+ src/meson.build                               |  18 ++
+ 10 files changed, 415 insertions(+), 1 deletion(-)
+ create mode 100644 include/PatternMatchSensor.hpp
+ create mode 100644 service_files/xyz.openbmc_project.patternsensor.service
+ create mode 100644 src/PatternMatchSensor.cpp
+ create mode 100644 src/PatternMatchSensorMain.cpp
+
+diff --git a/include/PatternMatchSensor.hpp b/include/PatternMatchSensor.hpp
+new file mode 100644
+index 0000000..85633da
+--- /dev/null
++++ b/include/PatternMatchSensor.hpp
+@@ -0,0 +1,44 @@
++#pragma once
++
++#include <Thresholds.hpp>
++#include <boost/asio/steady_timer.hpp>
++#include <boost/process.hpp>
++#include <sdbusplus/asio/object_server.hpp>
++#include <sensor.hpp>
++
++constexpr const char* solPatternInterfaceName =
++    "xyz.openbmc_project.Sensor.SOLPattern";
++
++class SolPatternSensor :
++    public Sensor,
++    public std::enable_shared_from_this<SolPatternSensor>
++{
++  public:
++    SolPatternSensor(sdbusplus::asio::object_server& objectServer,
++                     const std::string& objectType,
++                     std::shared_ptr<sdbusplus::asio::connection>& conn,
++                     boost::asio::io_service& io, const std::string& sensorName,
++                     std::vector<thresholds::Threshold>&& _thresholds,
++                     const std::string& sensorConfiguration,
++                     const std::string& dbusPath, const double maxValue,
++                     const double minValue, const std::string& ptnString);
++    ~SolPatternSensor();
++
++  private:
++    sdbusplus::asio::object_server& objServer;
++    boost::asio::steady_timer waitTimer;
++    std::string patternString;
++    double newHitCount;
++    std::string matchingCmd;
++    std::shared_ptr<sdbusplus::asio::dbus_interface> patternInterface;
++    thresholds::ThresholdTimer thresholdTimer;
++
++    bool setHitCount(const unsigned int& newValue, unsigned int& oldValue);
++    bool setPattern(const std::string& newValue, std::string& oldValue);
++    bool updateHitCount(const unsigned int& newValue);
++
++    void setupMatching(void);
++    bool runMatching(void);
++    void handleResponse(void);
++    void checkThresholds(void) override;
++};
+diff --git a/include/SensorPaths.hpp b/include/SensorPaths.hpp
+index 023d615..56550f4 100644
+--- a/include/SensorPaths.hpp
++++ b/include/SensorPaths.hpp
+@@ -25,6 +25,7 @@ constexpr const char* unitJoules =
+ constexpr const char* unitPercent =
+     "xyz.openbmc_project.Sensor.Value.Unit.Percent";
+ constexpr const char* unitCFM = "xyz.openbmc_project.Sensor.Value.Unit.CFM";
++constexpr const char* unitHit = "xyz.openbmc_project.Sensor.Value.Unit.Hit";
+ 
+ std::string getPathForUnits(const std::string& units);
+ 
+diff --git a/include/sensor.hpp b/include/sensor.hpp
+index e13a5b8..64fffae 100644
+--- a/include/sensor.hpp
++++ b/include/sensor.hpp
+@@ -15,7 +15,8 @@ constexpr size_t sensorFailedPollTimeMs = 5000;
+ 
+ inline std::map<std::string, std::string> sensorTypeTable = {
+     {"fan", "fan_tach/"},     {"power", "power/"},  {"curr", "current/"},
+-    {"temp", "temperature/"}, {"volt", "voltage/"}, {"in", "voltage/"}};
++    {"temp", "temperature/"}, {"volt", "voltage/"}, {"in", "voltage/"},
++    {"pattern", "hit/"}};
+ constexpr const char* sensorPathPrefix = "/xyz/openbmc_project/sensors/";
+ 
+ // Enable useful logging with sensor instrumentation
+diff --git a/meson_options.txt b/meson_options.txt
+index 3e474f8..912b2bb 100644
+--- a/meson_options.txt
++++ b/meson_options.txt
+@@ -11,6 +11,7 @@ option('mcu', type: 'feature', value: 'enabled', description: 'Enable MCU sensor
+ option('nic', type: 'feature', value: 'enabled', description: 'Enable NIC sensor.',)
+ option('nvme', type: 'feature', value: 'disabled', description: 'Enable NVMe sensor.',)
+ option('nvme-i2c', type: 'feature', value: 'disabled', description: 'Enable NVME sensor.',)
++option('pattern', type: 'feature', value: 'disabled', description: 'Enable Pattern sensor.',)
+ option('psu', type: 'feature', value: 'enabled', description: 'Enable PSU sensor.',)
+ option('external', type: 'feature', value: 'enabled', description: 'Enable External sensor.',)
+ option('tests', type: 'feature', description: 'Build tests.',)
+diff --git a/service_files/meson.build b/service_files/meson.build
+index cf59fdd..1a381e0 100644
+--- a/service_files/meson.build
++++ b/service_files/meson.build
+@@ -12,6 +12,7 @@ unit_files = [
+     ['nic', 'xyz.openbmc_project.nicsensor.service'],
+     ['nvme', 'xyz.openbmc_project.nvmesensor.service'],
+     ['nvme-i2c', 'xyz.openbmc_project.nvmesensor.service'],
++    ['pattern', 'xyz.openbmc_project.patternsensor.service'],
+     ['psu', 'xyz.openbmc_project.psusensor.service'],
+     ['external', 'xyz.openbmc_project.externalsensor.service'],
+ ]
+diff --git a/service_files/xyz.openbmc_project.patternsensor.service b/service_files/xyz.openbmc_project.patternsensor.service
+new file mode 100644
+index 0000000..fb1d5f9
+--- /dev/null
++++ b/service_files/xyz.openbmc_project.patternsensor.service
+@@ -0,0 +1,14 @@
++[Unit]
++Description=Pattern Sensor
++StopWhenUnneeded=false
++After=xyz.openbmc_project.EntityManager.service
++Wants=mapper-wait@-xyz-openbmc_project-inventory-done.service
++After=mapper-wait@-xyz-openbmc_project-inventory-done.service
++
++[Service]
++Restart=always
++RestartSec=5
++ExecStart=/usr/bin/patternsensor
++
++[Install]
++WantedBy=multi-user.target
+diff --git a/src/PatternMatchSensor.cpp b/src/PatternMatchSensor.cpp
+new file mode 100644
+index 0000000..ec3ec28
+--- /dev/null
++++ b/src/PatternMatchSensor.cpp
+@@ -0,0 +1,162 @@
++#include <systemd/sd-journal.h>
++#include <unistd.h>
++
++#include <PatternMatchSensor.hpp>
++#include <boost/algorithm/string/predicate.hpp>
++#include <boost/algorithm/string/replace.hpp>
++#include <sdbusplus/asio/connection.hpp>
++#include <sdbusplus/asio/object_server.hpp>
++
++#include <fstream>
++#include <iostream>
++#include <limits>
++#include <string>
++
++static const std::string solLogFile = "/var/log/obmc-console.log";
++static constexpr unsigned int sensorPollSec = 5;
++static constexpr size_t warnAfterErrorCount = 10;
++
++SolPatternSensor::SolPatternSensor(
++    sdbusplus::asio::object_server& objectServer, const std::string& objectType,
++    std::shared_ptr<sdbusplus::asio::connection>& conn,
++    boost::asio::io_service& io, const std::string& sensorName,
++    std::vector<thresholds::Threshold>&& _thresholds,
++    const std::string& sensorConfiguration, const std::string& dbusPath,
++    const double maxValue, const double minValue,
++    const std::string& ptnString) :
++    Sensor(boost::replace_all_copy(sensorName, " ", "_"),
++           std::move(_thresholds), sensorConfiguration, objectType, true,
++           maxValue, minValue, conn, readState, false),
++    objServer(objectServer), waitTimer(io), patternString(ptnString),
++    newHitCount(0), thresholdTimer(io, this)
++{
++    sensorInterface = objectServer.add_interface(
++        dbusPath, "xyz.openbmc_project.Sensor.Value");
++
++    // Pattern String
++    patternInterface =
++        objectServer.add_interface(dbusPath, solPatternInterfaceName);
++
++    patternInterface->register_property(
++        "Pattern", patternString,
++        [&](const std::string& newValue, std::string& oldValue) {
++            return setPattern(newValue, oldValue);
++        });
++
++    if (!patternInterface->initialize())
++    {
++        std::cerr << "error initializing value interface\n";
++    }
++
++    if (thresholds::hasWarningInterface(thresholds))
++    {
++        thresholdInterfaceWarning = objectServer.add_interface(
++            dbusPath, "xyz.openbmc_project.Sensor.Threshold.Warning");
++    }
++    if (thresholds::hasCriticalInterface(thresholds))
++    {
++        thresholdInterfaceCritical = objectServer.add_interface(
++            dbusPath, "xyz.openbmc_project.Sensor.Threshold.Critical");
++    }
++
++    association = objectServer.add_interface(dbusPath, association::interface);
++
++    setInitialProperties(conn, sensor_paths::unitHit);
++
++    setupMatching();
++}
++
++SolPatternSensor::~SolPatternSensor()
++{
++    // close the Timer to cancel async operations
++    waitTimer.cancel();
++    objServer.remove_interface(thresholdInterfaceWarning);
++    objServer.remove_interface(thresholdInterfaceCritical);
++    objServer.remove_interface(sensorInterface);
++    objServer.remove_interface(patternInterface);
++    objServer.remove_interface(association);
++}
++
++bool SolPatternSensor::setPattern(const std::string& newValue,
++                                  std::string& oldValue)
++{
++    oldValue = newValue;
++    patternString = newValue;
++
++    dbusConnection->async_method_call(
++        [](const boost::system::error_code& ec) {
++            if (ec)
++            {
++                std::cerr << "Error setting content " << ec << "\n";
++            }
++        },
++        entityManagerName, configurationPath, "org.freedesktop.DBus.Properties",
++        "Set", "xyz.openbmc_project.Configuration.Pattern.Match0", "Content",
++        std::variant<std::string>(patternString));
++
++    return true;
++}
++
++void SolPatternSensor::setupMatching(void)
++{
++    bool res = runMatching();
++    if (res == true)
++    {
++        handleResponse();
++    }
++
++    waitTimer.expires_from_now(boost::asio::chrono::seconds(sensorPollSec));
++    waitTimer.async_wait([&](const boost::system::error_code& ec) {
++        if (ec == boost::asio::error::operation_aborted)
++        {
++            return; // we're being canceled
++        }
++        setupMatching();
++    });
++}
++
++bool SolPatternSensor::runMatching(void)
++{
++    // if it is a null string
++    if (0 == patternString.size())
++    {
++        newHitCount = 0;
++        return true;
++    }
++
++    std::ifstream ifs(solLogFile);
++    if (!ifs.is_open())
++    {
++        std::cerr << "Could not open the file - " << solLogFile << "\n";
++        return false;
++    }
++
++    std::string line;
++    newHitCount = 0;
++    while (getline(ifs, line))
++    {
++        std::regex regexCondition(patternString, std::regex_constants::egrep);
++
++        std::ptrdiff_t count = std::distance(
++            std::sregex_iterator(line.begin(), line.end(), regexCondition),
++            std::sregex_iterator());
++
++        newHitCount += count;
++    }
++
++    ifs.close();
++    return true;
++}
++
++void SolPatternSensor::handleResponse()
++{
++    if (newHitCount != value)
++    {
++        updateValue(newHitCount);
++    }
++}
++
++void SolPatternSensor::checkThresholds(void)
++{
++    thresholds::checkThresholdsPowerDelay(this, thresholdTimer);
++}
+diff --git a/src/PatternMatchSensorMain.cpp b/src/PatternMatchSensorMain.cpp
+new file mode 100644
+index 0000000..136ca52
+--- /dev/null
++++ b/src/PatternMatchSensorMain.cpp
+@@ -0,0 +1,168 @@
++#include <sys/stat.h>
++#include <systemd/sd-journal.h>
++#include <unistd.h>
++
++#include <PatternMatchSensor.hpp>
++#include <boost/algorithm/string/predicate.hpp>
++#include <boost/algorithm/string/replace.hpp>
++#include <boost/container/flat_set.hpp>
++#include <sdbusplus/asio/connection.hpp>
++#include <sdbusplus/asio/object_server.hpp>
++
++#include <filesystem>
++#include <fstream>
++#include <regex>
++
++static std::vector<std::string> sensorTypes = {
++    "xyz.openbmc_project.Configuration.Pattern"};
++
++static constexpr double maxReading = 255;
++static constexpr double minReading = 0;
++
++void createSensors(
++    boost::asio::io_service& io, sdbusplus::asio::object_server& objectServer,
++    boost::container::flat_map<std::string, std::shared_ptr<SolPatternSensor>>&
++        sensors,
++    std::shared_ptr<sdbusplus::asio::connection>& dbusConnection,
++    const std::shared_ptr<boost::container::flat_set<std::string>>&
++        sensorsChanged)
++{
++    bool firstScan = sensorsChanged == nullptr;
++    // use new data the first time, then refresh
++    ManagedObjectType sensorConfigurations;
++    bool useCache = false;
++    for (const auto& type : sensorTypes)
++    {
++        if (!getSensorConfiguration(type, dbusConnection, sensorConfigurations,
++                                    useCache))
++        {
++            std::cerr << "error communicating to entity manager\n";
++            return;
++        }
++        useCache = true;
++    }
++
++    for (const SensorObject& sensor : sensorConfigurations)
++    {
++        const std::string* interfacePath = &(sensor.first.str);
++        const SensorData* sensorData = &(sensor.second);
++        const SensorBaseConfiguration* baseConfiguration = nullptr;
++        const SensorBaseConfigMap* baseConfigMap = nullptr;
++
++        std::string objectType;
++        std::string sensorName;
++        std::string sensorType;
++        std::string dbusPath;
++        std::vector<thresholds::Threshold> sensorThresholds;
++        auto limits = std::make_pair(minReading, maxReading);
++        PowerState readState = PowerState::biosPost;
++        if (!parseSensorInfo(sensor, sensorTypes, baseConfiguration,
++                             baseConfigMap, objectType, sensorName, sensorType,
++                             dbusPath, sensorThresholds, limits, readState))
++        {
++            continue;
++        }
++
++        for (const auto& item : *sensorData)
++        {
++            if (item.first.find("Match") == std::string::npos)
++            {
++                continue;
++            }
++            auto findContent = item.second.find("Content");
++            if (findContent == item.second.end())
++            {
++                std::cerr << sensorName << " missing Content\n";
++                continue;
++            }
++
++            std::string ptnString = std::get<std::string>(findContent->second);
++            auto findSensor = sensors.find(sensorName);
++            if (!firstScan && findSensor != sensors.end())
++            {
++                bool found = false;
++                for (auto& it : *sensorsChanged)
++                {
++                    if (boost::ends_with(it, findSensor->second->name))
++                    {
++                        sensorsChanged->erase(it);
++                        findSensor->second = nullptr;
++                        found = true;
++                        break;
++                    }
++                }
++                if (!found)
++                {
++                    continue;
++                }
++            }
++
++            sensors[sensorName] = std::make_shared<SolPatternSensor>(
++                objectServer, objectType, dbusConnection, io, sensorName,
++                std::move(sensorThresholds), *interfacePath, dbusPath,
++                limits.second, limits.first, ptnString);
++
++            break;
++        }
++    }
++}
++
++int main()
++{
++    boost::asio::io_service io;
++    auto systemBus = std::make_shared<sdbusplus::asio::connection>(io);
++    systemBus->request_name("xyz.openbmc_project.SolPatternSensor");
++    sdbusplus::asio::object_server objectServer(systemBus);
++    boost::container::flat_map<std::string, std::shared_ptr<SolPatternSensor>>
++        sensors;
++    std::vector<std::unique_ptr<sdbusplus::bus::match::match>> matches;
++
++    auto sensorsChanged =
++        std::make_shared<boost::container::flat_set<std::string>>();
++
++    io.post([&]() {
++        createSensors(io, objectServer, sensors, systemBus, nullptr);
++    });
++
++    boost::asio::steady_timer filterTimer(io);
++    std::function<void(sdbusplus::message::message&)> eventHandler =
++        [&](sdbusplus::message::message& message) {
++            if (message.is_method_error())
++            {
++                std::cerr << "callback method error\n";
++                return;
++            }
++            sensorsChanged->insert(message.get_path());
++            // this implicitly cancels the timer
++            filterTimer.expires_from_now(boost::asio::chrono::seconds(1));
++
++            filterTimer.async_wait([&](const boost::system::error_code& ec) {
++                if (ec == boost::asio::error::operation_aborted)
++                {
++                    /* we were canceled*/
++                    return;
++                }
++                else if (ec)
++                {
++                    std::cerr << "timer error\n";
++                    return;
++                }
++                createSensors(io, objectServer, sensors, systemBus,
++                              sensorsChanged);
++            });
++        };
++
++    for (const auto& type : sensorTypes)
++    {
++        auto match = std::make_unique<sdbusplus::bus::match::match>(
++            static_cast<sdbusplus::bus::bus&>(*systemBus),
++            "type='signal',member='PropertiesChanged',path_namespace='" +
++                std::string(inventoryPath) + "',arg0namespace='" + type + "'",
++            eventHandler);
++        matches.emplace_back(std::move(match));
++    }
++
++    io.run();
++
++    return 0;
++}
+diff --git a/src/SensorPaths.cpp b/src/SensorPaths.cpp
+index b0cea9c..acd1cee 100644
+--- a/src/SensorPaths.cpp
++++ b/src/SensorPaths.cpp
+@@ -45,6 +45,10 @@ std::string getPathForUnits(const std::string& units)
+     {
+         return "Utilization";
+     }
++    if (units == "Hit" || units == unitHit)
++    {
++        return "hit";
++    }
+     return "";
+ }
+ 
+diff --git a/src/meson.build b/src/meson.build
+index 5f17134..d30e6fb 100644
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -249,6 +249,24 @@ elif get_option('nvme-i2c').enabled()
+     )
+ endif
+ 
++if get_option('pattern').enabled()
++    executable(
++        'patternsensor',
++        'PatternMatchSensor.cpp',
++        'PatternMatchSensorMain.cpp',
++        dependencies: [
++            sdbusplus,
++        ],
++        implicit_include_directories: false,
++        include_directories: '../include',
++        install: true,
++        link_with: [
++            utils_a,
++            thresholds_a,
++        ],
++    )
++endif
++
+ if get_option('psu').enabled()
+     executable(
+         'psusensor',
+-- 
+2.32.0
+

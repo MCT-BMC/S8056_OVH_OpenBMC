@@ -1,0 +1,28 @@
+From 8da69e392c3ad8f699c63b0e9841a0287c5faf11 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Fri, 2 Dec 2022 13:06:10 +0800
+Subject: [PATCH] Fix get LAN configuration parameters command response byte
+ error issue
+
+IPv6 static router1 prefix length response byte need response 1 byte.
+---
+ transporthandler.cpp | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/transporthandler.cpp b/transporthandler.cpp
+index dae5c06..10b681a 100755
+--- a/transporthandler.cpp
++++ b/transporthandler.cpp
+@@ -1612,7 +1612,8 @@ RspType<message::Payload> getLan(Context::ptr ctx, uint4_t channelBits,
+         }
+         case LanParam::IPv6StaticRouter1PrefixLength:
+         {
+-            ret.pack(UINT8_C(0));
++            uint8_t prefixLength = 0;
++            ret.pack(prefixLength);
+             return responseSuccess(std::move(ret));
+         }
+         case LanParam::IPv6StaticRouter1PrefixValue:
+-- 
+2.25.1
+

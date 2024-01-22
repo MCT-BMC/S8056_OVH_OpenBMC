@@ -1,0 +1,28 @@
+From fef8d6f690248fba28833f1365c93ee5eb723b54 Mon Sep 17 00:00:00 2001
+From: Eli Huang <Eli_Huang@wiwynn.com>
+Date: Tue, 29 Dec 2020 10:57:24 +0800
+Subject: [PATCH] Add match property in setting table
+
+---
+ src/EntityManager.cpp | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/src/EntityManager.cpp b/src/EntityManager.cpp
+index b8b8723..436a7d4 100644
+--- a/src/EntityManager.cpp
++++ b/src/EntityManager.cpp
+@@ -77,8 +77,9 @@ const static boost::container::flat_map<const char*, probe_type_codes, cmp_str>
+                  {"FOUND", probe_type_codes::FOUND},
+                  {"MATCH_ONE", probe_type_codes::MATCH_ONE}}};
+ 
+-static constexpr std::array<const char*, 6> settableInterfaces = {
+-    "FanProfile", "Pid", "Pid.Zone", "Stepwise", "Thresholds", "Polling"};
++static constexpr std::array<const char*, 7> settableInterfaces = {
++    "FanProfile", "Pid",     "Pid.Zone", "Stepwise",
++    "Thresholds", "Polling", "Match"};
+ using JsonVariantType =
+     std::variant<std::vector<std::string>, std::vector<double>, std::string,
+                  int64_t, uint64_t, double, int32_t, uint32_t, int16_t,
+-- 
+2.28.0
+

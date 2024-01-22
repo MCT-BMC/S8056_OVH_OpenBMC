@@ -1,0 +1,262 @@
+From 05d067945879265316292e9453b5f0cb2803b1ad Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Mon, 20 Apr 2020 17:34:00 +0800
+Subject: [PATCH] Support CATERR LED feature
+
+---
+ include/EventSensor.hpp |   9 +++
+ src/EventSensor.cpp     | 171 ++++++++++++++++++++++------------------
+ src/EventSensorMain.cpp |  19 +++++
+ 3 files changed, 122 insertions(+), 77 deletions(-)
+
+diff --git a/include/EventSensor.hpp b/include/EventSensor.hpp
+index 22aec43..22b3afc 100644
+--- a/include/EventSensor.hpp
++++ b/include/EventSensor.hpp
+@@ -33,6 +33,15 @@ static constexpr char const *crashdumpService = "com.intel.crashdump";
+ static constexpr char const *crashdumpPath = "/com/intel/crashdump";
+ static constexpr char const *crashdumpIntf = "com.intel.crashdump.Stored";
+ static constexpr char const *crashdumpRawPeciCmdIntf = "com.intel.crashdump.SendRawPeci";
++
++constexpr char const *propertyInterface = "org.freedesktop.DBus.Properties";
++static constexpr char const *ledCtrlService = "xyz.openbmc_project.LED.Controller.caterr";
++static constexpr char const *ledCtrlPath = "/xyz/openbmc_project/led/physical/caterr";
++static constexpr char const *ledCtrlInterface = "xyz.openbmc_project.Led.Physical";
++
++static const std::string ledOn = "xyz.openbmc_project.Led.Physical.Action.On";
++static const std::string ledOff = "xyz.openbmc_project.Led.Physical.Action.Off";
++
+ static const uint8_t peciCmdCCPass = 0x40;
+ static const uint32_t maskIerr = 0x48000000;
+ static const uint32_t maskMsmiIerr = 0x00480000;
+diff --git a/src/EventSensor.cpp b/src/EventSensor.cpp
+index fd0f175..a58c8ee 100644
+--- a/src/EventSensor.cpp
++++ b/src/EventSensor.cpp
+@@ -191,99 +191,116 @@ void EventOnlySensor::cpuCaterrEventLog(
+             }
+ 
+             // CATErr SEL Log
+-            std::future<void> CaterrEvent;
+-            CaterrEvent = std::async(std::launch::async, [&]() {
+-                // PECI raw command to get caterr error type
+-                std::vector<uint8_t> peciErrSrcCmd = {0x30, 0x5, 0x5, 0xa1, 0x0, 0x0, 0x5, 0x0};
+-                std::vector<std::vector<uint8_t>> peciCmds;
+-                std::vector<std::vector<uint8_t>> peciCmdResponses;
+-                peciCmds.push_back(peciErrSrcCmd);
+ 
+-                sdbusplus::message::message peciRawCmd = conn->new_method_call(
+-                    crashdumpService, crashdumpPath, crashdumpRawPeciCmdIntf, "SendRawPeci");
+-                peciRawCmd.append(peciCmds);
++            // PECI raw command to get caterr error type
++            std::vector<uint8_t> peciErrSrcCmd = {0x30, 0x5, 0x5, 0xa1, 0x0, 0x0, 0x5, 0x0};
++            std::vector<std::vector<uint8_t>> peciCmds;
++            std::vector<std::vector<uint8_t>> peciCmdResponses;
++            peciCmds.push_back(peciErrSrcCmd);
++
++            sdbusplus::message::message peciRawCmd = conn->new_method_call(
++                crashdumpService, crashdumpPath, crashdumpRawPeciCmdIntf, "SendRawPeci");
++            peciRawCmd.append(peciCmds);
++
++            try
++            {
++                sdbusplus::message::message reply = conn->call(peciRawCmd);
++                reply.read(peciCmdResponses);
++            }
++            catch (sdbusplus::exception_t& e)
++            {
++                std::cerr<<"failed to get caterr error type\n";
++                return false;
++            }
++
++            if (5 != (peciCmdResponses.at(0)).size() ||
++                peciCmdCCPass !=  (peciCmdResponses.at(0)).at(0))
++            {
++                std::cerr<<"invalid peci cmd response\n";
++                return false;
++            }
++
++            uint32_t MCAErrSrcLog = ((peciCmdResponses.at(0)).at(4)<<24) |
++                                    ((peciCmdResponses.at(0)).at(3)<<16) |
++                                    ((peciCmdResponses.at(0)).at(2)<<8) |
++                                    ((peciCmdResponses.at(0)).at(1));
++            sd_journal_print(LOG_ERR, "MCAErrSrcLog = 0x%x\n", MCAErrSrcLog);
++
++            if (0 == MCAErrSrcLog)
++            {
++                // std::cerr<<"it is a false caterr alert\n";
++                return false;
++            }
++
++            // SEL Add
++            uint16_t genId = 0x20;
++            std::vector<uint8_t> eventData(3, 0xFF);
++            bool assert = true;
++            std::string errorType("IERR");
++
++            /* Sensor type: Processor (0x07)
++                Sensor specific offset: 00h - IERR
++                                        0Ch - MCErr
++            */
++
++            // IERR
++            if ((MCAErrSrcLog & maskIerr) ||
++                (MCAErrSrcLog & maskMsmiIerr))
++            {
++                eventData[0] = 0x0;
++                errorType = "IERR";
+ 
++                sdbusplus::message::message writeIerrSel = conn->new_method_call(
++                ipmiSelService, ipmiSelPath, ipmiSelAddInterface, "IpmiSelAdd");
++                writeIerrSel.append(ipmiSelAddMessage, dbusPath, eventData, assert, genId);
+                 try
+                 {
+-                    sdbusplus::message::message reply = conn->call(peciRawCmd);
+-                    reply.read(peciCmdResponses);
++                    conn->call_noreply(writeIerrSel);
+                 }
+                 catch (sdbusplus::exception_t& e)
+                 {
+-                    std::cerr<<"failed to get caterr error type\n";
+-                    return;
++                    std::cerr<<"failed to log IERR CATErr SEL\n";
+                 }
++            }
++
++            // MCERR
++            if ((MCAErrSrcLog & maskMcerr) ||
++                (MCAErrSrcLog & maskMsmiMcerr))
++            {
++                eventData[0] = 0xc;
++                errorType = "MCERR";
+ 
+-                if (5 != (peciCmdResponses.at(0)).size() ||
+-                    peciCmdCCPass !=  (peciCmdResponses.at(0)).at(0))
++                sdbusplus::message::message writeMcerrSel = conn->new_method_call(
++                ipmiSelService, ipmiSelPath, ipmiSelAddInterface, "IpmiSelAdd");
++                writeMcerrSel.append(ipmiSelAddMessage, dbusPath, eventData, assert, genId);
++                try
+                 {
+-                    std::cerr<<"invalid peci cmd response\n";
+-                    return;
++                    conn->call_noreply(writeMcerrSel);
+                 }
+-
+-                uint32_t MCAErrSrcLog = ((peciCmdResponses.at(0)).at(4)<<24) |
+-                                        ((peciCmdResponses.at(0)).at(3)<<16) |
+-                                        ((peciCmdResponses.at(0)).at(2)<<8) |
+-                                        ((peciCmdResponses.at(0)).at(1));
+-                sd_journal_print(LOG_ERR, "MCAErrSrcLog = 0x%x\n", MCAErrSrcLog);
+-
+-                if (0 == MCAErrSrcLog)
+-	            {
+-                    // std::cerr<<"it is a false caterr alert\n";
+-                    return;
++                catch (sdbusplus::exception_t& e)
++                {
++                    std::cerr<<"failed to log MCERR CATErr SEL\n";
+                 }
++            }
+ 
+-                // SEL Add
+-                uint16_t genId = 0x20;
+-                std::vector<uint8_t> eventData(3, 0xFF);
+-                bool assert = true;
+-                std::string errorType("IERR");
++            // CATERR LED
++            std::variant<std::string> ledState = ledOn;
+ 
+-                /* Sensor type: Processor (0x07)
+-                   Sensor specific offset: 00h - IERR
+-                                           0Ch - MCErr
+-                */
++            sdbusplus::message::message ledCtrl= conn->new_method_call(
++                ledCtrlService, ledCtrlPath, propertyInterface, "Set");
++            ledCtrl.append(ledCtrlInterface, "State", ledState);
+ 
+-                // IERR
+-                if ((MCAErrSrcLog & maskIerr) ||
+-		            (MCAErrSrcLog & maskMsmiIerr))
+-                {
+-                    eventData[0] = 0x0;
+-                    errorType = "IERR";
+-
+-                    sdbusplus::message::message writeIerrSel = conn->new_method_call(
+-                    ipmiSelService, ipmiSelPath, ipmiSelAddInterface, "IpmiSelAdd");
+-                    writeIerrSel.append(ipmiSelAddMessage, dbusPath, eventData, assert, genId);
+-                    try
+-                    {
+-                        conn->call_noreply(writeIerrSel);
+-                    }
+-                    catch (sdbusplus::exception_t& e)
+-                    {
+-                        std::cerr<<"failed to log IERR CATErr SEL\n";
+-                    }
+-                }
+-
+-                // MCERR
+-                if ((MCAErrSrcLog & maskMcerr) ||
+-		            (MCAErrSrcLog & maskMsmiMcerr))
+-                {
+-                    eventData[0] = 0xc;
+-                    errorType = "MCERR";
+-
+-                    sdbusplus::message::message writeMcerrSel = conn->new_method_call(
+-                    ipmiSelService, ipmiSelPath, ipmiSelAddInterface, "IpmiSelAdd");
+-                    writeMcerrSel.append(ipmiSelAddMessage, dbusPath, eventData, assert, genId);
+-                    try
+-                    {
+-                        conn->call_noreply(writeMcerrSel);
+-                    }
+-                    catch (sdbusplus::exception_t& e)
+-                    {
+-                        std::cerr<<"failed to log MCERR CATErr SEL\n";
+-                    }
+-                }
++            try
++            {
++                conn->call_noreply(ledCtrl);
++            }
++            catch (const sdbusplus::exception::SdBusError& e)
++            {
++                std::cerr << "Failed to turn on CATERR LED\n";
++            }
+ 
++            std::future<void> CaterrEvent;
++            CaterrEvent = std::async(std::launch::async, [&]() {
+                 // Crashdump
+                 sdbusplus::message::message crashdump = conn->new_method_call(
+                     crashdumpService, crashdumpPath, crashdumpIntf, "GenerateStoredLog");
+diff --git a/src/EventSensorMain.cpp b/src/EventSensorMain.cpp
+index 94ed5b6..206afc4 100644
+--- a/src/EventSensorMain.cpp
++++ b/src/EventSensorMain.cpp
+@@ -92,6 +92,25 @@ static sdbusplus::bus::match::match startAcpiEventMonitor(
+             {
+                 std::cerr << "failed to add acpi sel\n";
+             }
++
++            // Turn Off CATERR LED at power-off state
++            if(1 != *pState)
++            {
++                std::variant<std::string> ledState = ledOff;
++
++                sdbusplus::message::message ledCtrl= systemBus->new_method_call(
++                    ledCtrlService, ledCtrlPath, propertyInterface, "Set");
++                ledCtrl.append(ledCtrlInterface, "State", ledState);
++
++                try
++                {
++                    systemBus->call_noreply(ledCtrl);
++                }
++                catch (const sdbusplus::exception::SdBusError& e)
++                {
++                    std::cerr << "Failed to turn off CATERR LED\n";
++                }
++            }
+         }
+     };
+ 
+-- 
+2.24.1
+

@@ -1,0 +1,27 @@
+From b9c5b369de81a02bec325ca00f312c9e19883125 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Tue, 13 Oct 2020 16:19:25 +0800
+Subject: [PATCH] Add to support IPMI mc warm reset command
+
+---
+ globalhandler.cpp | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/globalhandler.cpp b/globalhandler.cpp
+index c192cbb..2f10244 100644
+--- a/globalhandler.cpp
++++ b/globalhandler.cpp
+@@ -59,5 +59,10 @@ void register_netfn_global_functions()
+     ipmi::registerHandler(ipmi::prioOpenBmcBase, ipmi::netFnApp,
+                           ipmi::app::cmdColdReset, ipmi::Privilege::Admin,
+                           ipmiGlobalReset);
++
++    // Warm Reset
++    ipmi::registerHandler(ipmi::prioOpenBmcBase, ipmi::netFnApp,
++                          ipmi::app::cmdWarmReset, ipmi::Privilege::Admin,
++                          ipmiGlobalReset);
+     return;
+ }
+-- 
+2.28.0
+

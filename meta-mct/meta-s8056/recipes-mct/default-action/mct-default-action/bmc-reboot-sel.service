@@ -1,0 +1,13 @@
+[Unit]
+Description=Check and generate BMC SEL
+After=xyz.openbmc_project.Logging.IPMI.service
+
+[Service]
+ExecStartPre=/bin/bash -c 'while [ ! -e /run/sel-logger-ready ]; do sleep 1; done;sleep 5'
+ExecStart=/usr/sbin/bmc-reboot-sel.sh
+SyslogIdentifier=bmc-reboot-sel
+Type=simple
+TimeoutSec=infinity
+
+[Install]
+WantedBy={SYSTEMD_DEFAULT_TARGET}

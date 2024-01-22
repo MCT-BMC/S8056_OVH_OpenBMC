@@ -1,0 +1,8 @@
+[Unit]
+Description=BMC reboot (with delay time)
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+ExecStart=/bin/bash -c 'echo "BMC reboot triggered."'
+SyslogIdentifier=bmc-reboot

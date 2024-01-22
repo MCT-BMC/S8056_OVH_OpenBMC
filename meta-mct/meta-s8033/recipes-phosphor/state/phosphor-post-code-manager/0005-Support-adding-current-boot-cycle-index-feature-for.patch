@@ -1,0 +1,47 @@
+From 85c927558ae2afe76f92f6cea75aa1282a918570 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Tue, 2 Nov 2021 19:49:58 +0800
+Subject: [PATCH] Support adding current boot cycle index feature for BIOS
+ failed to send any post code
+
+Add debug message for current  boot cycle index.
+---
+ inc/post_code.hpp | 2 ++
+ src/post_code.cpp | 1 +
+ 2 files changed, 3 insertions(+)
+
+diff --git a/inc/post_code.hpp b/inc/post_code.hpp
+index 241281f..f88cf88 100755
+--- a/inc/post_code.hpp
++++ b/inc/post_code.hpp
+@@ -159,6 +159,7 @@ struct PostCode : sdbusplus::server::object_t<post_code, delete_all>
+                             else
+                             {
+                                 this->postCodes.clear();
++                                incrBootCycle();
+                             }
+                         }
+                     }
+@@ -185,6 +186,7 @@ struct PostCode : sdbusplus::server::object_t<post_code, delete_all>
+                     else
+                     {
+                         this->postCodes.clear();
++                        incrBootCycle();
+                     }
+                 }
+             })
+diff --git a/src/post_code.cpp b/src/post_code.cpp
+index ce8e90d..319e379 100755
+--- a/src/post_code.cpp
++++ b/src/post_code.cpp
+@@ -216,6 +216,7 @@ void PostCode::incrBootCycle()
+     {
+         currentBootCycleIndex++;
+     }
++    std::cerr << "Current boot cycle index " <<  currentBootCycleIndex << std::endl;
+     currentBootCycleCount(std::min(
+         maxBootCycleNum(), static_cast<uint16_t>(currentBootCycleCount() + 1)));
+ }
+-- 
+2.7.4
+

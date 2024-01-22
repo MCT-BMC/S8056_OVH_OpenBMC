@@ -1,0 +1,59 @@
+From 9980f1538b0acd52d1eec43ddbdff6d77e4214d8 Mon Sep 17 00:00:00 2001
+From: Mirage Su <mirage.su@mic.com.tw>
+Date: Tue, 10 Jul 2018 09:18:45 +0800
+Subject: [PATCH] defconfig takes precedence over than other
+
+---
+ tools/merge_config.sh | 23 ++++++++++++++++++++---
+ 1 file changed, 20 insertions(+), 3 deletions(-)
+
+diff --git a/tools/merge_config.sh b/tools/merge_config.sh
+index 14b4c1f..8dd53bd 100755
+--- a/tools/merge_config.sh
++++ b/tools/merge_config.sh
+@@ -90,15 +90,28 @@ if [ -z "$KCONFIG_CONFIG" ]; then
+ 	fi
+ fi
+ 
+-INITFILE=$1
+-shift;
++MERGE_LIST=$*
++for MERGE_FILE in $MERGE_LIST ; do
++	if [ ! -r "$MERGE_FILE" ]; then
++		echo "The merge file '$MERGE_FILE' does not exist.  Exit." >&2
++		exit 1
++	fi
++	FILE_NAME=`echo ${MERGE_FILE##*/}`
++	if [ "$FILE_NAME" == "defconfig" ]; then
++		INITFILE=$MERGE_FILE
++		break
++	fi
++done
++
++if [ -z "$INITFILE" ]; then
++	INITFILE=$1
++fi
+ 
+ if [ ! -r "$INITFILE" ]; then
+ 	echo "The base file '$INITFILE' does not exist.  Exit." >&2
+ 	exit 1
+ fi
+ 
+-MERGE_LIST=$*
+ SED_CONFIG_EXP="s/^\(# \)\{0,1\}\(CONFIG_[a-zA-Z0-9_]*\)[= ].*/\2/p"
+ TMP_FILE=$(mktemp ./.tmp.config.XXXXXXXXXX)
+ 
+@@ -107,6 +120,10 @@ cat $INITFILE > $TMP_FILE
+ 
+ # Merge files, printing warnings on overridden values
+ for MERGE_FILE in $MERGE_LIST ; do
++	if [ $MERGE_FILE == $INITFILE ]; then
++		continue
++	fi
++
+ 	echo "Merging $MERGE_FILE"
+ 	if [ ! -r "$MERGE_FILE" ]; then
+ 		echo "The merge file '$MERGE_FILE' does not exist.  Exit." >&2
+-- 
+2.7.4
+

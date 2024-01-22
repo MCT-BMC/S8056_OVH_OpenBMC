@@ -1,0 +1,14 @@
+[Unit]
+Description=MiTAC default setting
+After=xyz.openbmc_project.Logging.IPMI.service
+After=xyz.openbmc_project.Settings.service
+
+[Service]
+ExecStartPre=/bin/bash -c 'while [ ! -e /run/sel-logger-ready ]; do sleep 1; done;sleep 5'
+ExecStart=/usr/sbin/mct-default-setting
+Type=simple
+SyslogIdentifier=mct-default-setting
+TimeoutSec=infinity
+
+[Install]
+WantedBy=basic.target

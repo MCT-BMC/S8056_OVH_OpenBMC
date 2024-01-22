@@ -1,0 +1,36 @@
+From 16f56bb7ee3c51d22aba730ed81a30be3f33e4a5 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Thu, 8 Apr 2021 18:51:52 +0800
+Subject: [PATCH] Set watchdog default action
+
+Set watchdog initialized flag true as default
+Set watchdog initialized action to None as default
+---
+ xyz/openbmc_project/State/Watchdog.interface.yaml | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/yaml/xyz/openbmc_project/State/Watchdog.interface.yaml b/yaml/xyz/openbmc_project/State/Watchdog.interface.yaml
+index f54ec3b..c597979 100644
+--- a/yaml/xyz/openbmc_project/State/Watchdog.interface.yaml
++++ b/yaml/xyz/openbmc_project/State/Watchdog.interface.yaml
+@@ -22,7 +22,7 @@ properties:
+       type: boolean
+       description: >
+           Whether the host has configured the watchdog yet.
+-      default: false
++      default: True
+     - name: Enabled
+       type: boolean
+       description: >
+@@ -32,7 +32,7 @@ properties:
+       type: enum[self.Action]
+       description: >
+           The action the watchdog should perform when it expires.
+-      default: 'HardReset'
++      default: 'None'
+     - name: Interval
+       type: uint64
+       description: >
+-- 
+2.7.4
+

@@ -1,0 +1,41 @@
+From 0da8573c896478249429b12562a038b96699ff89 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Thu, 9 Jul 2020 12:02:59 +0800
+Subject: [PATCH] Support IPMI power soft command
+
+---
+ chassishandler.cpp | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/chassishandler.cpp b/chassishandler.cpp
+index f991525..9da8f9c 100644
+--- a/chassishandler.cpp
++++ b/chassishandler.cpp
+@@ -1249,7 +1249,7 @@ ipmi::RspType<> ipmiChassisControl(uint8_t chassisControl)
+         {
+             // Start the system power reset service
+             std::string resetService("host-powerreset.service");
+-            startSystemdUnit(resetService);
++            rc = startSystemdUnit(resetService);
+             break;
+         }
+         case CMD_POWER_CYCLE:
+@@ -1267,10 +1267,13 @@ ipmi::RspType<> ipmiChassisControl(uint8_t chassisControl)
+             break;
+ 
+         case CMD_SOFT_OFF_VIA_OVER_TEMP:
++        {
+             // Request Host State Manager to do a soft power off
+-            rc = initiate_state_transition(State::Host::Transition::Off);
++            // rc = initiate_state_transition(State::Host::Transition::Off);
++            std::string softoffService("host-powersoft.service");
++            rc = startSystemdUnit(softoffService);
+             break;
+-
++        }
+         case CMD_PULSE_DIAGNOSTIC_INTR:
+             rc = setNmiProperty(true);
+             break;
+-- 
+2.24.1
+

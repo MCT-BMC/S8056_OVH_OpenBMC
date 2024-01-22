@@ -1,0 +1,51 @@
+From 11eb44710d815f1c9f1346d42cea431e64f75475 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Fri, 18 Mar 2022 17:29:26 +0800
+Subject: [PATCH 11/24] Workaroud for ipmitool fru edit issue
+
+---
+ dbus-sdr/storagecommands.cpp | 28 ++++++++++++++++++++++++++++
+ 1 file changed, 28 insertions(+)
+
+diff --git a/dbus-sdr/storagecommands.cpp b/dbus-sdr/storagecommands.cpp
+index cd9dccb..f0ec020 100755
+--- a/dbus-sdr/storagecommands.cpp
++++ b/dbus-sdr/storagecommands.cpp
+@@ -131,6 +131,34 @@ void registerStorageFunctions() __attribute__((constructor));
+ 
+ bool writeFru()
+ {
++    for(unsigned int i=0; i < fruCache.size(); i++)
++    {
++       if((i % 8) == 0){
++              //std::cerr <<"\n";
++       }
++       // std::cerr << (unsigned)fruCache.at(i) << ' ';
++       // std::cerr <<" "<< std::hex << std::setw(2) << std::setfill('0')<<(unsigned)fruCache.at(i)<< ' ';
++    }
++
++    //correct FRU field offset : ipmitool 1.8.18 issue
++    for(int i=2; i<7; i++)
++    {
++        if((fruCache[i]*8) > 512)
++        {
++            //std::cerr << "fru " << i << "=" << std::hex << fruCache[i] <<"\n";
++            fruCache[i]=0;
++        }
++    }
++
++    size_t sum = 0;
++    for (int jj = 0; jj < 7; jj++)
++    {
++        sum += fruCache[jj];
++    }
++    sum = (256 - sum) & 0xFF;
++    fruCache[7] = sum;
++    //correct FRU field end
++
+     if (writeBus == 0xFF && writeAddr == 0xFF)
+     {
+         return true;
+-- 
+2.7.4
+

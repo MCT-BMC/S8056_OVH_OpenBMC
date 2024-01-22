@@ -1,0 +1,24 @@
+From 88457bbf1d1347d0fcd03c05db84210e441bba73 Mon Sep 17 00:00:00 2001
+From: Brad Chou <brad.chou@mic.com.tw>
+Date: Thu, 30 Jun 2022 15:10:46 +0800
+Subject: [PATCH] Add S8056 dtb
+
+Initial introduction of S8056 equipped with Aspeed 2600 BMC SoC.
+---
+ arch/arm/dts/Makefile | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm/dts/Makefile b/arch/arm/dts/Makefile
+index e5a73697c5..3595828040 100755
+--- a/arch/arm/dts/Makefile
++++ b/arch/arm/dts/Makefile
+@@ -687,7 +687,8 @@ dtb-$(CONFIG_ARCH_ASPEED) += \
+ 	ast2600-pfr.dtb \
+ 	ast2600-rainier.dtb \
+ 	ast2600-slt.dtb \
+-	ast2600-tacoma.dtb
++	ast2600-tacoma.dtb \
++	ast2600-s8056.dtb
+ 
+ dtb-$(CONFIG_ARCH_STI) += stih410-b2260.dtb
+ 

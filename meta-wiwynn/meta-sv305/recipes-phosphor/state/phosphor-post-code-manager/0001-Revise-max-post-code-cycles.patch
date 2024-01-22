@@ -1,0 +1,25 @@
+From 609cfffc595edafbf3ec7587c7566bef29d97e7f Mon Sep 17 00:00:00 2001
+From: Ren_Chen <Ren_Chen@wiwynn.com>
+Date: Thu, 29 Oct 2020 10:37:40 +0800
+Subject: [PATCH] Revise max post code cycles
+
+---
+ inc/post_code.hpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/inc/post_code.hpp b/inc/post_code.hpp
+index 5541de4..30857f0 100644
+--- a/inc/post_code.hpp
++++ b/inc/post_code.hpp
+@@ -32,7 +32,7 @@
+ #include <xyz/openbmc_project/State/Boot/PostCode/server.hpp>
+ #include <xyz/openbmc_project/State/Host/server.hpp>
+ 
+-#define MaxPostCodeCycles 100
++#define MaxPostCodeCycles 5
+ 
+ const static constexpr char *PostCodePath =
+     "/xyz/openbmc_project/state/boot/raw";
+-- 
+2.28.0
+

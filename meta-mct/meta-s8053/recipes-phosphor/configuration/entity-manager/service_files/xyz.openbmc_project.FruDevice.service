@@ -1,0 +1,11 @@
+[Unit]
+Description=Fru Device
+After=xyz.openbmc_project.CloseMuxes.service dbus.service
+
+[Service]
+Restart=always
+RestartSec=5
+ExecStart=/usr/bin/fru-device
+
+[Install]
+WantedBy=multi-user.target

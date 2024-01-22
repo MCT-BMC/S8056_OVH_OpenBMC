@@ -1,0 +1,10 @@
+[Unit]
+Description=SV305 BMC Environment Initialization
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/sv305-bmcenv-init.sh
+SyslogIdentifier=sv305-bmcenv-init
+
+[Install]
+WantedBy=sysinit.target

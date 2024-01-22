@@ -1,0 +1,29 @@
+From c5d8ffa1ce94672beec2d147294c37eb99913a9c Mon Sep 17 00:00:00 2001
+From: "wendy.shi" <wendy.shi@mic.com.tw>
+Date: Wed, 6 Nov 2019 15:32:49 +0800
+Subject: [PATCH] add IPMI ac lost event log
+
+---
+ include/sdrutils.hpp | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/include/sdrutils.hpp b/include/sdrutils.hpp
+index 796281c..f6ba289 100755
+--- a/include/sdrutils.hpp
++++ b/include/sdrutils.hpp
+@@ -162,6 +162,7 @@ enum class SensorTypeCodes : uint8_t
+     current = 0x3,
+     fan = 0x4,
+     processor = 0x07,
++    power_unit = 0x09,
+     pwr_button = 0x14,
+     restart = 0x1d,
+     acpi = 0x22,
+@@ -176,6 +177,7 @@ const static boost::container::flat_map<const char*, SensorTypeCodes, CmpStr>
+                  {"fan_tach", SensorTypeCodes::fan},
+                  {"fan_pwm", SensorTypeCodes::fan},
+                  {"processor", SensorTypeCodes::processor},   
++                 {"power_unit", SensorTypeCodes::power_unit},
+                  {"pwr_button", SensorTypeCodes::pwr_button},   
+                  {"restart", SensorTypeCodes::restart},  
+                  {"acpi", SensorTypeCodes::acpi},     

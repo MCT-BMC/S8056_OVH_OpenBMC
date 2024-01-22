@@ -1,0 +1,12 @@
+[
+    {
+        "Name": "PWRBTN",
+        "GpioNum": 34,
+        "EventMon": "BOTH"
+    },
+    {
+        "Name": "RSTBTN",
+        "GpioNum": 32,
+        "EventMon": "BOTH"
+    }
+]

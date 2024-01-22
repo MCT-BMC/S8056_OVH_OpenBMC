@@ -1,0 +1,54 @@
+From 80fbc14ebfcb73b5aedce2c503e3f825dc82067e Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Thu, 3 Sep 2020 14:09:56 +0800
+Subject: [PATCH] Filter the debug log and change service enable method
+
+---
+ gpioMon.cpp | 2 +-
+ monitor.cpp | 4 ++--
+ 2 files changed, 3 insertions(+), 3 deletions(-)
+ mode change 100644 => 100755 monitor.cpp
+
+diff --git a/gpioMon.cpp b/gpioMon.cpp
+index 176d371..9c1fa29 100644
+--- a/gpioMon.cpp
++++ b/gpioMon.cpp
+@@ -85,7 +85,7 @@ void GpioMonitor::gpioEventHandler()
+         for (auto &tar : targetsToStart)
+         {
+             auto method = bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_ROOT,
+-                                              SYSTEMD_INTERFACE, "StartUnit");
++                                              SYSTEMD_INTERFACE, "RestartUnit");
+             method.append(tar);
+             method.append("replace");
+             bus.call_noreply(method);
+diff --git a/monitor.cpp b/monitor.cpp
+old mode 100644
+new mode 100755
+index e2e912a..1bfb6b6
+--- a/monitor.cpp
++++ b/monitor.cpp
+@@ -35,7 +35,6 @@ using namespace phosphor::logging;
+ // Callback handler when there is an activity on the FD
+ int Monitor::processEvents(sd_event_source*, int, uint32_t, void* userData)
+ {
+-    log<level::INFO>("GPIO line altered");
+     auto monitor = static_cast<Monitor*>(userData);
+ 
+     monitor->analyzeEvent();
+@@ -77,10 +76,11 @@ void Monitor::analyzeEvent()
+                 // User supplied systemd unit
+                 if (!target.empty())
+                 {
++                    log<level::INFO>("GPIO line altered");
+                     auto bus = sdbusplus::bus::new_default();
+                     auto method =
+                         bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_ROOT,
+-                                            SYSTEMD_INTERFACE, "StartUnit");
++                                            SYSTEMD_INTERFACE, "RestartUnit");
+                     method.append(target);
+                     method.append("replace");
+ 
+-- 
+2.7.4
+

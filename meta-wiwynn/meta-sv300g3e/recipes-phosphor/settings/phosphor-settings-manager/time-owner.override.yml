@@ -1,0 +1,5 @@
+/xyz/openbmc_project/time/owner:
+    - Interface: xyz.openbmc_project.Time.Owner
+      Properties:
+          TimeOwner:
+              Default: Owner::Owners::BMC

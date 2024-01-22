@@ -1,0 +1,24 @@
+From a890120c9f7b3584e14d9a0c6892132c309cf2f7 Mon Sep 17 00:00:00 2001
+From: Ray Lue <ray.lue@mic.com.tw>
+Date: Thu, 19 Sep 2019 21:02:49 +0800
+Subject: [PATCH 1/1] Modified ibm-cffps driver
+
+---
+ drivers/hwmon/pmbus/ibm-cffps.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/hwmon/pmbus/ibm-cffps.c b/drivers/hwmon/pmbus/ibm-cffps.c
+index d44745e498e7..85d1471d0755 100644
+--- a/drivers/hwmon/pmbus/ibm-cffps.c
++++ b/drivers/hwmon/pmbus/ibm-cffps.c
+@@ -367,6 +367,7 @@ static struct pmbus_driver_info ibm_cffps_info[] = {
+ 			PMBUS_HAVE_TEMP2 | PMBUS_HAVE_TEMP3 |
+ 			PMBUS_HAVE_STATUS_VOUT | PMBUS_HAVE_STATUS_IOUT |
+ 			PMBUS_HAVE_STATUS_INPUT | PMBUS_HAVE_STATUS_TEMP |
++            PMBUS_HAVE_POUT |
+ 			PMBUS_HAVE_STATUS_FAN12,
+ 		.read_byte_data = ibm_cffps_read_byte_data,
+ 		.read_word_data = ibm_cffps_read_word_data,
+-- 
+2.22.0
+

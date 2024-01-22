@@ -1,0 +1,13 @@
+{
+    "Fru":[
+        {
+            "Name": "DCSCM_FRU",
+            "Size": 256,
+            "Index": 0,
+            "Bus": 1,
+            "Address": "0x50",
+            "FRU_OFFSET": "0x0000",
+            "ReadOnly": false
+        }
+    ]
+}

@@ -1,0 +1,14 @@
+[Unit]
+Description=CPU DIMM temperature sensor
+Requires=ipmb.bridged.start.service
+After=ipmb.bridged.start.service
+
+[Service]
+Restart=always
+EnvironmentFile=/var/tmp/IPMBDevice.conf
+ExecStart=/usr/bin/env cpudimm_temp_sensor --d $spsfw
+SyslogIdentifier=cpudimm_temp_sensor
+TimeoutSec=infinity
+
+[Install]
+WantedBy={SYSTEMD_DEFAULT_TARGET}

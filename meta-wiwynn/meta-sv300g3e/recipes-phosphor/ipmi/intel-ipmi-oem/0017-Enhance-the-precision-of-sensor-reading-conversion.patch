@@ -1,0 +1,67 @@
+From 93e91dbd5d64d2532df7415a518f818e34c1f31d Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Fri, 27 Mar 2020 13:35:46 +0800
+Subject: [PATCH] Enhance the precision of sensor reading conversion - To show
+ negative value in SDR
+
+---
+ include/sensorutils.hpp | 36 ++++++++++++++++++++++++++++++++++++
+ 1 file changed, 36 insertions(+)
+
+diff --git a/include/sensorutils.hpp b/include/sensorutils.hpp
+index 98359fc..34434c2 100644
+--- a/include/sensorutils.hpp
++++ b/include/sensorutils.hpp
+@@ -137,6 +137,7 @@ static inline uint8_t
+                              const int8_t rExp, const uint16_t bValue,
+                              const int8_t bExp, const bool bSigned)
+ {
++#if 0
+     uint32_t scaledValue =
+         (value - (bValue * std::pow(10, bExp) * std::pow(10, rExp))) /
+         (mValue * std::pow(10, rExp));
+@@ -154,6 +155,41 @@ static inline uint8_t
+     {
+         return static_cast<uint8_t>(scaledValue);
+     }
++
++#else
++    if (mValue == 0)
++    {
++        throw std::out_of_range("Scaling multiplier is uninitialized");
++    }
++
++    auto dM = static_cast<double>(mValue);
++    auto dB = static_cast<double>(bValue);
++
++    double dX =
++        (value - (dB * std::pow(10, bExp) * std::pow(10, rExp))) /
++        (dM * std::pow(10, rExp));
++
++    auto scaledValue = static_cast<int32_t>(std::round(dX));
++
++    int32_t minClamp;
++    int32_t maxClamp;
++
++    if (bSigned)
++    {
++        minClamp = std::numeric_limits<int8_t>::lowest();
++        maxClamp = std::numeric_limits<int8_t>::max();
++    }
++    else
++    {
++        minClamp = std::numeric_limits<uint8_t>::lowest();
++        maxClamp = std::numeric_limits<uint8_t>::max();
++    }
++
++    auto clampedValue = std::clamp(scaledValue, minClamp, maxClamp);
++
++    return static_cast<uint8_t>(clampedValue);
++
++#endif
+ }
+ 
+ static inline uint8_t getScaledIPMIValue(const double value, const double max,
+-- 
+2.24.1
+

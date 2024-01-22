@@ -1,0 +1,93 @@
+From 9df9b255cf82c6ce03a656f6fe8927b6d93b69ef Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Thu, 28 Oct 2021 10:42:48 +0800
+Subject: [PATCH] Get sensor from sensor bridged
+
+---
+ include/ipmid/utils.hpp |  2 +-
+ libipmid/utils.cpp      | 28 +++++++++++++++++++++++++---
+ sensorhandler.cpp       |  2 +-
+ 3 files changed, 27 insertions(+), 5 deletions(-)
+
+diff --git a/include/ipmid/utils.hpp b/include/ipmid/utils.hpp
+index 09aa985..11b241c 100644
+--- a/include/ipmid/utils.hpp
++++ b/include/ipmid/utils.hpp
+@@ -433,7 +433,7 @@ bool getSensorTree(void);
+  *  @param[in] path - Sensor Dbus object path.
+  *  @return - Sensor Dbus service name.
+  */
+-std::string getSensorConnection(const std::string& path);
++std::string getSensorConnection(const std::string& path, bool bridge = true);
+ 
+ /** @brief Get sensor value from sensor Dbus.
+  *  @param[in] bus - DBUS Bus Object.
+diff --git a/libipmid/utils.cpp b/libipmid/utils.cpp
+index 145ce0b..fa6d51e 100644
+--- a/libipmid/utils.cpp
++++ b/libipmid/utils.cpp
+@@ -18,7 +18,7 @@
+ #include <sdbusplus/message/types.hpp>
+ #include <xyz/openbmc_project/Common/error.hpp>
+ 
+-constexpr int sensorMapUpdatePeriod = 2;
++constexpr int sensorMapUpdatePeriod = 10;
+ ipmi::SensorObjSubTree sensorTree;
+ std::map<std::string, ipmi::ObjectValueTree> sensorCache;
+ 
+@@ -430,7 +430,7 @@ bool getSensorTree(void)
+     return true;
+ }
+ 
+-std::string getSensorConnection(const std::string& path)
++std::string getSensorConnection(const std::string& path, bool bridge)
+ {
+     std::string service;
+ 
+@@ -442,7 +442,29 @@ std::string getSensorConnection(const std::string& path)
+     auto sensorFind = sensorTree.find(path);
+     if (sensorFind != sensorTree.end())
+     {
+-        service = sensorFind->second.begin()->first;
++        if ((sensorFind->second.size() != 1))
++        {
++            if (bridge)
++            {
++                service = "xyz.openbmc_project.Sensor.Bridged";
++            }
++            else
++            {
++                for (const auto& [serv, objects] : sensorFind->second)
++                {
++                    if (serv == "xyz.openbmc_project.Sensor.Bridged")
++                    {
++                        continue;
++                    }
++
++                    service = serv;
++                }
++            }
++        }
++        else
++        {
++            service = sensorFind->second.begin()->first;
++        }
+     }
+ 
+     return service;
+diff --git a/sensorhandler.cpp b/sensorhandler.cpp
+index 662cf29..a5355ee 100644
+--- a/sensorhandler.cpp
++++ b/sensorhandler.cpp
+@@ -1669,7 +1669,7 @@ ipmi_ret_t ipmiSensorSetSensorThresholds(ipmi_netfn_t netfn, ipmi_cmd_t cmd,
+     }
+ 
+     const auto info = iter->second;
+-    auto service = ipmi::getSensorConnection(info.sensorPath);
++    auto service = ipmi::getSensorConnection(info.sensorPath, false);
+     if (service.empty())
+     {
+         return IPMI_CC_RESPONSE_ERROR;
+-- 
+2.32.0
+

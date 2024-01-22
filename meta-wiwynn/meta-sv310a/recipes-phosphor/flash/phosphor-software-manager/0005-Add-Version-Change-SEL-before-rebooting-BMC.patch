@@ -1,0 +1,161 @@
+From e020322f0ad08270db6b8c63ad641bb91063793d Mon Sep 17 00:00:00 2001
+From: Ren Chen <ren_chen@wiwynn.com>
+Date: Fri, 12 Nov 2021 10:30:06 +0800
+Subject: [PATCH] Add Version Change SEL before rebooting BMC
+
+---
+ activation.cpp | 109 ++++++++++++++++++++++++++++++++++++++++++++++++-
+ activation.hpp |   4 ++
+ 2 files changed, 112 insertions(+), 1 deletion(-)
+
+diff --git a/activation.cpp b/activation.cpp
+index 2780604..1b7982a 100644
+--- a/activation.cpp
++++ b/activation.cpp
+@@ -5,12 +5,15 @@
+ #include "msl_verify.hpp"
+ #include "serialize.hpp"
+ 
++#include <boost/algorithm/string.hpp>
+ #include <phosphor-logging/elog-errors.hpp>
+ #include <phosphor-logging/elog.hpp>
+ #include <phosphor-logging/log.hpp>
+ #include <sdbusplus/exception.hpp>
+ #include <xyz/openbmc_project/Common/error.hpp>
+ #include <xyz/openbmc_project/Software/Version/error.hpp>
++
++#include <filesystem>
+ #include <fstream>
+ 
+ #ifdef WANT_SIGNATURE_VERIFY
+@@ -241,7 +244,111 @@ void Activation::onFlashWriteSuccess()
+     {
+         log<level::INFO>("Image Active. ApplyTime is immediate, "
+                          "rebooting BMC.");
+-        Activation::rebootBmc();
++
++        /* Add Version Change SEL
++         *  Event Data 1:
++         *  E1h - Firmware or software change detected with associated Entity.
++         *  Event Data 2:
++         *  02h - management controller firmware revision
++         *  Event Data 3:
++         *  07h - oob REST/Redfish
++         */
++        uint16_t genId = 0x20;
++        bool assert = true;
++        std::string dbusPath = discretePathPrefix + "Version_Change";
++        std::vector<uint8_t> eventData = {0xE1, 0x2, 0x7};
++
++        sdbusplus::message::message writeSEL = this->bus.new_method_call(
++            ipmiSELService, ipmiSELPath, ipmiSELAddInterface, "IpmiSelAdd");
++        writeSEL.append("Version Change", dbusPath, eventData, assert, genId);
++
++        uint16_t responseID = 0xFFFF;
++        try
++        {
++            auto ret = bus.call(writeSEL);
++            ret.read(responseID);
++        }
++        catch (const sdbusplus::exception::SdBusError& e)
++        {
++            log<level::ERR>("Error to add Version Change SEL",
++                            entry("ERROR=%s", e.what()));
++        }
++
++        bool versionChangeSel = false;
++        std::vector<std::string> newestEntryFields;
++        if (responseID != 0xFFFF)
++        {
++            for (int retry = 0; retry <= 3; ++retry)
++            {
++                std::this_thread::sleep_for(std::chrono::milliseconds(1000));
++                std::ifstream logStream("/usr/share/sel/ipmi_sel");
++                if (!logStream.is_open())
++                {
++                    log<level::ERR>("Error to open SEL file");
++                }
++                std::string line;
++                std::string newestEntry;
++                while (std::getline(logStream, line))
++                {
++                    newestEntry = line;
++                    boost::split(newestEntryFields, newestEntry,
++                                 boost::is_any_of(" ,"),
++                                 boost::token_compress_on);
++                    if (std::stod(newestEntryFields[1]) == responseID)
++                    {
++                        versionChangeSel = true;
++                        break;
++                    }
++                }
++            }
++        }
++
++        /* Create oob_update file to record BMC firmware updating by
++         * OOB-REST/Redfish. And BMC logs Version Change SEL after updating BMC
++         * firmware successfully.
++         */
++        if (!fs::exists("/var/lib/bmc-update"))
++        {
++            auto dir = fs::path("/var/lib/bmc-update");
++            if (!fs::create_directories(dir))
++            {
++                log<level::ERR>("Failed to create folder\n");
++                activation(softwareServer::Activation::Activations::Failed);
++            }
++        }
++        std::ofstream oobUpdateFile("/var/lib/bmc-update/oob_update",
++                                    std::ios::out | std::ios::trunc);
++        if (oobUpdateFile.fail())
++        {
++            log<level::ERR>("Failed to create oob_update file\n");
++            activation(softwareServer::Activation::Activations::Failed);
++        }
++        else
++        {
++            if (versionChangeSel)
++            {
++                newestEntryFields[1] = "1";
++                for (unsigned int entry = 0; entry < newestEntryFields.size();
++                     ++entry)
++                {
++                    oobUpdateFile << newestEntryFields[entry];
++                    if (entry == 0)
++                    {
++                        oobUpdateFile << " ";
++                    }
++                    else if (entry != (newestEntryFields.size() - 1))
++                    {
++                        oobUpdateFile << ",";
++                    }
++                    else
++                    {
++                        oobUpdateFile << "\n";
++                    }
++                }
++            }
++            oobUpdateFile.close();
++            Activation::rebootBmc();
++        }
+     }
+     else
+     {
+diff --git a/activation.hpp b/activation.hpp
+index cb77174..71ee7aa 100644
+--- a/activation.hpp
++++ b/activation.hpp
+@@ -42,6 +42,10 @@ constexpr auto applyTimeIntf = "xyz.openbmc_project.Software.ApplyTime";
+ constexpr auto dbusPropIntf = "org.freedesktop.DBus.Properties";
+ constexpr auto applyTimeObjPath = "/xyz/openbmc_project/software/apply_time";
+ constexpr auto applyTimeProp = "RequestedApplyTime";
++const std::string discretePathPrefix = "/xyz/openbmc_project/sensors/discrete/";
++constexpr char const* ipmiSELService = "xyz.openbmc_project.Logging.IPMI";
++constexpr char const* ipmiSELPath = "/xyz/openbmc_project/Logging/IPMI";
++constexpr char const* ipmiSELAddInterface = "xyz.openbmc_project.Logging.IPMI";
+ 
+ namespace sdbusRule = sdbusplus::bus::match::rules;
+ 
+-- 
+2.32.0
+

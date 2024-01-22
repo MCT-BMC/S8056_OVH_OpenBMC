@@ -1,0 +1,676 @@
+From 46514f54dffee97729ab84a014c23b2109117bff Mon Sep 17 00:00:00 2001
+From: Ren_Chen <Ren_Chen@wiwynn.com>
+Date: Mon, 21 Jun 2021 09:16:14 +0800
+Subject: [PATCH 1/2] Add CPLD update flow
+
+Description:
+- Add cpld update function, including set environment variable
+  and get firmware file name.
+
+Designed:
+- Add cpld update function:
+  - Add function to get the bios firmware file name in the /tmp/image/<versionid>.
+  - Add set/unset environment variable function to set the bios firmware file name.
+---
+ activation.cpp              | 169 ++++++++++++++++++++++++++++++++++++
+ activation.hpp              |  19 +++-
+ image_manager.cpp           |  44 +++++++---
+ image_manager.hpp           |   3 +
+ images.hpp                  |   4 +
+ item_updater.cpp            |  95 ++++++++++++++------
+ item_updater.hpp            |   6 ++
+ meson.build                 |   6 ++
+ meson_options.txt           |  11 ++-
+ obmc-flash-cpld@.service.in |   7 ++
+ static/flash.cpp            |  22 ++++-
+ 11 files changed, 341 insertions(+), 45 deletions(-)
+ create mode 100644 obmc-flash-cpld@.service.in
+
+diff --git a/activation.cpp b/activation.cpp
+index c82e297..187f04c 100644
+--- a/activation.cpp
++++ b/activation.cpp
+@@ -11,6 +11,7 @@
+ #include <sdbusplus/exception.hpp>
+ #include <xyz/openbmc_project/Common/error.hpp>
+ #include <xyz/openbmc_project/Software/Version/error.hpp>
++#include <fstream>
+ 
+ #ifdef WANT_SIGNATURE_VERIFY
+ #include "image_verify.hpp"
+@@ -111,7 +112,26 @@ auto Activation::activation(Activations value) -> Activations
+             return softwareServer::Activation::activation(value);
+         }
+ #endif
++#ifdef CPLD_UPDATE
++        if (purpose == VersionPurpose::CPLD)
++        {
++            if (!activationProgress)
++            {
++                activationProgress =
++                    std::make_unique<ActivationProgress>(bus, path);
++            }
+ 
++            // Enable systemd signals
++            subscribeToSystemdSignals();
++            // Set initial progress
++            activationProgress->progress(20);
++ 
++            // Initiate image writing to flash
++            flashWriteCPLD();
++
++            return softwareServer::Activation::activation(value);
++        }
++#endif
+         auto versionStr = parent.versions.find(versionId)->second->version();
+ 
+         if (!minimum_ship_level::verify(versionStr))
+@@ -302,6 +322,14 @@ void Activation::unitStateChange(sdbusplus::message::message& msg)
+     }
+ #endif
+ 
++#ifdef CPLD_UPDATE
++    if (purpose == VersionPurpose::CPLD)
++    {
++        onStateChangesCPLD(msg);
++        return;
++    }
++#endif
++
+     onStateChanges(msg);
+ 
+     return;
+@@ -383,6 +411,38 @@ bool Activation::checkApplyTimeImmediate()
+     return false;
+ }
+ 
++int32_t Activation::getFwFileName(std::string *fw_file_name)
++{
++    fs::path dirPath(std::string{IMG_UPLOAD_DIR});
++    dirPath = dirPath / versionId;
++
++    int file_count = 0;
++    for (auto& it: fs::directory_iterator(dirPath))
++    {
++        if ( it.path().filename() != "MANIFEST" )
++        {
++            *fw_file_name = it.path();
++        }
++        file_count++;
++    }
++
++    // The count of files should be 2 : firmware file and Manifest.
++    if (file_count != 2)
++    {
++        log<level::ERR>("File count is incorrect. There should be two files, Manifest and bios firmware file.");
++        return -1;
++    }
++
++    return 0;
++}
++
++void Activation::deleteFile()
++{
++    fs::path dirPath(std::string{IMG_UPLOAD_DIR});
++    dirPath = dirPath / versionId;
++    fs::remove_all(dirPath);
++}
++
+ #ifdef HOST_BIOS_UPGRADE
+ void Activation::flashWriteHost()
+ {
+@@ -445,6 +505,115 @@ void Activation::onStateChangesBios(sdbusplus::message::message& msg)
+ 
+ #endif
+ 
++#ifdef CPLD_UPDATE
++
++void Activation::flashWriteCPLD()
++{
++    std::string cpld_fw_file_name;
++    auto ret = getFwFileName(&cpld_fw_file_name);
++    cpld_info.clear();
++
++    if(ret == 0)
++    {
++        std::string cpld_fw_file_name_str = CPLD_FILE_NAME_STR;
++
++        cpld_fw_file_name = cpld_fw_file_name_str + "=" + cpld_fw_file_name;
++        cpld_info.push_back(cpld_fw_file_name);
++
++        auto set_environment_method = bus.new_method_call(SYSTEMD_BUSNAME, SYSTEMD_PATH,
++                                          SYSTEMD_INTERFACE, "SetEnvironment");
++
++        set_environment_method.append(cpld_info);
++        try
++        {
++            auto reply = bus.call(set_environment_method);
++        }
++        catch (const SdBusError& e)
++        {
++            log<level::ERR>("Error in trying to SetEnvironment.");
++            deleteFile();
++            report<InternalFailure>();
++        }
++
++        auto method = bus.new_method_call(SYSTEMD_BUSNAME, SYSTEMD_PATH,
++                                          SYSTEMD_INTERFACE, "StartUnit");
++
++        auto cpldServiceFile = "obmc-flash-cpld@" + versionId + ".service";
++
++        method.append(cpldServiceFile, "replace");
++        try
++        {
++            auto reply = bus.call(method);
++        }
++        catch (const SdBusError& e)
++        {
++            log<level::ERR>("Error in trying to upgrade CPLD.");
++            report<InternalFailure>();
++        }
++    }
++}
++
++void Activation::onStateChangesCPLD(sdbusplus::message::message& msg)
++{
++    uint32_t newStateID{};
++    sdbusplus::message::object_path newStateObjPath;
++    std::string newStateUnit{};
++    std::string newStateResult{};
++
++    // Read the msg and populate each variable
++    msg.read(newStateID, newStateObjPath, newStateUnit, newStateResult);
++
++    auto cpldServiceFile = "obmc-flash-cpld@" + versionId + ".service";
++
++    if (newStateUnit == cpldServiceFile)
++    {
++        // unsubscribe to systemd signals
++        unsubscribeFromSystemdSignals();
++
++        // Remove version object from image manager
++        deleteImageManagerObject();
++
++        if (newStateResult == "done")
++        {
++            // Set activation progress to 100
++            activationProgress->progress(100);
++
++            // Set Activation value to active
++            activation(softwareServer::Activation::Activations::Active);
++
++            // Unset environment proeprty
++            auto unset_environment_method = bus.new_method_call(SYSTEMD_BUSNAME, SYSTEMD_PATH,
++                                              SYSTEMD_INTERFACE, "UnsetEnvironment");
++    
++            unset_environment_method.append(cpld_info);
++            try
++            {
++                auto reply = bus.call(unset_environment_method);
++            }
++            catch (const SdBusError& e)
++            {
++                log<level::ERR>("Error in trying to UnsetEnvironment.");
++                report<InternalFailure>();
++            }
++
++            // Delete file in the /tmp/image/<version id>
++            deleteFile();
++
++            log<level::INFO>("CPLD upgrade completed successfully.");
++        }
++        else if (newStateResult == "failed")
++        {
++            // Set Activation value to Failed
++            activation(softwareServer::Activation::Activations::Failed);
++
++            log<level::ERR>("CPLD upgrade failed.");
++        }
++    }
++
++    return;
++}
++#endif
++
+ void Activation::rebootBmc()
+ {
+     auto method = bus.new_method_call(SYSTEMD_BUSNAME, SYSTEMD_PATH,
+diff --git a/activation.hpp b/activation.hpp
+index 90b32b7..03e346b 100644
+--- a/activation.hpp
++++ b/activation.hpp
+@@ -12,9 +12,7 @@
+ #include <xyz/openbmc_project/Software/Activation/server.hpp>
+ #include <xyz/openbmc_project/Software/ActivationBlocksTransition/server.hpp>
+ 
+-#ifdef WANT_SIGNATURE_VERIFY
+ #include <filesystem>
+-#endif
+ 
+ namespace phosphor
+ {
+@@ -23,9 +21,7 @@ namespace software
+ namespace updater
+ {
+ 
+-#ifdef WANT_SIGNATURE_VERIFY
+ namespace fs = std::filesystem;
+-#endif
+ 
+ using AssociationList =
+     std::vector<std::tuple<std::string, std::string, std::string>>;
+@@ -239,6 +235,11 @@ class Activation : public ActivationInherit, public Flash
+      */
+     void onFlashWriteSuccess();
+ 
++    /** @brief Get the firmware file name. */
++    int32_t getFwFileName(std::string *bios_fw_file_name);
++
++    void deleteFile();
++
+ #ifdef HOST_BIOS_UPGRADE
+     /* @brief write to Host flash function */
+     void flashWriteHost();
+@@ -247,6 +248,16 @@ class Activation : public ActivationInherit, public Flash
+     void onStateChangesBios(sdbusplus::message::message&);
+ #endif
+ 
++#ifdef CPLD_UPDATE
++    /* @brief write to CPLD flash function */
++    void flashWriteCPLD();
++
++    /** @brief Function that acts on CPLD upgrade service file state changes */
++    void onStateChangesCPLD(sdbusplus::message::message& msg);
++
++    std::vector<std::string> cpld_info;
++#endif
++
+     /** @brief Overloaded function that acts on service file state changes */
+     void onStateChanges(sdbusplus::message::message&) override;
+ 
+diff --git a/image_manager.cpp b/image_manager.cpp
+index f520597..96bd0bf 100644
+--- a/image_manager.cpp
++++ b/image_manager.cpp
+@@ -15,6 +15,7 @@
+ #include <phosphor-logging/elog.hpp>
+ #include <phosphor-logging/log.hpp>
+ #include <xyz/openbmc_project/Software/Image/error.hpp>
++#include <xyz/openbmc_project/Software/Activation/server.hpp>
+ 
+ #include <algorithm>
+ #include <cstring>
+@@ -192,7 +193,23 @@ int Manager::processImage(const std::string& tarFilePath)
+     id = id + "_" + std::to_string(rand());
+ 
+     fs::path imageDirPath = std::string{IMG_UPLOAD_DIR};
+-    imageDirPath /= id;
++    // Clear the path, so it does not attemp to remove a non-existing path
++    tmpDirToRemove.path.clear();
++
++    std::string objPath = "Unknown";
++    if(purpose == Version::VersionPurpose::BMC)
++    {
++        objPath = std::string{SOFTWARE_OBJPATH} + "/BMC";
++        imageDirPath /= "BMC";
++    }
++ 
++#ifdef CPLD_UPDATE
++    if(purpose == Version::VersionPurpose::CPLD)
++    {
++       objPath = std::string{SOFTWARE_OBJPATH} + "/CPLD";
++       imageDirPath /= "CPLD";
++    }
++#endif
+ 
+     if (fs::exists(imageDirPath))
+     {
+@@ -202,18 +219,13 @@ int Manager::processImage(const std::string& tarFilePath)
+     // Rename the temp dir to image dir
+     fs::rename(tmpDirPath, imageDirPath);
+ 
+-    // Clear the path, so it does not attemp to remove a non-existing path
+-    tmpDirToRemove.path.clear();
+-
+-    auto objPath = std::string{SOFTWARE_OBJPATH} + '/' + id;
+-
+     // This service only manages the uploaded versions, and there could be
+     // active versions on D-Bus that is not managed by this service.
+     // So check D-Bus if there is an existing version.
+     auto allSoftwareObjs = getSoftwareObjects(bus);
+     auto it =
+         std::find(allSoftwareObjs.begin(), allSoftwareObjs.end(), objPath);
+-    if (versions.find(id) == versions.end() && it == allSoftwareObjs.end())
++    if (it == allSoftwareObjs.end())
+     {
+         // Create Version object
+         auto versionPtr = std::make_unique<Version>(
+@@ -227,9 +239,21 @@ int Manager::processImage(const std::string& tarFilePath)
+     }
+     else
+     {
+-        log<level::INFO>("Software Object with the same version already exists",
+-                         entry("VERSION_ID=%s", id.c_str()));
+-        fs::remove_all(imageDirPath);
++        auto method = this->bus.new_method_call(BUSNAME_UPDATER, objPath.c_str(),
++                                                "org.freedesktop.DBus.Properties",
++                                                "Set");
++        std::variant<std::string> activate_prop =
++            "xyz.openbmc_project.Software.Activation.Activations.Activating";
++        method.append("xyz.openbmc_project.Software.Activation", "Activation", activate_prop);
++ 
++        try
++        {
++            bus.call_noreply(method);
++        }
++        catch (const sdbusplus::exception::InvalidEnumString& e)
++        {
++            log<level::ERR>("Error to active update");
++        }
+     }
+     return 0;
+ }
+diff --git a/image_manager.hpp b/image_manager.hpp
+index 6dc80cf..c75db93 100644
+--- a/image_manager.hpp
++++ b/image_manager.hpp
+@@ -2,6 +2,9 @@
+ #include "version.hpp"
+ 
+ #include <sdbusplus/server.hpp>
++#include <sdbusplus/bus.hpp>
++#include <sdbusplus/exception.hpp>
++#include <sdbusplus/message.hpp>
+ 
+ #include <string>
+ 
+diff --git a/images.hpp b/images.hpp
+index 7801ea3..f9168d1 100644
+--- a/images.hpp
++++ b/images.hpp
+@@ -13,6 +13,10 @@ namespace image
+ // BMC flash image file name list.
+ const std::vector<std::string> bmcImages = {"image-kernel", "image-rofs",
+                                             "image-rwfs", "image-u-boot"};
++
++// BMC flash image file name list (image-bmc)
++const std::vector<std::string> bmcFlashImages = {"image-bmc"};
++
+ // BMC flash image file name list for full flash image (image-bmc)
+ const std::string bmcFullImages = {"image-bmc"};
+ 
+diff --git a/item_updater.cpp b/item_updater.cpp
+index 204bbf8..5b35d47 100644
+--- a/item_updater.cpp
++++ b/item_updater.cpp
+@@ -67,6 +67,9 @@ void ItemUpdater::createActivation(sdbusplus::message::message& msg)
+                     if (value == VersionPurpose::BMC ||
+ #ifdef HOST_BIOS_UPGRADE
+                         value == VersionPurpose::Host ||
++#endif
++#ifdef CPLD_UPDATE
++                        value == VersionPurpose::CPLD ||
+ #endif
+                         value == VersionPurpose::System)
+                     {
+@@ -237,7 +240,7 @@ void ItemUpdater::processBMCImage()
+             std::string extendedVersion =
+                 VersionClass::getBMCExtendedVersion(osRelease);
+ 
+-            auto path = fs::path(SOFTWARE_OBJPATH) / id;
++            auto path = fs::path(SOFTWARE_OBJPATH) / "BMC";
+ 
+             // Create functional association if this is the functional
+             // version
+@@ -589,6 +592,41 @@ void ItemUpdater::setBMCInventoryPath()
+     return;
+ }
+ 
++void ItemUpdater::processCPLDImage()
++{
++    using VersionClass = phosphor::software::manager::Version;
++    std::string version = "NULL";
++    std::string id = "CPLD";
++    auto purpose = server::Version::VersionPurpose::CPLD;
++    auto path = fs::path(SOFTWARE_OBJPATH) / id;
++
++    AssociationList associations = {};
++
++    auto activationState = server::Activation::Activations::Active;
++    // Create an association to the BMC inventory item
++    associations.emplace_back(std::make_tuple(
++        ACTIVATION_FWD_ASSOCIATION, ACTIVATION_REV_ASSOCIATION,
++        bmcInventoryPath));
++
++    // Create an active association since this image is active
++    createActiveAssociation(path);
++
++    // Create Version instance for this version.
++    auto versionPtr = std::make_unique<VersionClass>(
++        bus, path, version, purpose, "", "",
++        std::bind(&ItemUpdater::erase, this, std::placeholders::_1));
++    versionPtr->deleteObject =
++        std::make_unique<phosphor::software::manager::Delete>(
++            bus, path, *versionPtr);
++
++    versions.insert(std::make_pair(id, std::move(versionPtr)));
++
++    // Create Activation instance for this version.
++    activations.insert(std::make_pair(
++        id, std::make_unique<Activation>(
++                bus, path, *this, id, activationState, associations)));
++}
++
+ void ItemUpdater::createActiveAssociation(const std::string& path)
+ {
+     assocs.emplace_back(
+@@ -681,36 +719,39 @@ void ItemUpdater::freeSpace(Activation& caller)
+     std::size_t count = 0;
+     for (const auto& iter : activations)
+     {
+-        if ((iter.second.get()->activation() ==
+-             server::Activation::Activations::Active) ||
+-            (iter.second.get()->activation() ==
+-             server::Activation::Activations::Failed))
++        auto purpose = versions.find(iter.second.get()->versionId)->second->purpose();
++        if(purpose == VersionPurpose::BMC)
+         {
+-            count++;
+-            // Don't put the functional version on the queue since we can't
+-            // remove the "running" BMC version.
+-            // If ACTIVE_BMC_MAX_ALLOWED <= 1, there is only one active BMC,
+-            // so remove functional version as well.
+-            // Don't delete the the Activation object that called this function.
+-            if ((versions.find(iter.second->versionId)
+-                     ->second->isFunctional() &&
+-                 ACTIVE_BMC_MAX_ALLOWED > 1) ||
+-                (iter.second->versionId == caller.versionId))
++            if ((iter.second.get()->activation() ==
++                 server::Activation::Activations::Active) ||
++                (iter.second.get()->activation() ==
++                 server::Activation::Activations::Failed))
+             {
+-                continue;
+-            }
++                count++;
++                // Don't put the functional version on the queue since we can't
++                // remove the "running" BMC version.
++                // If ACTIVE_BMC_MAX_ALLOWED <= 1, there is only one active BMC,
++                // so remove functional version as well.
++                // Don't delete the the Activation object that called this function.
++                if ((versions.find(iter.second->versionId)
++                         ->second->isFunctional() &&
++                     ACTIVE_BMC_MAX_ALLOWED > 1) ||
++                    (iter.second->versionId == caller.versionId))
++                {
++                    continue;
++                }
+ 
+-            // Failed activations don't have priority, assign them a large value
+-            // for sorting purposes.
+-            auto priority = 999;
+-            if (iter.second.get()->activation() ==
+-                    server::Activation::Activations::Active &&
+-                iter.second->redundancyPriority)
+-            {
+-                priority = iter.second->redundancyPriority.get()->priority();
+-            }
++                // Failed activations don't have priority, assign them a large value
++                // for sorting purposes.
++                auto priority = 999;
++                if (iter.second.get()->activation() ==
++                    server::Activation::Activations::Active)
++                {
++                    priority = iter.second->redundancyPriority.get()->priority();
++                }
+ 
+-            versionsPQ.push(std::make_pair(priority, iter.second->versionId));
++                versionsPQ.push(std::make_pair(priority, iter.second->versionId));
++            }
+         }
+     }
+ 
+diff --git a/item_updater.hpp b/item_updater.hpp
+index b2185b9..215eecf 100644
+--- a/item_updater.hpp
++++ b/item_updater.hpp
+@@ -61,6 +61,7 @@ class ItemUpdater : public ItemUpdaterInherit
+     {
+         setBMCInventoryPath();
+         processBMCImage();
++        processCPLDImage();
+         restoreFieldModeStatus();
+ #ifdef HOST_BIOS_UPGRADE
+         createBIOSObject();
+@@ -92,6 +93,11 @@ class ItemUpdater : public ItemUpdaterInherit
+      */
+     void processBMCImage();
+ 
++    /**
++     * @brief Get CPLD Version.
++     */
++    void processCPLDImage();
++
+     /**
+      * @brief Erase specified entry D-Bus object
+      *        if Action property is not set to Active
+diff --git a/meson.build b/meson.build
+index a6ebcc4..55eecdd 100644
+--- a/meson.build
++++ b/meson.build
+@@ -54,6 +54,7 @@ conf.set('MMC_LAYOUT', get_option('bmc-layout').contains('mmc'))
+ 
+ # Configurable features
+ conf.set('HOST_BIOS_UPGRADE', get_option('host-bios-upgrade').enabled())
++conf.set('CPLD_UPDATE', get_option('cpld-update').enabled())
+ conf.set('WANT_SIGNATURE_VERIFY', \
+     get_option('verify-signature').enabled() or \
+     get_option('verify-full-signature').enabled())
+@@ -62,6 +63,7 @@ conf.set('WANT_SIGNATURE_FULL_VERIFY', get_option('verify-full-signature').enabl
+ # Configurable variables
+ conf.set('ACTIVE_BMC_MAX_ALLOWED', get_option('active-bmc-max-allowed'))
+ conf.set_quoted('HASH_FILE_NAME', get_option('hash-file-name'))
++conf.set_quoted('CPLD_FILE_NAME_STR', get_option('cpld_fw_file_name'))
+ conf.set_quoted('IMG_UPLOAD_DIR', get_option('img-upload-dir'))
+ conf.set_quoted('MANIFEST_FILE_NAME', get_option('manifest-file-name'))
+ conf.set_quoted('MEDIA_DIR', get_option('media-dir'))
+@@ -162,6 +164,10 @@ if get_option('host-bios-upgrade').enabled()
+     unit_files += 'obmc-flash-host-bios@.service.in'
+ endif
+ 
++if get_option('cpld-update').enabled()
++    unit_files += 'obmc-flash-cpld@.service.in'
++endif
++
+ if get_option('sync-bmc-files').enabled()
+     executable(
+         'phosphor-sync-software-manager',
+diff --git a/meson_options.txt b/meson_options.txt
+index 0877798..9b31758 100644
+--- a/meson_options.txt
++++ b/meson_options.txt
+@@ -9,9 +9,12 @@ option('bmc-layout', type: 'combo',
+     description: 'The BMC layout type.')
+ 
+ # Features
+-option('host-bios-upgrade', type: 'feature',
++option('host-bios-upgrade', type: 'feature', value : 'enabled',
+     description: 'Enable host bios upgrade support.')
+ 
++option('cpld-update', type: 'feature', value : 'enabled',
++    description: 'Enable cpld update support.')
++
+ option('sync-bmc-files', type: 'feature',
+     description: 'Enable sync of filesystem files.')
+ 
+@@ -38,6 +41,12 @@ option(
+     description: 'The name of the hash file.',
+ )
+ 
++option(
++    'cpld_fw_file_name', type: 'string',
++    value: 'cpld_fw_file_name',
++    description: 'Property of cpld update service.',
++)
++
+ option(
+     'img-upload-dir', type: 'string',
+     value: '/tmp/images',
+diff --git a/obmc-flash-cpld@.service.in b/obmc-flash-cpld@.service.in
+new file mode 100644
+index 0000000..a4bff72
+--- /dev/null
++++ b/obmc-flash-cpld@.service.in
+@@ -0,0 +1,7 @@
++[Unit]
++Description=Flash CPLD image to CPLD
++
++[Service]
++Type=oneshot
++RemainAfterExit=no
++ExecStart=/usr/sbin/cpld-updater ${cpld_fw_file_name}
+\ No newline at end of file
+diff --git a/static/flash.cpp b/static/flash.cpp
+index 101828b..b6e07a3 100644
+--- a/static/flash.cpp
++++ b/static/flash.cpp
+@@ -7,6 +7,7 @@
+ #include "item_updater.hpp"
+ 
+ #include <filesystem>
++#include <fstream>
+ 
+ namespace
+ {
+@@ -31,10 +32,25 @@ void Activation::flashWrite()
+     fs::path uploadDir(IMG_UPLOAD_DIR);
+     fs::path toPath(PATH_INITRAMFS);
+ 
+-    for (const auto& bmcImage : parent.imageUpdateList)
++    for (auto& bmcFlashImage : phosphor::software::image::bmcFlashImages)
+     {
+-        fs::copy_file(uploadDir / versionId / bmcImage, toPath / bmcImage,
+-                      fs::copy_options::overwrite_existing);
++        fs::path file(uploadDir.c_str());
++        file /= "BMC";
++        file /= bmcFlashImage;
++        std::ifstream efile(file.c_str());
++        if (efile.good() != 1)
++        {
++            for (auto& bmcImage : phosphor::software::image::bmcImages)
++            {
++                fs::copy_file(uploadDir / "BMC" / bmcImage, toPath / bmcImage,
++                              fs::copy_options::overwrite_existing);
++            }
++        }
++        else
++        {
++            fs::copy_file(uploadDir / "BMC" / bmcFlashImage, toPath / bmcFlashImage,
++                          fs::copy_options::overwrite_existing);
++        }
+     }
+ }
+ 
+-- 
+2.28.0
+

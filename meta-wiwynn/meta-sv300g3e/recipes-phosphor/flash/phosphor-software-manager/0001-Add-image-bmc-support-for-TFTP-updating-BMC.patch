@@ -1,0 +1,164 @@
+From 961d49a196388c7d3a74eedd3dbc5aa534f01ee3 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Fri, 14 Feb 2020 16:25:41 +0800
+Subject: [PATCH] Add image-bmc support for TFTP updating BMC
+
+---
+ activation.cpp   | 16 +++++++++++++++-
+ images.hpp       |  2 ++
+ item_updater.cpp | 24 +++++++++++++++++++++---
+ static/flash.cpp | 30 +++++++++++++++++++++++++++---
+ 4 files changed, 65 insertions(+), 7 deletions(-)
+
+diff --git a/activation.cpp b/activation.cpp
+index 2966b2f..a902307 100644
+--- a/activation.cpp
++++ b/activation.cpp
+@@ -205,7 +205,17 @@ auto Activation::activation(Activations value) -> Activations
+         // Create active association
+         parent.createActiveAssociation(path);
+ 
+-        log<level::INFO>("BMC image ready, need reboot to get activated.");
++        if (Activation::checkApplyTimeImmediate() == true)
++        {
++            log<level::INFO>("Image Active. ApplyTime is immediate, "
++                             "rebooting BMC.");
++            Activation::rebootBmc();
++        }
++        else
++        {
++            log<level::INFO>("BMC image ready, need reboot to get activated.");
++        }
++
+         return softwareServer::Activation::activation(
+             softwareServer::Activation::Activations::Active);
+ #endif
+@@ -367,9 +377,13 @@ bool Activation::checkApplyTimeImmediate()
+ 
+ void Activation::rebootBmc()
+ {
++/*
+     auto method = bus.new_method_call(SYSTEMD_BUSNAME, SYSTEMD_PATH,
+                                       SYSTEMD_INTERFACE, "StartUnit");
+     method.append("force-reboot.service", "replace");
++*/
++    auto method = bus.new_method_call(SYSTEMD_BUSNAME, SYSTEMD_PATH,
++                                      SYSTEMD_INTERFACE, "Reboot");
+     try
+     {
+         auto reply = bus.call(method);
+diff --git a/images.hpp b/images.hpp
+index 97b8f7f..e9c66c6 100644
+--- a/images.hpp
++++ b/images.hpp
+@@ -14,6 +14,8 @@ namespace image
+ const std::vector<std::string> bmcImages = {"image-kernel", "image-rofs",
+                                             "image-rwfs", "image-u-boot"};
+ 
++const std::vector<std::string> bmcFlashImages = {"image-bmc"};
++
+ } // namespace image
+ } // namespace software
+ } // namespace phosphor
+diff --git a/item_updater.cpp b/item_updater.cpp
+index 2cd9c39..30562f8 100644
+--- a/item_updater.cpp
++++ b/item_updater.cpp
+@@ -360,19 +360,37 @@ ItemUpdater::ActivationStatus
+ {
+     bool invalid = false;
+ 
+-    for (auto& bmcImage : bmcImages)
++    for (auto& bmcFlashImage : bmcFlashImages)
+     {
+         fs::path file(filePath);
+-        file /= bmcImage;
++        file /= bmcFlashImage;
+         std::ifstream efile(file.c_str());
+         if (efile.good() != 1)
+         {
+             log<level::ERR>("Failed to find the BMC image.",
+-                            entry("IMAGE=%s", bmcImage.c_str()));
++                            entry("IMAGE=%s", bmcFlashImage.c_str()));
+             invalid = true;
+         }
+     }
+ 
++    if (invalid)
++    {
++        invalid = false;
++
++        for (auto& bmcImage : bmcImages)
++        {
++            fs::path file(filePath);
++            file /= bmcImage;
++            std::ifstream efile(file.c_str());
++            if (efile.good() != 1)
++            {
++                log<level::ERR>("Failed to find the BMC image.",
++                                entry("IMAGE=%s", bmcImage.c_str()));
++                invalid = true;
++            }
++        }
++    }
++
+     if (invalid)
+     {
+         return ItemUpdater::ActivationStatus::invalid;
+diff --git a/static/flash.cpp b/static/flash.cpp
+index 82c2393..25220cc 100644
+--- a/static/flash.cpp
++++ b/static/flash.cpp
+@@ -6,6 +6,7 @@
+ #include "images.hpp"
+ 
+ #include <experimental/filesystem>
++#include <fstream>
+ 
+ namespace
+ {
+@@ -23,15 +24,38 @@ namespace fs = std::experimental::filesystem;
+ 
+ void Activation::flashWrite()
+ {
++    bool invalid = false;
++
+     // For static layout code update, just put images in /run/initramfs.
+     // It expects user to trigger a reboot and an updater script will program
+     // the image to flash during reboot.
+     fs::path uploadDir(IMG_UPLOAD_DIR);
+     fs::path toPath(PATH_INITRAMFS);
+-    for (auto& bmcImage : phosphor::software::image::bmcImages)
++
++    for (auto& bmcFlashImage : phosphor::software::image::bmcFlashImages)
++    {
++        fs::path file(uploadDir.c_str());
++        file /= versionId;
++        file /= bmcFlashImage;
++        std::ifstream efile(file.c_str());
++        if (efile.good() != 1)
++        {
++            invalid = true;
++        }
++        else
++        {
++            fs::copy_file(uploadDir / versionId / bmcFlashImage, toPath / bmcFlashImage,
++                          fs::copy_options::overwrite_existing);
++        }
++    }
++
++    if(invalid)
+     {
+-        fs::copy_file(uploadDir / versionId / bmcImage, toPath / bmcImage,
+-                      fs::copy_options::overwrite_existing);
++        for (auto& bmcImage : phosphor::software::image::bmcImages)
++        {
++            fs::copy_file(uploadDir / versionId / bmcImage, toPath / bmcImage,
++                        fs::copy_options::overwrite_existing);
++        }
+     }
+ }
+ 
+-- 
+2.24.1
+

@@ -1,0 +1,33 @@
+From 709365b2dcd81d5d9b9c7e86711acf40a040e5ca Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Tue, 15 Mar 2022 16:34:23 +0800
+Subject: [PATCH 7/9] Avoiding DIMM sensor status triggered for incorrect state
+ when host power on
+
+---
+ src/power_control.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/power_control.cpp b/src/power_control.cpp
+index 4163c37..18d7b5b 100755
+--- a/src/power_control.cpp
++++ b/src/power_control.cpp
+@@ -2477,7 +2477,6 @@ static void postCompleteHandler(bool state)
+     {
+         sendPowerControlEvent(Event::postCompleteAssert);
+         setOperatingSystemState(OperatingSystemStateStage::Standby);
+-        setDimmStatus(1);
+         postCompleteDelayTimer.expires_after(std::chrono::milliseconds(TimerMap["postCompleteDelayTimeMs"]));
+         postCompleteDelayTimer.async_wait([powerState](const boost::system::error_code ec) {
+             if (ec)
+@@ -2496,6 +2495,7 @@ static void postCompleteHandler(bool state)
+             if(getChassisState(powerState) == "xyz.openbmc_project.State.Chassis.PowerState.On")
+             {
+                 logSELEvent("Post Complete SEL Entry","/xyz/openbmc_project/sensors/system_event/END_OF_POST",0x01,0xFF,0xFF);
++                setDimmStatus(1);
+             }
+         });
+     }
+-- 
+2.7.4
+

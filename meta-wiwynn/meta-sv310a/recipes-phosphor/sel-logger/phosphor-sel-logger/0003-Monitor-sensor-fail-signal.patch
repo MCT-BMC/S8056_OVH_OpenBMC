@@ -1,0 +1,131 @@
+From 6968f7f7c134e214359f2be6d3d30fdd9d2bbe0a Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Thu, 26 Aug 2021 10:51:37 +0800
+Subject: [PATCH] Monitor sensor fail signal
+
+---
+ include/threshold_event_monitor.hpp | 22 +++++++++-------
+ src/sel_logger.cpp                  | 41 ++++++++++++++++++++++++++++-
+ 2 files changed, 52 insertions(+), 11 deletions(-)
+
+diff --git a/include/threshold_event_monitor.hpp b/include/threshold_event_monitor.hpp
+index 54d6479..499f82a 100644
+--- a/include/threshold_event_monitor.hpp
++++ b/include/threshold_event_monitor.hpp
+@@ -35,10 +35,12 @@ static constexpr const uint8_t thresholdEventDataTriggerReadingByte3 = (1 << 4);
+ static const std::string openBMCMessageRegistryVersion("0.1");
+ 
+ inline static sdbusplus::bus::match::match startThresholdAssertMonitor(
+-    std::shared_ptr<sdbusplus::asio::connection> conn)
++    std::shared_ptr<sdbusplus::asio::connection> conn,
++    std::shared_ptr<sdbusplus::asio::connection> outBus)
+ {
+-    auto thresholdAssertMatcherCallback = [conn](sdbusplus::message::message&
+-                                                     msg) {
++    auto thresholdAssertMatcherCallback = [conn,
++                                           outBus](sdbusplus::message::message&
++                                                       msg) {
+         // This static set of std::pair<path, event> tracks asserted events to
+         // avoid duplicate logs or deasserts logged without an assert
+         static boost::container::flat_set<std::pair<std::string, std::string>>
+@@ -114,16 +116,16 @@ inline static sdbusplus::bus::match::match startThresholdAssertMonitor(
+                         thresholdEventDataTriggerReadingByte3;
+ 
+         // Get the sensor reading to put in the event data
+-        sdbusplus::message::message getSensorValue =
+-            conn->new_method_call(msg.get_sender(), msg.get_path(),
+-                                  "org.freedesktop.DBus.Properties", "GetAll");
++        sdbusplus::message::message getSensorValue = outBus->new_method_call(
++            msg.get_sender(), msg.get_path(), "org.freedesktop.DBus.Properties",
++            "GetAll");
+         getSensorValue.append("xyz.openbmc_project.Sensor.Value");
+         boost::container::flat_map<std::string, std::variant<double, int64_t>>
+             sensorValue;
+         try
+         {
+             sdbusplus::message::message getSensorValueResp =
+-                conn->call(getSensorValue);
++                outBus->call(getSensorValue);
+             getSensorValueResp.read(sensorValue);
+         }
+         catch (sdbusplus::exception_t&)
+@@ -154,14 +156,14 @@ inline static sdbusplus::bus::match::match startThresholdAssertMonitor(
+             event.erase(pos, alarm.length());
+         }
+         sdbusplus::message::message getThreshold =
+-            conn->new_method_call(msg.get_sender(), msg.get_path(),
+-                                  "org.freedesktop.DBus.Properties", "Get");
++            outBus->new_method_call(msg.get_sender(), msg.get_path(),
++                                    "org.freedesktop.DBus.Properties", "Get");
+         getThreshold.append(thresholdInterface, event);
+         std::variant<double, int64_t> thresholdValue;
+         try
+         {
+             sdbusplus::message::message getThresholdResp =
+-                conn->call(getThreshold);
++                outBus->call(getThreshold);
+             getThresholdResp.read(thresholdValue);
+         }
+         catch (sdbusplus::exception_t&)
+diff --git a/src/sel_logger.cpp b/src/sel_logger.cpp
+index 09cb722..bc61d07 100644
+--- a/src/sel_logger.cpp
++++ b/src/sel_logger.cpp
+@@ -388,6 +388,43 @@ static int selClear()
+     return 0;
+ }
+ 
++inline static sdbusplus::bus::match::match
++    startSensorFailMonitor(std::shared_ptr<sdbusplus::asio::connection> conn)
++{
++    auto sensorFailMatcherCallback = [conn](sdbusplus::message::message& msg) {
++        // Get the sensor information from the message
++        std::string sensorName;
++        uint8_t sensorNumber;
++        bool isAssert;
++        try
++        {
++            msg.read(sensorName, sensorNumber, isAssert);
++        }
++        catch (sdbusplus::exception_t&)
++        {
++            std::cerr << "Failed to get sensor fail information from "
++                      << msg.get_path() << "\n";
++            return;
++        }
++
++        if (isAssert)
++        {
++            const std::string journalMsg = sensorName + " Sensor Fail";
++            const std::string path =
++                "/xyz/openbmc_project/sensors/discrete/BMC_Health";
++            std::vector<uint8_t> eventData = {0x04, sensorNumber, 0xFF};
++            selAddSystemRecord(journalMsg, path, eventData, isAssert,
++                               selBMCGenID);
++        }
++    };
++    sdbusplus::bus::match::match sensorFailMatcher(
++        static_cast<sdbusplus::bus::bus&>(*conn),
++        "type='signal', member='SensorFailAssert'",
++        std::move(sensorFailMatcherCallback));
++
++    return sensorFailMatcher;
++}
++
+ int main(int argc, char* argv[])
+ {
+     // IPMI SEL Object
+@@ -420,7 +457,9 @@ int main(int argc, char* argv[])
+ 
+ #ifdef SEL_LOGGER_MONITOR_THRESHOLD_EVENTS
+     sdbusplus::bus::match::match thresholdAssertMonitor =
+-        startThresholdAssertMonitor(conn);
++        startThresholdAssertMonitor(conn, outBus);
++    sdbusplus::bus::match::match sensorFailMonitor =
++        startSensorFailMonitor(conn);
+ #endif
+ 
+ #ifdef REDFISH_LOG_MONITOR_PULSE_EVENTS
+-- 
+2.32.0
+

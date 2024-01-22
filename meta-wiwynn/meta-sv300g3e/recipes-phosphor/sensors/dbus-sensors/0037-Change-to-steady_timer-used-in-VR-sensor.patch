@@ -1,0 +1,87 @@
+From 118ba886b0d5dfd394616fc91f12f686e293e93f Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Mon, 20 Apr 2020 11:08:14 +0800
+Subject: [PATCH 10/11] Change to steady_timer used in VR sensor
+
+---
+ include/VRSensor.hpp | 3 ++-
+ src/VRSensor.cpp     | 5 ++---
+ src/VRSensorMain.cpp | 4 ++--
+ 3 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/include/VRSensor.hpp b/include/VRSensor.hpp
+index 6272c11..d909dfb 100644
+--- a/include/VRSensor.hpp
++++ b/include/VRSensor.hpp
+@@ -3,6 +3,7 @@
+ #include <Thresholds.hpp>
+ #include <sdbusplus/asio/object_server.hpp>
+ #include <sensor.hpp>
++#include <boost/asio/steady_timer.hpp>
+ 
+ class VRSensor : public Sensor
+ {
+@@ -22,7 +23,7 @@ class VRSensor : public Sensor
+ 
+   private:
+     sdbusplus::asio::object_server& objServer;
+-    boost::asio::deadline_timer waitTimer;
++    boost::asio::steady_timer waitTimer;
+     boost::asio::streambuf readBuf;
+     std::string path;
+     int errCount;
+diff --git a/src/VRSensor.cpp b/src/VRSensor.cpp
+index d726e4d..ebd9d7c 100644
+--- a/src/VRSensor.cpp
++++ b/src/VRSensor.cpp
+@@ -18,7 +18,6 @@
+ #include <VRSensor.hpp>
+ #include <boost/algorithm/string/predicate.hpp>
+ #include <boost/algorithm/string/replace.hpp>
+-#include <boost/date_time/posix_time/posix_time.hpp>
+ #include <iostream>
+ #include <limits>
+ #include <sdbusplus/asio/connection.hpp>
+@@ -92,7 +91,7 @@ void VRSensor::setupRead(void)
+         updateValueInvalid(true);
+         // updateValue(0);
+ 
+-        waitTimer.expires_from_now(boost::posix_time::milliseconds(sensorPollMs));
++        waitTimer.expires_from_now(boost::asio::chrono::milliseconds(sensorPollMs));
+         waitTimer.async_wait([&](const boost::system::error_code & ec) {
+         if (ec == boost::asio::error::operation_aborted)
+         {
+@@ -227,7 +226,7 @@ void VRSensor::handleResponse()
+         updateValueInvalid(false);
+     }
+ 
+-    waitTimer.expires_from_now(boost::posix_time::milliseconds(sensorPollMs));
++    waitTimer.expires_from_now(boost::asio::chrono::milliseconds(sensorPollMs));
+     waitTimer.async_wait([&](const boost::system::error_code& ec) {
+         if (ec == boost::asio::error::operation_aborted)
+         {
+diff --git a/src/VRSensorMain.cpp b/src/VRSensorMain.cpp
+index bad1b69..a75ec6a 100644
+--- a/src/VRSensorMain.cpp
++++ b/src/VRSensorMain.cpp
+@@ -255,7 +255,7 @@ int main()
+         createSensors(io, objectServer, sensors, systemBus, nullptr);
+     });
+ 
+-    boost::asio::deadline_timer filterTimer(io);
++    boost::asio::steady_timer filterTimer(io);
+     std::function<void(sdbusplus::message::message&)> eventHandler =
+         [&](sdbusplus::message::message& message) {
+             if (message.is_method_error())
+@@ -265,7 +265,7 @@ int main()
+             }
+             sensorsChanged->insert(message.get_path());
+             // this implicitly cancels the timer
+-            filterTimer.expires_from_now(boost::posix_time::seconds(1));
++            filterTimer.expires_from_now(boost::asio::chrono::seconds(1));
+ 
+             filterTimer.async_wait([&](const boost::system::error_code& ec) {
+                 if (ec == boost::asio::error::operation_aborted)
+-- 
+2.24.1
+

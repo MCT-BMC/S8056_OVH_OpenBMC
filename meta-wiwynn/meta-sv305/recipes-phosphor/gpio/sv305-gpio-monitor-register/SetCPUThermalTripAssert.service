@@ -1,0 +1,10 @@
+[Unit]
+Description=Set CPU Thermal Trip Assert
+
+[Service]
+Type=oneshot
+
+ExecStart=/usr/bin/busctl call "xyz.openbmc_project.Logging.IPMI" "/xyz/openbmc_project/Logging/IPMI" "xyz.openbmc_project.Logging.IPMI" "IpmiSelAdd" ssaybq "CPU Status - Thermal Trip Assert" "/xyz/openbmc_project/sensors/discrete/CPU_Status" 0x03 0x01 0xff 0xff yes 0x20
+ExecStart=/usr/bin/busctl set-property xyz.openbmc_project.Discrete.Sensor /xyz/openbmc_project/sensors/discrete/CPU_Status xyz.openbmc_project.Sensor.Value Value u 1
+
+ExecStopPost=/usr/bin/busctl set-property xyz.openbmc_project.GpioMonitor /xyz/openbmc_project/gpio/event xyz.openbmc_project.GpioEvent P0_THERMTRIP_LVT3_PLD_N s "Idle"

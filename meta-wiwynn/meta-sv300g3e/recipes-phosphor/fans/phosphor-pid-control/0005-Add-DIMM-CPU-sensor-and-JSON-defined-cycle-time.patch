@@ -1,0 +1,711 @@
+From fbbda7c577306340de0f3426b855f718a0410f06 Mon Sep 17 00:00:00 2001
+From: JPChang <JP_Chang@wiwynn.com>
+Date: Tue, 10 Dec 2019 16:58:19 +0800
+Subject: [PATCH] Add DIMM CPU sensor and JSON-defined cycle time
+
+---
+ conf.hpp              |  15 ++++++
+ main.cpp              | 121 ++++++++++++++++++++++++++++++++++++++++--
+ pid/builder.cpp       |  33 +++++++++++-
+ pid/buildjson.cpp     |  16 ++++++
+ pid/pidloop.cpp       |  20 +++----
+ pid/pidloop.hpp       |   3 +-
+ pid/zone.cpp          |  22 ++++++--
+ pid/zone.hpp          |  15 ++++--
+ sensors/builder.cpp   |  45 ++++++++++++++--
+ sensors/buildjson.cpp |  28 ++++++++++
+ sensors/host.cpp      |   5 +-
+ sensors/host.hpp      |   8 +--
+ sensors/pluggable.hpp |   4 +-
+ sensors/sensor.hpp    |  10 +++-
+ sysfs/util.cpp        |  18 +++++--
+ 15 files changed, 321 insertions(+), 42 deletions(-)
+
+diff --git a/conf.hpp b/conf.hpp
+index 73e9e97..796aba2 100644
+--- a/conf.hpp
++++ b/conf.hpp
+@@ -20,6 +20,12 @@ struct SensorConfig
+     /* Can be a sensor path or a dbus path. */
+     std::string readPath;
+     std::string writePath;
++
++    /* Tjmax file path, read from PECI driver to adjust temperature values */
++    std::string tjMaxPath;
++    /* Scale tjmax value which read from PECI driver */
++    double tjMaxScale;
++
+     /* min/max values for writing a percentage or error checking. */
+     int64_t min;
+     int64_t max;
+@@ -53,6 +59,15 @@ struct ZoneConfig
+ 
+     /* If the sensors are in fail-safe mode, this is the percentage to use. */
+     double failsafePercent;
++
++    /* The time interval every cycle. 0.1 seconds by default */
++    uint64_t cycleTimeBase = 100; // MilliSeconds
++
++    /* The interval of checking fan failures. 10 seconds by default */
++    uint64_t checkFanFailuresTime = 10000; // MilliSeconds
++
++    /* The interval of updating thermals. 1 second by default */
++    uint64_t updateThermalsTime = 1000; // MilliSeconds
+ };
+ 
+ using PIDConf = std::map<std::string, struct ControllerInfo>;
+diff --git a/main.cpp b/main.cpp
+index 8bc83e0..4c31b31 100644
+--- a/main.cpp
++++ b/main.cpp
+@@ -30,9 +30,12 @@
+ #include "util.hpp"
+ 
+ #include <CLI/CLI.hpp>
++#include <array>
+ #include <boost/asio/io_context.hpp>
+ #include <boost/asio/steady_timer.hpp>
+ #include <chrono>
++#include <csignal>
++#include <cstdlib>
+ #include <iostream>
+ #include <list>
+ #include <map>
+@@ -214,6 +217,67 @@ void restartControlLoops()
+ #endif
+ 
+     mgmr = buildSensors(sensorConfig, passiveBus, hostBus);
++
++    /**
++     *  This loop is used to modify fan table config before building zones.
++     *  Because there may have some errors when doing buildSensors.
++     *  Or sensors have Tjmax value, some temeratures have to be adjusted.
++     **/
++    for (auto& zone : zoneConfig)
++    {
++        conf::PIDConf* pids = &zone.second;
++        // For all profiles
++        for (auto& pid : *pids)
++        {
++            struct conf::ControllerInfo* info = &pid.second;
++            // To avoid adjust values twice.
++            bool tjMaxAdjusted = false;
++            for (size_t i = 0; i < info->inputs.size(); ++i)
++            {
++                /**
++                 *  If sensor is not created and place in mgmr then,
++                 *  getSensor throw a out_of_range error from map.at().
++                 *  Because this sensor name is not found from the map.
++                 *  To ensure pid process operate as usual,
++                 *  erase this sensor name from pid inputs.
++                 **/
++                try
++                {
++                    auto sensor = mgmr.getSensor(info->inputs[i]);
++
++                    /**
++                     *  If tjMax is defined, adjust setpoint value and
++                     *  stepwise reading point.
++                     **/
++                    double tjMax = sensor->getTjMax();
++                    if ((tjMax != 0) && (tjMaxAdjusted == false))
++                    {
++                        tjMaxAdjusted = true;
++                        info->setpoint = tjMax + info->setpoint;
++
++                        if ((info->type == "stepwise") ||
++                            (info->type == "linear"))
++                        {
++                            for (auto& point : info->stepwiseInfo.reading)
++                            {
++                                point = tjMax + point;
++                            }
++                        }
++                    }
++                }
++                catch (const std::out_of_range& oor)
++                {
++                    info->inputs.erase(info->inputs.begin() + i);
++                    /**
++                     * To keep loop working correctly, index has to be reduced
++                     * by one when erasing an element of a vecotr in the loop.
++                     **/
++                    i = i - 1;
++                }
++            }
++        }
++    }
++
+     zones = buildZones(zoneConfig, zoneDetailsConfig, mgmr, modeControlBus);
+ 
+     if (0 == zones.size())
+@@ -230,8 +294,59 @@ void restartControlLoops()
+     }
+ }
+ 
++/* If process receive sigint/sigterm write 60% pwm to all pwm files. */
++void writePwmFailsafeHandler(int signum)
++{
++    std::string sigStr;
++    switch (signum)
++    {
++        case SIGINT:
++            sigStr = "SIGINT";
++            break;
++        case SIGTERM:
++            sigStr = "SIGTERM";
++            break;
++        default:
++            // Only register SIGINT/SIGTERM, process should not reach here.
++            sigStr = "UNKNOWN";
++            break;
++    }
++    sd_journal_print(LOG_INFO,
++                     "Fan control receive %s. Try to "
++                     "write 60%% pwm to all pwm files.\n",
++                     sigStr.c_str());
++
++    std::string cmd = "/usr/sbin/writePwmFailsafe.sh";
++    std::array<char, 1024> buffer;
++    std::unique_ptr<FILE, decltype(&pclose)> pipePtr(popen(cmd.c_str(), "r"),
++                                                     pclose);
++    if (pipePtr == nullptr)
++    {
++        sd_journal_print(LOG_ERR, "Fan control failed to create popen. "
++                                  "Failed to write 60%% pwm to pwm files.\n");
++    }
++    else
++    {
++        while (fgets(buffer.data(), buffer.size(), pipePtr.get()) != nullptr)
++        {
++            sd_journal_print(LOG_INFO, "%s", buffer.data());
++        }
++        if (ferror(pipePtr.get()))
++        {
++            sd_journal_print(LOG_ERR,
++                             "Fan control failed to fgets. Can't not get "
++                             "return string from write pwm script.\n");
++        }
++    }
++
++    exit(signum);
++}
++
+ int main(int argc, char* argv[])
+ {
++    signal(SIGINT, writePwmFailsafeHandler);
++    signal(SIGTERM, writePwmFailsafeHandler);
++
+     loggingPath = "";
+     loggingEnabled = false;
+     tuningEnabled = false;
+@@ -272,10 +387,8 @@ int main(int argc, char* argv[])
+ 
+     // Create debug/manual mode signal
+     const sd_bus_vtable modeVtable[] = {
+-        sdbusplus::vtable::start(),
+-        sdbusplus::vtable::signal("Open", "sa{sv}as", 0),
+-        sdbusplus::vtable::signal("Close", "sa{sv}as", 0),
+-        sdbusplus::vtable::end()};
++        sdbusplus::vtable::start(), sdbusplus::vtable::signal("Open", "sa{sv}as", 0),
++        sdbusplus::vtable::signal("Close", "sa{sv}as", 0), sdbusplus::vtable::end()};
+     sdbusplus::server::interface::interface createDebugModeVtable(
+         static_cast<sdbusplus::bus::bus&>(modeControlBus), debugModeObjPath,
+         debugModeIntfName, modeVtable, NULL);
+diff --git a/pid/builder.cpp b/pid/builder.cpp
+index f7900df..7f161fb 100644
+--- a/pid/builder.cpp
++++ b/pid/builder.cpp
+@@ -22,6 +22,8 @@
+ #include "pid/stepwisecontroller.hpp"
+ #include "pid/thermalcontroller.hpp"
+ 
++#include <systemd/sd-journal.h>
++
+ #include <iostream>
+ #include <memory>
+ #include <sdbusplus/bus.hpp>
+@@ -64,7 +66,9 @@ std::unordered_map<int64_t, std::unique_ptr<PIDZone>>
+ 
+         auto zone = std::make_unique<PIDZone>(
+             zoneId, zoneConf->second.minThermalOutput,
+-            zoneConf->second.failsafePercent, mgr, modeControlBus,
++            zoneConf->second.failsafePercent, zoneConf->second.cycleTimeBase,
++            zoneConf->second.checkFanFailuresTime,
++            zoneConf->second.updateThermalsTime, mgr, modeControlBus,
+             getControlPath(zi.first).c_str(), deferSignals);
+ 
+         std::cerr << "Zone Id: " << zone->getZoneID() << "\n";
+@@ -106,6 +110,19 @@ std::unordered_map<int64_t, std::unique_ptr<PIDZone>>
+                     zone.get(), name, inputs, info->setpoint, info->pidInfo,
+                     getThermalType(info->type));
+ 
++                 /**
++                 *  Keep pid control operating when creating thermal pid failed
++                 *  and skipping this failed thermal pid.
++                 **/
++                if (pid == nullptr)
++                {
++                    sd_journal_print(LOG_INFO,
++                                     "Failed to create thermal pid."
++                                     "Skip %s of type: %s",
++                                     name.c_str(), info->type.c_str());
++                    continue;
++                }
++
+                 zone->addThermalPID(std::move(pid));
+             }
+             else if (info->type == "stepwise" || info->type == "linear")
+@@ -117,6 +134,20 @@ std::unordered_map<int64_t, std::unique_ptr<PIDZone>>
+                 }
+                 auto stepwise = StepwiseController::createStepwiseController(
+                     zone.get(), name, info->type, inputs, info->stepwiseInfo);
++
++                /**
++                 *  Keep pid control operating when creating stepwise failed
++                 *  and skipping this failed stepwise.
++                 **/
++                if (stepwise == nullptr)
++                {
++                    sd_journal_print(LOG_INFO,
++                                     "Failed to create stepwise controller."
++                                     "Skip %s of type: %s",
++                                     name.c_str(), info->type.c_str());
++                    continue;
++                }
++
+                 zone->addThermalPID(std::move(stepwise));
+             }
+ 
+diff --git a/pid/buildjson.cpp b/pid/buildjson.cpp
+index 5f7d4bc..88d9dca 100644
+--- a/pid/buildjson.cpp
++++ b/pid/buildjson.cpp
+@@ -146,6 +146,22 @@ std::pair<std::map<int64_t, conf::PIDConf>,
+         thisZoneConfig.minThermalOutput = zone["minThermalOutput"];
+         thisZoneConfig.failsafePercent = zone["failsafePercent"];
+ 
++        auto timeBase = zone.find("cycleTimeBase");
++        if (timeBase != zone.end())
++        {
++            thisZoneConfig.cycleTimeBase = zone["cycleTimeBase"];
++        }
++        auto timeCheckFanFailures = zone.find("checkFanFailuresTime");
++        if (timeCheckFanFailures != zone.end())
++        {
++            thisZoneConfig.checkFanFailuresTime = zone["checkFanFailuresTime"];
++        }
++        auto timeUpdateThermals = zone.find("updateThermalsTime");
++        if (timeUpdateThermals != zone.end())
++        {
++            thisZoneConfig.updateThermalsTime = zone["updateThermalsTime"];
++        }
++
+         auto pids = zone["pids"];
+         for (const auto& pid : pids)
+         {
+diff --git a/pid/pidloop.cpp b/pid/pidloop.cpp
+index c81114f..a765316 100644
+--- a/pid/pidloop.cpp
++++ b/pid/pidloop.cpp
+@@ -27,14 +27,6 @@
+ #include <thread>
+ #include <vector>
+ 
+-/* Define cycle time interval (ms)
+- * Check fan failures every 10 seconds
+- * Update temperature sensor values every 1 second
+- */
+-#define BASIC_CYCLE_INTERVAL 100
+-#define CHECK_FAN_FAILURES_INTERVAL 10000 / BASIC_CYCLE_INTERVAL
+-#define UPDATE_THERMAL_INTERVAL 1000 / BASIC_CYCLE_INTERVAL
+-
+ static void processThermals(PIDZone* zone)
+ {
+     // Get the latest margins.
+@@ -49,7 +41,7 @@ static void processThermals(PIDZone* zone)
+ }
+ 
+ void pidControlLoop(PIDZone* zone, boost::asio::steady_timer& timer, bool first,
+-                    int ms100cnt, int checkFanFailuresCount)
++                    uint64_t ms100cnt, uint64_t checkFanFailuresCount)
+ {
+     if (first)
+     {
+@@ -62,7 +54,8 @@ void pidControlLoop(PIDZone* zone, boost::asio::steady_timer& timer, bool first,
+         processThermals(zone);
+     }
+ 
+-    timer.expires_after(std::chrono::milliseconds(BASIC_CYCLE_INTERVAL));
++    // Cycle time is 100 ms by default.
++    timer.expires_after(std::chrono::milliseconds(zone->getCycleTimeBase()));
+     timer.async_wait([zone, &timer, ms100cnt, checkFanFailuresCount](
+                          const boost::system::error_code& ec) mutable {
+         if (ec == boost::asio::error::operation_aborted)
+@@ -107,15 +100,16 @@ void pidControlLoop(PIDZone* zone, boost::asio::steady_timer& timer, bool first,
+         // Get the latest fan speeds.
+         zone->updateFanTelemetry();
+ 
+-        // Check fail failure every 10 seconds
+-        if (CHECK_FAN_FAILURES_INTERVAL <= checkFanFailuresCount)
++        // Check fail failures every 10 seconds by default.
++        if (zone->getCheckFanFailuresCycle() <= checkFanFailuresCount)
+         {
+             checkFanFailuresCount = 0;
+ 
+             zone->checkFanFailures();
+         }
+ 
+-        if (UPDATE_THERMAL_INTERVAL <= ms100cnt)
++        // Update Thermals value every 1 second by default.
++        if (zone->getUpdateThermalsCycle() <= ms100cnt)
+         {
+             ms100cnt = 0;
+ 
+diff --git a/pid/pidloop.hpp b/pid/pidloop.hpp
+index 0102d9e..7fbfb0f 100644
+--- a/pid/pidloop.hpp
++++ b/pid/pidloop.hpp
+@@ -15,4 +15,5 @@
+  * @param[in] ms100cnt - loop timer counter.
+  */
+ void pidControlLoop(PIDZone* zone, boost::asio::steady_timer& timer,
+-                    bool first = true, int ms100cnt = 0, int checkFanFailuresCount = 0);
++                    bool first = true, uint64_t ms100cnt = 0,
++                    uint64_t checkFanFailuresCount = 0);
+diff --git a/pid/zone.cpp b/pid/zone.cpp
+index c1a0334..2264dd6 100644
+--- a/pid/zone.cpp
++++ b/pid/zone.cpp
+@@ -56,9 +56,10 @@ void PIDZone::setManualMode(bool mode)
+ 
+ bool PIDZone::getFailSafeMode(void) const
+ {
+-    /* If fail safe fans are more than the maximum number that project defined(default = 1) or
+-     * any temperature sensors in fail safe, Enter fail safe mode.
+-     * If MAX_FAN_REDUNDANCY == 0, process will not enter failsafe mode beacause of fan failures.
++    /* If fail safe fans are more than the maximum number that project
++     * defined(default = 1) or any temperature sensors in fail safe, Enter fail
++     * safe mode. If MAX_FAN_REDUNDANCY == 0, process will not enter failsafe
++     * mode beacause of fan failures.
+      */
+     if ((MAX_FAN_REDUNDANCY != 0) && (_failSafeFans.size() >= MAX_FAN_REDUNDANCY))
+     {
+@@ -108,6 +109,21 @@ double PIDZone::getMinThermalSetpoint(void) const
+     return _minThermalOutputSetPt;
+ }
+ 
++uint64_t PIDZone::getCycleTimeBase(void) const
++{
++    return _cycleTimeBase;
++}
++
++uint64_t PIDZone::getCheckFanFailuresCycle(void) const
++{
++    return _checkFanFailuresCycle;
++}
++
++uint64_t PIDZone::getUpdateThermalsCycle(void) const
++{
++    return _updateThermalsCycle;
++}
++
+ void PIDZone::setCheckFanFailuresFlag(bool value)
+ {
+     _checkFanFailuresFlag = value;
+diff --git a/pid/zone.hpp b/pid/zone.hpp
+index 1be7e34..c814add 100644
+--- a/pid/zone.hpp
++++ b/pid/zone.hpp
+@@ -47,12 +47,15 @@ class PIDZone : public ZoneInterface, public ModeObject
+ {
+   public:
+     PIDZone(int64_t zone, double minThermalOutput, double failSafePercent,
+-            const SensorManager& mgr, sdbusplus::bus::bus& bus,
+-            const char* objPath, bool defer) :
++            uint64_t cycleTimeBase, uint64_t checkFanFailuresTime,
++            uint64_t updateThermalsTime, const SensorManager& mgr,
++            sdbusplus::bus::bus& bus, const char* objPath, bool defer) :
+         ModeObject(bus, objPath, defer),
+         _zoneId(zone), _maximumSetPoint(),
+         _minThermalOutputSetPt(minThermalOutput),
+-        _failSafePercent(failSafePercent), _mgr(mgr)
++        _failSafePercent(failSafePercent), _cycleTimeBase(cycleTimeBase),
++        _checkFanFailuresCycle(checkFanFailuresTime / cycleTimeBase),
++        _updateThermalsCycle(updateThermalsTime / cycleTimeBase), _mgr(mgr)
+     {
+         if (loggingEnabled)
+         {
+@@ -75,6 +78,9 @@ class PIDZone : public ZoneInterface, public ModeObject
+     void clearRPMCeilings(void);
+     double getFailSafePercent(void) const override;
+     double getMinThermalSetpoint(void) const;
++    uint64_t getCycleTimeBase(void) const;
++	  uint64_t getCheckFanFailuresCycle(void) const;
++	  uint64_t getUpdateThermalsCycle(void) const;
+     /* Method for set/get last pwm and current pwm are different */
+     void setCheckFanFailuresFlag(bool value) override;
+     bool getCheckFanFailuresFlag(void) const override;
+@@ -111,6 +117,9 @@ class PIDZone : public ZoneInterface, public ModeObject
+     bool _manualMode = false;
+     const double _minThermalOutputSetPt;
+     const double _failSafePercent;
++    const uint64_t _cycleTimeBase;
++    const uint64_t _checkFanFailuresCycle;
++    const uint64_t _updateThermalsCycle;
+     bool _checkFanFailuresFlag = false;
+ 
+     std::set<std::string> _failSafeTemps;
+diff --git a/sensors/builder.cpp b/sensors/builder.cpp
+index 4da1cf2..512f19f 100644
+--- a/sensors/builder.cpp
++++ b/sensors/builder.cpp
+@@ -13,7 +13,9 @@
+  * See the License for the specific language governing permissions and
+  * limitations under the License.
+  */
++#include <systemd/sd-journal.h>
+ 
++#include <fstream>
+ #include <iostream>
+ #include <map>
+ #include <string>
+@@ -87,9 +89,11 @@ SensorManager
+                 }
+                 if (ri == nullptr)
+                 {
+-                    throw SensorBuildException(
+-                        "Failed to create dbus passive sensor: " + name +
+-                        " of type: " + info->type);
++                    sd_journal_print(LOG_INFO,
++                                     "Failed to create dbus passive sensor: "
++                                     "%s of type: %s",
++                                     name.c_str(), info->type.c_str());
++                    continue;
+                 }
+                 break;
+             case IOInterfaceType::EXTERNAL:
+@@ -155,6 +159,37 @@ SensorManager
+             // which only writes to fan sensors.
+             std::cerr << info->type << " readPath: " << info->readPath << "\n";
+ 
++            // Read the Tjmax value from the tjMaxPath given by json file.
++            double tjMax = 0;
++            if (info->tjMaxPath != "")
++            {
++                // Fixup path "**" to absolute path.
++                std::string fixedTjMaxPath = FixupPath(info->tjMaxPath);
++
++                std::ifstream fin(fixedTjMaxPath);
++                if (fin.fail())
++                {
++                    sd_journal_print(LOG_INFO,
++                                     "Failed to open Tjmax file. "
++                                     "Skip %s of type: %s",
++                                     name.c_str(), info->type.c_str());
++                    continue;
++                }
++
++                fin >> tjMax;
++                if (fin.fail())
++                {
++                    sd_journal_print(LOG_INFO,
++                                     "Failed to read Tjmax value. "
++                                     "Skip %s of type: %s",
++                                     name.c_str(), info->type.c_str());
++                    continue;
++                }
++
++                // Scale the tjMax value.
++                tjMax = tjMax * info->tjMaxScale;
++            }
++
+             if (IOInterfaceType::EXTERNAL == rtype)
+             {
+                 std::cerr << "Creating HostSensor: " << name
+@@ -166,14 +201,14 @@ SensorManager
+                  */
+                 auto sensor = HostSensor::createTemp(
+                     name, info->timeout, hostSensorBus, info->readPath.c_str(),
+-                    deferSignals);
++                    deferSignals, tjMax);
+                 mgmr.addSensor(info->type, name, std::move(sensor));
+             }
+             else
+             {
+                 wi = std::make_unique<ReadOnlyNoExcept>();
+                 auto sensor = std::make_unique<PluggableSensor>(
+-                    name, info->timeout, std::move(ri), std::move(wi));
++                    name, info->timeout, std::move(ri), std::move(wi), tjMax);
+                 mgmr.addSensor(info->type, name, std::move(sensor));
+             }
+         }
+diff --git a/sensors/buildjson.cpp b/sensors/buildjson.cpp
+index 482173d..22bd5aa 100644
+--- a/sensors/buildjson.cpp
++++ b/sensors/buildjson.cpp
+@@ -55,6 +55,34 @@ void from_json(const json& j, conf::SensorConfig& s)
+         j.at("ignoreDbusMinMax").get_to(s.ignoreDbusMinMax);
+     }
+ 
++    /**
++     *  The tjMaxPath field is used when temp is margin,
++     *  but dbus reading value is absolute temperature value.
++     **/
++    auto tjMaxPath = j.find("tjMaxPath");
++    if (tjMaxPath == j.end())
++    {
++        s.tjMaxPath = "";
++    }
++    else
++    {
++        j.at("tjMaxPath").get_to(s.tjMaxPath);
++    }
++
++    /**
++     * The tjMaxSale field is used to scale the tjMax value which
++     * read from PECI driver.
++     **/
++    auto tjMaxScale = j.find("tjMaxScale");
++    if (tjMaxScale == j.end())
++    {
++        s.tjMaxScale = 1.0;
++    }
++    else
++    {
++        j.at("tjMaxScale").get_to(s.tjMaxScale);
++    }
++
+     /* The min field is optional in a configuration. */
+     auto min = j.find("min");
+     if (min != j.end())
+diff --git a/sensors/host.cpp b/sensors/host.cpp
+index 951c0ca..aee33b2 100644
+--- a/sensors/host.cpp
++++ b/sensors/host.cpp
+@@ -24,10 +24,11 @@
+ std::unique_ptr<Sensor> HostSensor::createTemp(const std::string& name,
+                                                int64_t timeout,
+                                                sdbusplus::bus::bus& bus,
+-                                               const char* objPath, bool defer)
++                                               const char* objPath, bool defer,
++                                               double tjMax)
+ {
+     auto sensor =
+-        std::make_unique<HostSensor>(name, timeout, bus, objPath, defer);
++        std::make_unique<HostSensor>(name, timeout, bus, objPath, defer, tjMax);
+     sensor->value(0);
+ 
+     // DegreesC and value of 0 are the defaults at present, therefore testing
+diff --git a/sensors/host.hpp b/sensors/host.hpp
+index 3a8387d..e66c35d 100644
+--- a/sensors/host.hpp
++++ b/sensors/host.hpp
+@@ -24,11 +24,13 @@ class HostSensor : public Sensor, public ValueObject
+     static std::unique_ptr<Sensor> createTemp(const std::string& name,
+                                               int64_t timeout,
+                                               sdbusplus::bus::bus& bus,
+-                                              const char* objPath, bool defer);
++                                              const char* objPath, bool defer,
++                                              double tjMax);
+ 
+     HostSensor(const std::string& name, int64_t timeout,
+-               sdbusplus::bus::bus& bus, const char* objPath, bool defer) :
+-        Sensor(name, timeout),
++               sdbusplus::bus::bus& bus, const char* objPath, bool defer,
++               double tjMax = 0) :
++        Sensor(name, timeout, tjMax),
+         ValueObject(bus, objPath, defer)
+     {
+     }
+diff --git a/sensors/pluggable.hpp b/sensors/pluggable.hpp
+index 396a49c..d0a3aaa 100644
+--- a/sensors/pluggable.hpp
++++ b/sensors/pluggable.hpp
+@@ -15,8 +15,8 @@ class PluggableSensor : public Sensor
+   public:
+     PluggableSensor(const std::string& name, int64_t timeout,
+                     std::unique_ptr<ReadInterface> reader,
+-                    std::unique_ptr<WriteInterface> writer) :
+-        Sensor(name, timeout),
++                    std::unique_ptr<WriteInterface> writer, double tjMax = 0) :
++        Sensor(name, timeout, tjMax),
+         _reader(std::move(reader)), _writer(std::move(writer))
+     {
+     }
+diff --git a/sensors/sensor.hpp b/sensors/sensor.hpp
+index 2dbfa30..40cc8a1 100644
+--- a/sensors/sensor.hpp
++++ b/sensors/sensor.hpp
+@@ -25,8 +25,8 @@ class Sensor
+         return (type == "fan") ? 0 : 2;
+     }
+ 
+-    Sensor(const std::string& name, int64_t timeout) :
+-        _name(name), _timeout(timeout)
++    Sensor(const std::string& name, int64_t timeout, double tjMax) :
++        _name(name), _timeout(timeout), _tjMax(tjMax)
+     {
+     }
+ 
+@@ -54,7 +54,13 @@ class Sensor
+         return _timeout;
+     }
+ 
++    double getTjMax(void)
++    {
++        return _tjMax;
++    }
++
+   private:
+     std::string _name;
+     int64_t _timeout;
++    double _tjMax;
+ };
+diff --git a/sysfs/util.cpp b/sysfs/util.cpp
+index da678ce..f0080c1 100644
+--- a/sysfs/util.cpp
++++ b/sysfs/util.cpp
+@@ -21,16 +21,20 @@
+ #include <string>
+ 
+ /*
+- * There are two basic paths I want to support:
++ * There are three basic paths I want to support:
+  * 1. /sys/class/hwmon/hwmon0/pwm1
+  * 2. /sys/devices/platform/ahb/1e786000.pwm-tacho-controller/hwmon/<asterisk
+  * asterisk>/pwm1
++ * 3.
++ * /sys/bus/peci/devices/0-30/peci-cputemp.0/hwmon/<asteriskasterisk>/tempN_input
+  *
+  * In this latter case, I want to fill in that gap.  Assuming because it's this
+  * path that it'll only have one directory there.
+  */
+ 
+-static constexpr auto platform = "/sys/devices/platform/";
++std::vector<std::string> supportPath = {"/sys/devices/platform/",
++                                        "/sys/bus/peci/devices/"};
++
+ namespace fs = std::filesystem;
+ 
+ std::string FixupPath(std::string original)
+@@ -39,7 +43,15 @@ std::string FixupPath(std::string original)
+ 
+     /* TODO: Consider the merits of using regex for this. */
+     n = original.find("**");
+-    x = original.find(platform);
++    x = std::string::npos;
++    for (auto& path : supportPath)
++    {
++        x = original.find(path);
++        if (x != std::string::npos)
++        {
++            break;
++        }
++    }
+ 
+     if ((n != std::string::npos) && (x != std::string::npos))
+     {
+-- 
+2.24.0
+

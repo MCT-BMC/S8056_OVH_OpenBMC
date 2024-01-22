@@ -1,0 +1,64 @@
+From 1a0f53f9d5ccb4b62182c8663444a9777dca5f80 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Tue, 19 May 2020 00:17:47 +0800
+Subject: [PATCH] Support IPMI power reset command
+
+---
+ chassishandler.cpp | 34 ++++++++++++++++++++++++++++++++++
+ 1 file changed, 34 insertions(+)
+
+diff --git a/chassishandler.cpp b/chassishandler.cpp
+index 30b484e..f991525 100644
+--- a/chassishandler.cpp
++++ b/chassishandler.cpp
+@@ -831,6 +831,34 @@ int setNmiProperty(const bool value)
+     return 0;
+ }
+ 
++//---------------------------------------------
++// Calls to start systemd unit (service/target)
++//---------------------------------------------
++int startSystemdUnit(const std::string sysUnit)
++{
++    constexpr auto SYSTEMD_SERVICE = "org.freedesktop.systemd1";
++    constexpr auto SYSTEMD_OBJ_PATH = "/org/freedesktop/systemd1";
++    constexpr auto SYSTEMD_INTERFACE = "org.freedesktop.systemd1.Manager";
++
++    sdbusplus::bus::bus bus(ipmid_get_sd_bus_connection());
++
++    try
++    {
++        auto method = bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH,
++                                            SYSTEMD_INTERFACE, "StartUnit");
++        method.append(sysUnit, "replace");
++        bus.call_noreply(method);
++    }
++    catch (std::exception& e)
++    {
++        log<level::ERR>("Failed to start systemd unit",
++                        entry("EXCEPTION=%s", e.what()));
++        return -1;
++    }
++
++    return 0;
++}
++
+ namespace power_policy
+ {
+ 
+@@ -1218,6 +1246,12 @@ ipmi::RspType<> ipmiChassisControl(uint8_t chassisControl)
+             break;
+ 
+         case CMD_HARD_RESET:
++        {
++            // Start the system power reset service
++            std::string resetService("host-powerreset.service");
++            startSystemdUnit(resetService);
++            break;
++        }
+         case CMD_POWER_CYCLE:
+             // SPEC has a section that says certain implementations can trigger
+             // PowerOn if power is Off when a command to power cycle is
+-- 
+2.24.1
+

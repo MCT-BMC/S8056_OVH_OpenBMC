@@ -1,0 +1,960 @@
+From b81c9cbf5a6bfdb45d2dd86ae50fbda247117f93 Mon Sep 17 00:00:00 2001
+From: Eli Huang <Eli_Huang@wiwynn.com>
+Date: Fri, 3 Sep 2021 16:12:26 +0800
+Subject: [PATCH] Add option for mux lock algorithm
+
+---
+ include/HwmonTempSensor.hpp |  11 +-
+ include/PSUSensor.hpp       |  11 +-
+ include/Utils.hpp           |   2 +
+ include/VariantVisitors.hpp |   1 +
+ src/HwmonTempMain.cpp       |  35 +++++-
+ src/HwmonTempSensor.cpp     | 225 ++++++++++++++++++++++++++++++++++--
+ src/NVMESensor.cpp          |   6 +-
+ src/NVMESensorMain.cpp      |   6 +-
+ src/PSUSensor.cpp           | 224 ++++++++++++++++++++++++++++++++---
+ src/PSUSensorMain.cpp       |  41 +++++--
+ src/TachSensor.cpp          |   2 +-
+ src/Utils.cpp               |  21 ++++
+ src/meson.build             |   4 +
+ 13 files changed, 541 insertions(+), 48 deletions(-)
+
+diff --git a/include/HwmonTempSensor.hpp b/include/HwmonTempSensor.hpp
+index a733db4..44a7b7d 100644
+--- a/include/HwmonTempSensor.hpp
++++ b/include/HwmonTempSensor.hpp
+@@ -2,6 +2,7 @@
+ 
+ #include <Thresholds.hpp>
+ #include <boost/asio/streambuf.hpp>
++#include <gpiod.hpp>
+ #include <sdbusplus/asio/object_server.hpp>
+ #include <sensor.hpp>
+ 
+@@ -22,7 +23,8 @@ class HwmonTempSensor :
+                     const std::string& sensorConfiguration,
+                     const std::string& dbusPath, const double maxValue,
+                     const double minValue, const PowerState powerState,
+-                    const bool isSensorFailure);
++                    const bool isSensorFailure, const bool useLock,
++                    const uint8_t slotId);
+     ~HwmonTempSensor() override;
+     void setupRead(void);
+ 
+@@ -33,7 +35,14 @@ class HwmonTempSensor :
+     boost::asio::streambuf readBuf;
+     std::string path;
+     unsigned int sensorPollMs;
++    bool useLock;
++    uint8_t slotId;
++    std::string dbusPath;
++    int8_t ipmbRetry;
++    int getCPLDMux(uint8_t* muxStatus);
++    int setCPLDMux(uint8_t muxStatus);
+ 
+     void handleResponse(const boost::system::error_code& err);
++    void readFromTheOtherNode(void);
+     void checkThresholds(void) override;
+ };
+diff --git a/include/PSUSensor.hpp b/include/PSUSensor.hpp
+index 492c536..2affad9 100644
+--- a/include/PSUSensor.hpp
++++ b/include/PSUSensor.hpp
+@@ -3,6 +3,7 @@
+ #include <PwmSensor.hpp>
+ #include <Thresholds.hpp>
+ #include <boost/asio/streambuf.hpp>
++#include <gpiod.hpp>
+ #include <sdbusplus/asio/object_server.hpp>
+ #include <sensor.hpp>
+ 
+@@ -21,7 +22,8 @@ class PSUSensor : public Sensor, public std::enable_shared_from_this<PSUSensor>
+               const std::string& sensorConfiguration,
+               const std::string& sensorUnit, const std::string& dbusPath,
+               const unsigned int factor, const double maxValue,
+-              const double minValue, const PowerState readState);
++              const double minValue, const PowerState readState,
++              const bool useLock, const uint8_t slotId);
+     ~PSUSensor() override;
+     void setupRead(void);
+ 
+@@ -34,10 +36,17 @@ class PSUSensor : public Sensor, public std::enable_shared_from_this<PSUSensor>
+     std::string pathRatedMax;
+     std::string pathRatedMin;
+     unsigned int sensorFactor;
++    bool useLock;
++    uint8_t slotId;
++    std::string dbusPath;
+     uint8_t minMaxReadCounter;
++    int8_t ipmbRetry;
+     void handleResponse(const boost::system::error_code& err);
++    void readFromTheOtherNode(void);
+     void checkThresholds(void) override;
+     void updateMinMaxValues(void);
++    int getCPLDMux(uint8_t* muxStatus);
++    int setCPLDMux(uint8_t muxStatus);
+ 
+     int fd;
+     static constexpr unsigned int sensorPollMs = 1000;
+diff --git a/include/Utils.hpp b/include/Utils.hpp
+index 962f7e5..26b36d2 100644
+--- a/include/Utils.hpp
++++ b/include/Utils.hpp
+@@ -354,3 +354,5 @@ bool findPathFromDriver(const SensorBaseConfigMap*& baseConfigMap,
+ bool findPathFromI2C(const SensorBaseConfigMap*& baseConfigMap,
+                      const std::string& sensorName, uint64_t& bus,
+                      uint64_t& address, std::string& i2cPath);
++
++int getNextNodeStatus();
+diff --git a/include/VariantVisitors.hpp b/include/VariantVisitors.hpp
+index 27185ca..9f7365e 100644
+--- a/include/VariantVisitors.hpp
++++ b/include/VariantVisitors.hpp
+@@ -48,6 +48,7 @@ using VariantToIntVisitor = details::VariantToNumericVisitor<int>;
+ using VariantToUnsignedIntVisitor =
+     details::VariantToNumericVisitor<unsigned int>;
+ using VariantToDoubleVisitor = details::VariantToNumericVisitor<double>;
++using VariantToBoolVisitor = details::VariantToNumericVisitor<bool>;
+ 
+ struct VariantToStringVisitor
+ {
+diff --git a/src/HwmonTempMain.cpp b/src/HwmonTempMain.cpp
+index 29b8bc1..6113f5c 100644
+--- a/src/HwmonTempMain.cpp
++++ b/src/HwmonTempMain.cpp
+@@ -37,7 +37,7 @@
+ #include <vector>
+ 
+ static constexpr bool debug = false;
+-static constexpr float pollRateDefault = 0.5;
++static constexpr float pollRateDefault = 1;
+ 
+ namespace fs = std::filesystem;
+ static std::vector<std::string> sensorTypes = {
+@@ -87,6 +87,27 @@ void createSensors(
+                 i2cToPath.emplace(deviceName, path);
+             }
+ 
++            // Get slot ID 1 to distinguish left or right node
++            uint8_t slotId = 0xff;
++            std::string gpioName = "SLOT_ID_1";
++            try
++            {
++                auto gpioLine = gpiod::find_line(gpioName);
++                if (!gpioLine)
++                {
++                    std::cerr << "Error requesting gpio: " << gpioName << "\n";
++                    return;
++                }
++                gpioLine.request(
++                    {"slot_id", gpiod::line_request::DIRECTION_INPUT, 0});
++                slotId = gpioLine.get_value();
++            }
++            catch (std::system_error&)
++            {
++                std::cerr << "Error reading gpio: " << gpioName << "\n";
++                return;
++            }
++
+             for (const SensorObject& sensor : sensorConfigurations)
+             {
+                 const std::string* interfacePath = &(sensor.first.str);
+@@ -168,6 +189,14 @@ void createSensors(
+                     }
+                 }
+ 
++                bool useLock = false;
++                auto findUseLock = baseConfigMap->find("UseLock");
++                if (findUseLock != baseConfigMap->end())
++                {
++                    useLock =
++                        std::visit(VariantToBoolVisitor(), findUseLock->second);
++                }
++
+                 auto permitSet = getPermitSet(*baseConfigMap);
+                 auto hwmonFile = getFullHwmonFilePath(
+                     findPath->second.parent_path(), "temp1", permitSet);
+@@ -177,7 +206,7 @@ void createSensors(
+                         *hwmonFile, objectType, objectServer, dbusConnection,
+                         io, sensorName, std::move(sensorThresholds), pollRate,
+                         *interfacePath, dbusPath, limits.second, limits.first,
+-                        readState, isSensorFailure);
++                        readState, isSensorFailure, useLock, slotId);
+                     sensors[sensorName]->setupRead();
+                 }
+                 // Looking for keys like "Name1" for temp2_input,
+@@ -223,7 +252,7 @@ void createSensors(
+                                 dbusConnection, io, sensorNameOther,
+                                 std::move(thresholds), pollRate, *interfacePath,
+                                 dbusPathOther, limits.second, limits.first,
+-                                readState, isSensorFailure);
++                                readState, isSensorFailure, useLock, slotId);
+                         sensors[sensorName]->setupRead();
+                     }
+                 }
+diff --git a/src/HwmonTempSensor.cpp b/src/HwmonTempSensor.cpp
+index c976970..13028c3 100644
+--- a/src/HwmonTempSensor.cpp
++++ b/src/HwmonTempSensor.cpp
+@@ -14,6 +14,7 @@
+ // limitations under the License.
+ */
+ 
++#include <openbmc/libobmci2c.h>
+ #include <unistd.h>
+ 
+ #include <HwmonTempSensor.hpp>
+@@ -32,6 +33,9 @@
+ 
+ static constexpr unsigned int sensorScaleFactor = 1000;
+ static constexpr size_t warnAfterErrorCount = 10;
++static constexpr int maxIpmbRetry = 20;
++using IpmbMethodType =
++    std::tuple<int, uint8_t, uint8_t, uint8_t, uint8_t, std::vector<uint8_t>>;
+ 
+ HwmonTempSensor::HwmonTempSensor(
+     const std::string& path, const std::string& objectType,
+@@ -41,13 +45,14 @@ HwmonTempSensor::HwmonTempSensor(
+     std::vector<thresholds::Threshold>&& thresholdsIn, const float pollRate,
+     const std::string& sensorConfiguration, const std::string& dbusPath,
+     const double maxValue, const double minValue, const PowerState powerState,
+-    bool isSensorFailure) :
++    bool isSensorFailure, const bool useLock, const uint8_t slotId) :
+     Sensor(boost::replace_all_copy(sensorName, " ", "_"),
+            std::move(thresholdsIn), sensorConfiguration, objectType, false,
+            maxValue, minValue, conn, powerState, isSensorFailure),
+     std::enable_shared_from_this<HwmonTempSensor>(), objServer(objectServer),
+     inputDev(io, open(path.c_str(), O_RDONLY)), waitTimer(io), path(path),
+-    sensorPollMs(static_cast<unsigned int>(pollRate * 1000))
++    sensorPollMs(static_cast<unsigned int>(pollRate * 1000)), useLock(useLock),
++    slotId(slotId), dbusPath(dbusPath)
+ {
+     sensorInterface = objectServer.add_interface(
+         dbusPath, "xyz.openbmc_project.Sensor.Value");
+@@ -77,20 +82,111 @@ HwmonTempSensor::~HwmonTempSensor()
+     objServer.remove_interface(association);
+ }
+ 
++int HwmonTempSensor::setCPLDMux(uint8_t muxStatus)
++{
++    uint8_t cpldMuxBus = 14;
++    uint8_t cpldMuxAddr = 0x5C;
++    uint8_t cpldMuxData = 0x04;
++    int fd = -1;
++    int res = -1;
++
++    std::vector<char> filename;
++    filename.assign(20, 0);
++    fd = open_i2c_dev(cpldMuxBus, filename.data(), filename.size(), 0);
++    if (fd < 0)
++    {
++        std::cerr << "Fail to open I2C device: " << path << "\n";
++        return -1;
++    }
++
++    std::vector<uint8_t> offset = {cpldMuxData, muxStatus};
++    res = i2c_master_write(fd, cpldMuxAddr, offset.size(), offset.data());
++    if (res < 0)
++    {
++        std::cerr << name << " : Fail to set CPLD Mux reg.\n";
++        close_i2c_dev(fd);
++        return -1;
++    }
++    close_i2c_dev(fd);
++
++    return 0;
++}
++
++int HwmonTempSensor::getCPLDMux(uint8_t* muxStatus)
++{
++    uint8_t cpldMuxBus = 14;
++    uint8_t cpldMuxAddr = 0x5C;
++    uint8_t cpldMuxData = 0x04;
++    int fd = -1;
++    int res = -1;
++
++    std::vector<char> filename;
++    filename.assign(20, 0);
++    fd = open_i2c_dev(cpldMuxBus, filename.data(), filename.size(), 0);
++    if (fd < 0)
++    {
++        std::cerr << "Fail to open I2C device: " << path << "\n";
++        return -1;
++    }
++
++    std::vector<uint8_t> cmdData = {cpldMuxData};
++
++    std::vector<uint8_t> readBuf;
++    readBuf.assign(1, 0x0);
++
++    res = i2c_master_write_read(fd, cpldMuxAddr, cmdData.size(), cmdData.data(),
++                                readBuf.size(), readBuf.data());
++    if (res < 0)
++    {
++        std::cerr << name << " : Fail to get CPLD Mux reg.\n";
++        close_i2c_dev(fd);
++        return -1;
++    }
++
++    // bit[2:3] is mux status
++    *muxStatus = (readBuf.at(0) & 0xC) >> 2;
++    close_i2c_dev(fd);
++
++    return 0;
++}
++
+ void HwmonTempSensor::setupRead(void)
+ {
+     std::weak_ptr<HwmonTempSensor> weakRef = weak_from_this();
+ 
+-    boost::asio::async_read_until(inputDev, readBuf, '\n',
+-                                  [weakRef](const boost::system::error_code& ec,
+-                                            std::size_t /*bytes_transfered*/) {
+-                                      std::shared_ptr<HwmonTempSensor> self =
+-                                          weakRef.lock();
+-                                      if (self)
+-                                      {
+-                                          self->handleResponse(ec);
+-                                      }
+-                                  });
++    uint8_t muxStatus = 0xff;
++    uint8_t node = slotId + 1;
++
++    // Get lock from 48V CPLD
++    if (useLock)
++    {
++        int ret = getCPLDMux(&muxStatus);
++        if (ret < 0)
++        {
++            std::cerr << "fail to get CPLD Mux reg"
++                      << "\n";
++            incrementError();
++        }
++    }
++
++    if (!useLock || muxStatus == node)
++    {
++        ipmbRetry = 0;
++        boost::asio::async_read_until(
++            inputDev, readBuf, '\n',
++            [weakRef](const boost::system::error_code& ec,
++                      std::size_t /*bytes_transfered*/) {
++                std::shared_ptr<HwmonTempSensor> self = weakRef.lock();
++                if (self)
++                {
++                    self->handleResponse(ec);
++                }
++            });
++    }
++    else
++    {
++        readFromTheOtherNode();
++    }
+ }
+ 
+ void HwmonTempSensor::handleResponse(const boost::system::error_code& err)
+@@ -102,6 +198,7 @@ void HwmonTempSensor::handleResponse(const boost::system::error_code& err)
+                   << "\n";
+         return; // we're being destroyed
+     }
++
+     std::istream responseStream(&readBuf);
+     if (!err)
+     {
+@@ -125,6 +222,7 @@ void HwmonTempSensor::handleResponse(const boost::system::error_code& err)
+ 
+     responseStream.clear();
+     inputDev.close();
++
+     int fd = open(path.c_str(), O_RDONLY);
+     if (fd < 0)
+     {
+@@ -133,6 +231,109 @@ void HwmonTempSensor::handleResponse(const boost::system::error_code& err)
+         return; // we're no longer valid
+     }
+     inputDev.assign(fd);
++
++    waitTimer.expires_from_now(std::chrono::milliseconds(sensorPollMs));
++    std::weak_ptr<HwmonTempSensor> weakRef = weak_from_this();
++    waitTimer.async_wait([weakRef](const boost::system::error_code& ec) {
++        std::shared_ptr<HwmonTempSensor> self = weakRef.lock();
++        if (ec == boost::asio::error::operation_aborted)
++        {
++            if (self)
++            {
++                std::cerr << "Hwmon temp sensor " << self->name
++                          << " read cancelled " << self->path << "\n";
++            }
++            else
++            {
++                std::cerr << "Hwmon sensor read cancelled, no self\n";
++            }
++            return; // we're being canceled
++        }
++        if (self)
++        {
++            self->setupRead();
++        }
++    });
++}
++
++void HwmonTempSensor::readFromTheOtherNode(void)
++{
++    auto findSensor = ipmi::sensor::sensorsInfo.find(dbusPath);
++    if (findSensor == ipmi::sensor::sensorsInfo.end())
++    {
++        std::cerr << "Failed to find sensor inforamtion from " << dbusPath
++                  << "\n";
++        return;
++    }
++    uint8_t sensorNumber = findSensor->second.sensorNumber;
++    uint16_t coefficientM = findSensor->second.coefficientM;
++    int8_t exponentB = findSensor->second.exponentB;
++    int16_t coefficientB = findSensor->second.coefficientB;
++    int8_t exponentR = findSensor->second.exponentR;
++
++    uint8_t commandAddress = 0;
++    uint8_t netfn = 0x4;
++    uint8_t lun = 0;
++    uint8_t command = 0x2D;
++    std::vector<uint8_t> commandData = {sensorNumber};
++
++    static auto bus = sdbusplus::bus::new_system();
++    auto method = bus.new_method_call("xyz.openbmc_project.Ipmi.Channel.Ipmb",
++                                      "/xyz/openbmc_project/Ipmi/Channel/Ipmb",
++                                      "org.openbmc.Ipmb", "sendRequest");
++    method.append(commandAddress, netfn, lun, command, commandData);
++    try
++    {
++        auto reply = bus.call(method);
++        IpmbMethodType prop;
++        reply.read(prop);
++
++        const auto& [status, netFn, rqLun, cmd, cc, data] = prop;
++
++        int readingState = 0;
++        if (data.size() != 0)
++        {
++            // check bit 5 : sensor reading/state unavailable
++            readingState = (data.at(1) & 0x20) >> 5;
++        }
++
++        if ((status) || (data.size() == 0) || (readingState == 1))
++        {
++            ipmbRetry++;
++            int anotherNodePowerStatus = getNextNodeStatus();
++            if ((ipmbRetry > maxIpmbRetry) || (anotherNodePowerStatus == 0))
++            {
++                ipmbRetry = 0;
++                uint8_t node = slotId + 1;
++                int ret = setCPLDMux(0);
++                if (ret < 0)
++                {
++                    std::cerr << "Fail to get CPLD Mux reg\n";
++                    incrementError();
++                }
++                ret = setCPLDMux(node);
++                if (ret < 0)
++                {
++                    std::cerr << "Fail to get CPLD Mux reg\n";
++                    incrementError();
++                }
++            }
++        }
++        else
++        {
++            uint8_t sensorReading = data.at(0);
++            double value = ((coefficientM * sensorReading) +
++                            (coefficientB * std::pow(10, exponentB))) *
++                           std::pow(10, exponentR);
++            updateValue(value);
++            ipmbRetry = 0;
++        }
++    }
++    catch (const sdbusplus::exception::SdBusError& e)
++    {
++        std::cerr << "Failed to access ipmb daemon. " << e.what() << "\n";
++    }
++
+     waitTimer.expires_from_now(std::chrono::milliseconds(sensorPollMs));
+     std::weak_ptr<HwmonTempSensor> weakRef = weak_from_this();
+     waitTimer.async_wait([weakRef](const boost::system::error_code& ec) {
+diff --git a/src/NVMESensor.cpp b/src/NVMESensor.cpp
+index 997b216..9b9c7bb 100644
+--- a/src/NVMESensor.cpp
++++ b/src/NVMESensor.cpp
+@@ -32,7 +32,7 @@ NVMESensor::NVMESensor(const std::string& path, const std::string& objectType,
+                        const double minValue, const PowerState readState,
+                        const uint8_t busId, const DeviceDetectInfo& detectInfo,
+                        const bool useMux, const uint8_t muxAddress,
+-                       const uint8_t muxCmd, const uint8_t cpldMuxAddress, 
++                       const uint8_t muxCmd, const uint8_t cpldMuxAddress,
+                        const uint8_t cpldMuxCmd) :
+     Sensor(boost::replace_all_copy(sensorName, " ", "_"),
+            std::move(_thresholds), sensorConfiguration, objectType, false,
+@@ -41,7 +41,7 @@ NVMESensor::NVMESensor(const std::string& path, const std::string& objectType,
+     waitTimer(io), path(path), sensorUnit(sensorUnit), busId(busId),
+     senValue(0), thresholdTimer(io, this), ssdAbsentTimer(io),
+     ssdPresentTimer(io), nvme_status(NVME_REPORTED_IN_RANGE),
+-    detectInfo(detectInfo),useMux(useMux), muxAddress(muxAddress),
++    detectInfo(detectInfo), useMux(useMux), muxAddress(muxAddress),
+     muxCmd(muxCmd), cpldMuxAddress(cpldMuxAddress), cpldMuxCmd(cpldMuxCmd),
+     isAbsent(false), preIsAbsent(false), isPowerOff(true)
+ {
+@@ -228,7 +228,7 @@ int NVMESensor::switchMux(uint8_t address, uint8_t cmd)
+ {
+     if (!useMux)
+     {
+-      return 0;
++        return 0;
+     }
+ 
+     int fd = -1;
+diff --git a/src/NVMESensorMain.cpp b/src/NVMESensorMain.cpp
+index 6da1780..1c247b0 100644
+--- a/src/NVMESensorMain.cpp
++++ b/src/NVMESensorMain.cpp
+@@ -101,12 +101,10 @@ void createSensors(
+ 
+         auto findMuxAddress = baseConfigMap->find("MuxAddress");
+ 
+-
+         auto findMuxCmd = baseConfigMap->find("MuxCmd");
+ 
+         auto findCpldMuxAddress = baseConfigMap->find("CpldMuxAddress");
+ 
+-
+         auto findCpldMuxCmd = baseConfigMap->find("CpldMuxCmd");
+ 
+         bool useMux = true;
+@@ -159,8 +157,8 @@ void createSensors(
+         sensors[sensorName] = std::make_unique<NVMESensor>(
+             i2cPath, objectType, objectServer, dbusConnection, io, sensorName,
+             std::move(sensorThresholds), *interfacePath, sensorType, dbusPath,
+-            limits.second, limits.first, readState, bus, deviceDetectInfo, useMux,
+-            muxAddress, muxCmd, cpldMuxAddress, cpldMuxCmd);
++            limits.second, limits.first, readState, bus, deviceDetectInfo,
++            useMux, muxAddress, muxCmd, cpldMuxAddress, cpldMuxCmd);
+         sensors[sensorName]->setupRead();
+     }
+ }
+diff --git a/src/PSUSensor.cpp b/src/PSUSensor.cpp
+index c9f18e2..676c274 100644
+--- a/src/PSUSensor.cpp
++++ b/src/PSUSensor.cpp
+@@ -14,6 +14,7 @@
+ // limitations under the License.
+ */
+ 
++#include <openbmc/libobmci2c.h>
+ #include <unistd.h>
+ 
+ #include <PSUSensor.hpp>
+@@ -30,7 +31,10 @@
+ #include <string>
+ #include <vector>
+ 
++using IpmbMethodType =
++    std::tuple<int, uint8_t, uint8_t, uint8_t, uint8_t, std::vector<uint8_t>>;
+ static constexpr bool debug = false;
++static constexpr int maxIpmbRetry = 20;
+ 
+ PSUSensor::PSUSensor(const std::string& path, const std::string& objectType,
+                      sdbusplus::asio::object_server& objectServer,
+@@ -40,14 +44,17 @@ PSUSensor::PSUSensor(const std::string& path, const std::string& objectType,
+                      const std::string& sensorConfiguration,
+                      const std::string& sensorUnit, const std::string& dbusPath,
+                      const unsigned int factor, const double maxValue,
+-                     const double minValue, const PowerState readState) :
++                     const double minValue, const PowerState readState,
++                     const bool useLock, const uint8_t slotId) :
+     Sensor(boost::replace_all_copy(sensorName, " ", "_"),
+            std::move(thresholdsIn), sensorConfiguration, objectType, false,
+            maxValue, minValue, conn, readState, false),
+     std::enable_shared_from_this<PSUSensor>(), objServer(objectServer),
+     inputDev(io), waitTimer(io), path(path), pathRatedMax(""), pathRatedMin(""),
+-    sensorFactor(factor), minMaxReadCounter(0), thresholdTimer(io, this)
++    sensorFactor(factor), useLock(useLock), slotId(slotId), dbusPath(dbusPath),
++    minMaxReadCounter(0), thresholdTimer(io, this)
+ {
++    ipmbRetry = 0;
+     fd = open(path.c_str(), O_RDONLY);
+     if (fd < 0)
+     {
+@@ -124,22 +131,113 @@ PSUSensor::~PSUSensor()
+     objServer.remove_interface(association);
+ }
+ 
++int PSUSensor::setCPLDMux(uint8_t muxStatus)
++{
++    uint8_t cpldMuxBus = 14;
++    uint8_t cpldMuxAddr = 0x5C;
++    uint8_t cpldMuxData = 0x04;
++    int fd = -1;
++    int res = -1;
++
++    std::vector<char> filename;
++    filename.assign(20, 0);
++    fd = open_i2c_dev(cpldMuxBus, filename.data(), filename.size(), 0);
++    if (fd < 0)
++    {
++        std::cerr << "Fail to open I2C device: " << path << "\n";
++        return -1;
++    }
++
++    std::vector<uint8_t> offset = {cpldMuxData, muxStatus};
++    res = i2c_master_write(fd, cpldMuxAddr, offset.size(), offset.data());
++    if (res < 0)
++    {
++        std::cerr << name << " : fail to set CPLD Mux reg.\n";
++        close_i2c_dev(fd);
++        return -1;
++    }
++    close_i2c_dev(fd);
++
++    return 0;
++}
++
++int PSUSensor::getCPLDMux(uint8_t* muxStatus)
++{
++    uint8_t cpldMuxBus = 14;
++    uint8_t cpldMuxAddr = 0x5C;
++    uint8_t cpldMuxData = 0x04;
++    int fd = -1;
++    int res = -1;
++
++    std::vector<char> filename;
++    filename.assign(20, 0);
++    fd = open_i2c_dev(cpldMuxBus, filename.data(), filename.size(), 0);
++    if (fd < 0)
++    {
++        std::cerr << "Fail to open I2C device: " << path << "\n";
++        return -1;
++    }
++
++    std::vector<uint8_t> cmdData = {cpldMuxData};
++
++    std::vector<uint8_t> readBuf;
++    readBuf.assign(1, 0x0);
++
++    res = i2c_master_write_read(fd, cpldMuxAddr, cmdData.size(), cmdData.data(),
++                                readBuf.size(), readBuf.data());
++    if (res < 0)
++    {
++        std::cerr << name << " : fail to get CPLD Mux reg.\n";
++        close_i2c_dev(fd);
++        return -1;
++    }
++
++    // bit[2:3] is mux status
++    *muxStatus = (readBuf.at(0) & 0xC) >> 2;
++    close_i2c_dev(fd);
++
++    return 0;
++}
++
+ void PSUSensor::setupRead(void)
+ {
+-    std::shared_ptr<boost::asio::streambuf> buffer =
+-        std::make_shared<boost::asio::streambuf>();
+-    std::weak_ptr<PSUSensor> weakRef = weak_from_this();
+-    boost::asio::async_read_until(
+-        inputDev, *buffer, '\n',
+-        [weakRef, buffer](const boost::system::error_code& ec,
+-                          std::size_t /*bytes_transfered*/) {
+-            std::shared_ptr<PSUSensor> self = weakRef.lock();
+-            if (self)
+-            {
+-                self->readBuf = buffer;
+-                self->handleResponse(ec);
+-            }
+-        });
++    uint8_t muxStatus = 0xff;
++    uint8_t node = slotId + 1;
++
++    // Get lock from 48V CPLD
++    if (useLock)
++    {
++        int ret = getCPLDMux(&muxStatus);
++        if (ret < 0)
++        {
++            std::cerr << "fail to get CPLD Mux reg"
++                      << "\n";
++            incrementError();
++        }
++    }
++
++    if (!useLock || muxStatus == node)
++    {
++        ipmbRetry = 0;
++        std::shared_ptr<boost::asio::streambuf> buffer =
++            std::make_shared<boost::asio::streambuf>();
++        std::weak_ptr<PSUSensor> weakRef = weak_from_this();
++        boost::asio::async_read_until(
++            inputDev, *buffer, '\n',
++            [weakRef, buffer](const boost::system::error_code& ec,
++                              std::size_t /*bytes_transfered*/) {
++                std::shared_ptr<PSUSensor> self = weakRef.lock();
++                if (self)
++                {
++                    self->readBuf = buffer;
++                    self->handleResponse(ec);
++                }
++            });
++    }
++    else
++    {
++        readFromTheOtherNode();
++    }
+ }
+ 
+ void PSUSensor::updateMinMaxValues(void)
+@@ -163,6 +261,7 @@ void PSUSensor::handleResponse(const boost::system::error_code& err)
+         std::cerr << "Bad file descriptor from\n";
+         return;
+     }
++
+     std::istream responseStream(readBuf.get());
+ 
+     // Set as sensor reading invalid for power-on type sensor
+@@ -223,7 +322,100 @@ finish:
+         }
+     });
+ }
++void PSUSensor::readFromTheOtherNode(void)
++{
++    auto findSensor = ipmi::sensor::sensorsInfo.find(dbusPath);
++    if (findSensor == ipmi::sensor::sensorsInfo.end())
++    {
++        std::cerr << "Failed to find sensor inforamtion from " << dbusPath
++                  << "\n";
++        return;
++    }
++    uint8_t sensorNumber = findSensor->second.sensorNumber;
++    uint16_t coefficientM = findSensor->second.coefficientM;
++    int8_t exponentB = findSensor->second.exponentB;
++    int16_t coefficientB = findSensor->second.coefficientB;
++    int8_t exponentR = findSensor->second.exponentR;
++
++    uint8_t commandAddress = 0;
++    uint8_t netfn = 0x4;
++    uint8_t lun = 0;
++    uint8_t command = 0x2D;
++    std::vector<uint8_t> commandData = {sensorNumber};
++
++    static auto bus = sdbusplus::bus::new_system();
++    auto method = bus.new_method_call("xyz.openbmc_project.Ipmi.Channel.Ipmb",
++                                      "/xyz/openbmc_project/Ipmi/Channel/Ipmb",
++                                      "org.openbmc.Ipmb", "sendRequest");
++    method.append(commandAddress, netfn, lun, command, commandData);
++    try
++    {
++        auto reply = bus.call(method);
++        IpmbMethodType prop;
++        reply.read(prop);
++
++        const auto& [status, netFn, rqLun, cmd, cc, data] = prop;
+ 
++        int readingState = 0;
++        if (data.size() != 0)
++        {
++            // check bit 5 : sensor reading/state unavailable
++            readingState = (data.at(1) & 0x20) >> 5;
++        }
++
++        if ((status) || (data.size() == 0) || (readingState == 1))
++        {
++            ipmbRetry++;
++            int anotherNodePowerStatus = getNextNodeStatus();
++            if ((ipmbRetry > maxIpmbRetry) || (anotherNodePowerStatus == 0))
++            {
++                ipmbRetry = 0;
++                uint8_t node = slotId + 1;
++                int ret = setCPLDMux(0);
++                if (ret < 0)
++                {
++                    std::cerr << "fail to get CPLD Mux reg\n";
++                    incrementError();
++                }
++
++                ret = setCPLDMux(node);
++                if (ret < 0)
++                {
++                    std::cerr << "fail to get CPLD Mux reg\n";
++                    incrementError();
++                }
++            }
++        }
++        else
++        {
++            uint8_t sensorReading = data.at(0);
++            double value = ((coefficientM * sensorReading) +
++                            (coefficientB * std::pow(10, exponentB))) *
++                           std::pow(10, exponentR);
++            updateValue(value);
++            ipmbRetry = 0;
++        }
++    }
++    catch (const sdbusplus::exception::SdBusError& e)
++    {
++        std::cerr << "Failed to access ipmb daemon. " << e.what() << "\n";
++    }
++
++    std::weak_ptr<PSUSensor> weakRef = weak_from_this();
++    waitTimer.expires_from_now(std::chrono::milliseconds(sensorPollMs));
++    waitTimer.async_wait([weakRef](const boost::system::error_code& ec) {
++        std::shared_ptr<PSUSensor> self = weakRef.lock();
++        if (ec == boost::asio::error::operation_aborted)
++        {
++            std::cerr << "Failed to reschedule\n";
++            return;
++        }
++        if (self)
++        {
++            self->setupRead();
++        }
++    });
++}
+ void PSUSensor::checkThresholds(void)
+ {
+     if (!readingStateGood())
+diff --git a/src/PSUSensorMain.cpp b/src/PSUSensorMain.cpp
+index 3dc45aa..046e6c6 100644
+--- a/src/PSUSensorMain.cpp
++++ b/src/PSUSensorMain.cpp
+@@ -71,12 +71,11 @@ static std::vector<std::string> sensorTypes = {
+     "xyz.openbmc_project.Configuration.TPS546D24"};
+ 
+ static std::vector<std::string> pmbusNames = {
+-    "adm1272",  "adm1275",   "adm1278",   "dps800", "ina219",
+-    "ina230",   "ipsps1",    "isl68137",  "isl68220", "isl68223",
+-    "isl69242", "isl69243", "isl69247", "isl69260", "lm25066",
+-    "max16601",  "max20710", "max20730", "max20734", "max20796",
+-    "max34451",  "pmbus", "pxe1610", "raa228000", "raa228006",
+-    "raa228228", "raa229004", "tps546d24"};
++    "adm1272",   "adm1275",   "adm1278",   "dps800",   "ina219",   "ina230",
++    "ipsps1",    "isl68137",  "isl68220",  "isl68223", "isl69242", "isl69243",
++    "isl69247",  "isl69260",  "lm25066",   "max16601", "max20710", "max20730",
++    "max20734",  "max20796",  "max34451",  "pmbus",    "pxe1610",  "raa228000",
++    "raa228006", "raa228228", "raa229004", "tps546d24"};
+ 
+ namespace fs = std::filesystem;
+ 
+@@ -291,6 +290,26 @@ static void createSensorsCallback(
+         }
+     }
+ 
++    // Get slot ID 1 to distinguish left or right node
++    uint8_t slotId = 0xff;
++    std::string gpioName = "SLOT_ID_1";
++    try
++    {
++        auto gpioLine = gpiod::find_line(gpioName);
++        if (!gpioLine)
++        {
++            std::cerr << "Error requesting gpio: " << gpioName << "\n";
++            return;
++        }
++        gpioLine.request({"slot_id", gpiod::line_request::DIRECTION_INPUT, 0});
++        slotId = gpioLine.get_value();
++    }
++    catch (std::system_error&)
++    {
++        std::cerr << "Error reading gpio: " << gpioName << "\n";
++        return;
++    }
++
+     for (const SensorObject& sensor : sensorConfigs)
+     {
+         const std::string* interfacePath = &(sensor.first.str);
+@@ -352,6 +371,13 @@ static void createSensorsCallback(
+                 std::visit(VariantToFloatVisitor(), findScaleFactor->second);
+         }
+ 
++        bool useLock = false;
++        auto findUseLock = baseConfigMap->find("UseLock");
++        if (findUseLock != baseConfigMap->end())
++        {
++            useLock = std::visit(VariantToBoolVisitor(), findUseLock->second);
++        }
++
+         // on rescans, only update sensors we were signaled by
+         auto findSensor = sensors.find(sensorName);
+         if (!firstScan && findSensor != sensors.end())
+@@ -376,7 +402,8 @@ static void createSensorsCallback(
+         sensors[sensorName] = std::make_shared<PSUSensor>(
+             driverPath, objectType, objectServer, dbusConnection, io,
+             sensorName, std::move(sensorThresholds), *interfacePath, sensorType,
+-            dbusPath, scaleFactor, limits.second, limits.first, readState);
++            dbusPath, scaleFactor, limits.second, limits.first, readState,
++            useLock, slotId);
+         sensors[sensorName]->setupRead();
+     }
+ 
+diff --git a/src/TachSensor.cpp b/src/TachSensor.cpp
+index 403083e..5331416 100644
+--- a/src/TachSensor.cpp
++++ b/src/TachSensor.cpp
+@@ -37,7 +37,7 @@
+ #include <utility>
+ #include <vector>
+ 
+-static constexpr unsigned int pwmPollMs = 500;
++static constexpr unsigned int pwmPollMs = 1000;
+ static constexpr size_t warnAfterErrorCount = 10;
+ static constexpr int fanFailSoftOffTimeLimit = 12;
+ 
+diff --git a/src/Utils.cpp b/src/Utils.cpp
+index c8ac345..8bdfb45 100644
+--- a/src/Utils.cpp
++++ b/src/Utils.cpp
+@@ -733,3 +733,24 @@ bool findPathFromI2C(const SensorBaseConfigMap*& baseConfigMap,
+ 
+     return true;
+ }
++
++int getNextNodeStatus()
++{
++    static auto bus = sdbusplus::bus::new_system();
++    auto method = bus.new_method_call(gpio::busname, gpio::path,
++                                      properties::interface, properties::get);
++    method.append(gpio::interface, "NEXT_NODE_P3V3_STBY_PG");
++    try
++    {
++        auto reply = bus.call(method);
++        std::variant<bool> statusVariant;
++        reply.read(statusVariant);
++        // H: Next node in the slot. L: Next node not in the slot.
++        return static_cast<int>(std::get<bool>(statusVariant));
++    }
++    catch (const sdbusplus::exception_t& e)
++    {
++        std::cerr << "Failed to get NEXT_NODE_P3V3_STBY_PG status\n";
++        return -1;
++    }
++}
+diff --git a/src/meson.build b/src/meson.build
+index d30e6fb..3b75101 100644
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -123,6 +123,8 @@ if get_option('hwmon-temp').enabled()
+         'HwmonTempSensor.cpp',
+         dependencies: [
+             sdbusplus,
++            gpiodcxx,
++            libobmci2c
+         ],
+         implicit_include_directories: false,
+         include_directories: '../include',
+@@ -275,6 +277,8 @@ if get_option('psu').enabled()
+         'PSUSensorMain.cpp',
+         dependencies: [
+             sdbusplus,
++            gpiodcxx,
++            libobmci2c,
+         ],
+         implicit_include_directories: false,
+         include_directories: '../include',
+-- 
+2.32.0
+

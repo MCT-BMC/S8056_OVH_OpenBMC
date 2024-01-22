@@ -1,0 +1,23 @@
+From dfa0cac546fe4572a173b587a3b94188a2208496 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Tue, 22 Feb 2022 14:11:12 +0800
+Subject: [PATCH] Add vr property for version purpose
+
+---
+ yaml/xyz/openbmc_project/Software/Version.interface.yaml | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/yaml/xyz/openbmc_project/Software/Version.interface.yaml b/yaml/xyz/openbmc_project/Software/Version.interface.yaml
+index c5f1067..eec8e22 100755
+--- a/yaml/xyz/openbmc_project/Software/Version.interface.yaml
++++ b/yaml/xyz/openbmc_project/Software/Version.interface.yaml
+@@ -54,3 +54,6 @@ enumerations:
+         - name: PSU2
+           description: >
+             The version is a version for a PSU2.
++        - name: VR
++          description: >
++            The version is a version for a VR.
+-- 
+2.7.4
+

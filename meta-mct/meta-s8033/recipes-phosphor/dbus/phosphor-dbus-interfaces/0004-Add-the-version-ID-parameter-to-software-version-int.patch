@@ -1,0 +1,30 @@
+From d05f2afdbb926598fb6a3dc5991545e7a73e2214 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Fri, 11 Mar 2022 17:29:19 +0800
+Subject: [PATCH] Add the version ID parameter to software version interface
+
+---
+ yaml/xyz/openbmc_project/Software/Version.interface.yaml | 4 ++++
+ 1 file changed, 4 insertions(+)
+ mode change 100644 => 100755 yaml/xyz/openbmc_project/Software/Version.interface.yaml
+
+diff --git a/yaml/xyz/openbmc_project/Software/Version.interface.yaml b/yaml/xyz/openbmc_project/Software/Version.interface.yaml
+old mode 100644
+new mode 100755
+index 22a90ce..5f5b8ea
+--- a/yaml/xyz/openbmc_project/Software/Version.interface.yaml
++++ b/yaml/xyz/openbmc_project/Software/Version.interface.yaml
+@@ -18,6 +18,10 @@ properties:
+ 
+         This property is deprecated in favor of Compatible strings and inventory
+         associations.  The enumeration should not be expanded further.
++    - name: VersionId
++      type: string
++      description: >
++        The version identifier for same version.
+ enumerations:
+     - name: VersionPurpose
+       description: >
+-- 
+2.7.4
+

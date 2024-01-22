@@ -1,0 +1,87 @@
+From 1303df8a008d40a3a4aa64ec9c54028d6618afff Mon Sep 17 00:00:00 2001
+From: Ren Chen <ren_chen@wiwynn.com>
+Date: Wed, 15 Dec 2021 12:26:33 +0800
+Subject: [PATCH] Add an 1 second timer to save the POST codes to file
+
+---
+ inc/post_code.hpp |  6 ++++--
+ src/post_code.cpp | 14 +++++++++++++-
+ 2 files changed, 17 insertions(+), 3 deletions(-)
+
+diff --git a/inc/post_code.hpp b/inc/post_code.hpp
+index 48a9c75..4417567 100644
+--- a/inc/post_code.hpp
++++ b/inc/post_code.hpp
+@@ -28,11 +28,11 @@
+ #include <fstream>
+ #include <iostream>
+ #include <phosphor-logging/elog-errors.hpp>
++#include <sdbusplus/timer.hpp>
+ #include <xyz/openbmc_project/Collection/DeleteAll/server.hpp>
+ #include <xyz/openbmc_project/Common/error.hpp>
+ #include <xyz/openbmc_project/State/Boot/PostCode/server.hpp>
+ #include <xyz/openbmc_project/State/Host/server.hpp>
+-
+ const static constexpr char *CurrentBootCycleCountName =
+     "CurrentBootCycleCount";
+ const static constexpr char *CurrentBootCycleIndexName =
+@@ -95,6 +95,7 @@ struct PostCode : sdbusplus::server::object_t<post_code, delete_all>
+ 
+     PostCode(sdbusplus::bus::bus &bus, const char *path, EventPtr &event) :
+         sdbusplus::server::object_t<post_code, delete_all>(bus, path), bus(bus),
++        event(event),
+         propertiesChangedSignalRaw(
+             bus,
+             sdbusplus::bus::match::rules::type::signal() +
+@@ -173,7 +174,7 @@ struct PostCode : sdbusplus::server::object_t<post_code, delete_all>
+   private:
+     void incrBootCycle();
+     uint16_t getBootNum(const uint16_t index) const;
+-
++    std::unique_ptr<phosphor::Timer> timer;
+     sdbusplus::bus::bus &bus;
+     std::chrono::time_point<std::chrono::steady_clock> firstPostCodeTimeSteady;
+     uint64_t firstPostCodeUsSinceEpoch;
+@@ -182,6 +183,7 @@ struct PostCode : sdbusplus::server::object_t<post_code, delete_all>
+     std::string strCurrentBootCycleIndexName;
+     uint16_t currentBootCycleIndex;
+     std::string strCurrentBootCycleCountName;
++    EventPtr &event;
+     void savePostCodes(postcode_t code);
+     sdbusplus::bus::match_t propertiesChangedSignalRaw;
+     sdbusplus::bus::match_t propertiesChangedSignalPlatformReset;
+diff --git a/src/post_code.cpp b/src/post_code.cpp
+index 402847d..8f0a83d 100644
+--- a/src/post_code.cpp
++++ b/src/post_code.cpp
+@@ -72,6 +72,13 @@ std::map<uint64_t, postcode_t>
+ 
+ void PostCode::savePostCodes(postcode_t code)
+ {
++    if (!timer)
++    {
++        timer = std::make_unique<phosphor::Timer>(event.get(), [this]() {
++            serialize(fs::path(strPostCodeListPath));
++        });
++    }
++
+     uint64_t usTimeOffset = 0;
+     // steady_clock is a monotonic clock that is guaranteed to never be adjusted
+     auto postCodeTimeSteady = std::chrono::steady_clock::now();
+@@ -99,7 +106,12 @@ void PostCode::savePostCodes(postcode_t code)
+     {
+         postCodes.erase(postCodes.begin());
+     }
+-    serialize(fs::path(strPostCodeListPath));
++
++    if (!timer->isRunning())
++    {
++        timer->start(std::chrono::duration_cast<std::chrono::microseconds>(
++            std::chrono::seconds(1)));
++    }
+ 
+ #ifdef ENABLE_BIOS_POST_CODE_LOG
+     std::ostringstream hexCode;
+-- 
+2.32.0
+

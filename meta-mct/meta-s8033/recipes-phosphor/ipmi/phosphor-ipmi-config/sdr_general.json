@@ -1,0 +1,915 @@
+[    
+    {
+        "sensorNumber" : "0x01",
+        "entityID": "0x03",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/CPU_Temp"
+    },
+    {
+        "sensorNumber" : "0x02",
+        "entityID": "0x03",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/CPU_DTS_Margin"
+    },
+    {
+        "sensorNumber" : "0x03",
+        "entityID": "0x20",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/P0_UMC0_CH_A0"
+    },
+    {
+        "sensorNumber" : "0x04",
+        "entityID": "0x20",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/P0_UMC0_CH_A1"
+    },
+    {
+        "sensorNumber" : "0x05",
+        "entityID": "0x20",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/P0_UMC1_CH_B0"
+    },
+    {
+        "sensorNumber" : "0x06",
+        "entityID": "0x20",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/P0_UMC1_CH_B1"
+    },
+    {
+        "sensorNumber" : "0x07",
+        "entityID": "0x20",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/P0_UMC3_CH_C0"
+    },
+    {
+        "sensorNumber" : "0x08",
+        "entityID": "0x20",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/P0_UMC3_CH_C1"
+    },
+    {
+        "sensorNumber" : "0x09",
+        "entityID": "0x20",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/P0_UMC2_CH_D0"
+    },
+    {
+        "sensorNumber" : "0x0A",
+        "entityID": "0x20",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/P0_UMC2_CH_D1"
+    },
+    {
+        "sensorNumber" : "0x0B",
+        "entityID": "0x20",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/P0_UMC6_CH_E0"
+    },
+    {
+        "sensorNumber" : "0x0C",
+        "entityID": "0x20",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/P0_UMC6_CH_E1"
+    },
+    {
+        "sensorNumber" : "0x0D",
+        "entityID": "0x20",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/P0_UMC7_CH_F0"
+    },
+    {
+        "sensorNumber" : "0x0E",
+        "entityID": "0x20",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/P0_UMC7_CH_F1"
+    },
+    {
+        "sensorNumber" : "0x0F",
+        "entityID": "0x20",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/P0_UMC5_CH_G0"
+    },
+    {
+        "sensorNumber" : "0x10",
+        "entityID": "0x20",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/P0_UMC5_CH_G1"
+    },
+    {
+        "sensorNumber" : "0x11",
+        "entityID": "0x20",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/P0_UMC4_CH_H0"
+    },
+    {
+        "sensorNumber" : "0x12",
+        "entityID": "0x20",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/P0_UMC4_CH_H1"
+    },
+    {
+        "sensorNumber" : "0x13",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/voltage/P5V_AUX"
+    },
+    {
+        "sensorNumber" : "0x14",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/voltage/P3V3_AUX"
+    },
+    {
+        "sensorNumber" : "0x15",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/voltage/P12V"
+    },
+    {
+        "sensorNumber" : "0x16",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/voltage/P5V"
+    },
+    {
+        "sensorNumber" : "0x17",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/voltage/P3V3"
+    },
+    {
+        "sensorNumber" : "0x18",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/voltage/PVPP_ABCD"
+    },
+    {
+        "sensorNumber" : "0x19",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/voltage/PVPP_EFGH"
+    },
+    {
+        "sensorNumber" : "0x20",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/voltage/P1V8_AUX"
+    },
+    {
+        "sensorNumber" : "0x21",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/voltage/P1V8"
+    },
+    {
+        "sensorNumber" : "0x22",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/voltage/PVDDCR_CPU"
+    },
+    {
+        "sensorNumber" : "0x23",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/voltage/PVDDCR_SOC"
+    },
+    {
+        "sensorNumber" : "0x24",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/voltage/PVDDCR_SOC_AUX"
+    },
+    {
+        "sensorNumber" : "0x25",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/voltage/PVDDIO_ABCD"
+    },
+    {
+        "sensorNumber" : "0x26",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/voltage/PVDDIO_EFGH"
+    },
+    {
+        "sensorNumber" : "0x27",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/voltage/RTC_BAT"
+    },
+    {
+        "sensorNumber" : "0x28",
+        "entityID": "0x1D",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fan_pwm/SYS_PWM_1"
+    },
+    {
+        "sensorNumber" : "0x29",
+        "entityID": "0x1D",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fan_pwm/SYS_PWM_2"
+    },
+    {
+        "sensorNumber" : "0x2A",
+        "entityID": "0x1D",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fan_pwm/SYS_PWM_3"
+    },
+    {
+        "sensorNumber" : "0x2B",
+        "entityID": "0x1D",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fan_pwm/SYS_PWM_4"
+    },
+    {
+        "sensorNumber" : "0x2C",
+        "entityID": "0x1D",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fan_pwm/SYS_PWM_5"
+    },
+    {
+        "sensorNumber" : "0x2D",
+        "entityID": "0x1D",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fan_pwm/SYS_PWM_6"
+    },
+    {
+        "sensorNumber" : "0x2E",
+        "entityID": "0x1D",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fan_tach/SYS_FAN_1"
+    },
+    {
+        "sensorNumber" : "0x2F",
+        "entityID": "0x1D",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fan_tach/SYS_FAN_2"
+    },
+    {
+        "sensorNumber" : "0x30",
+        "entityID": "0x1D",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fan_tach/SYS_FAN_3"
+    },
+    {
+        "sensorNumber" : "0x31",
+        "entityID": "0x1D",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fan_tach/SYS_FAN_4"
+    },
+    {
+        "sensorNumber" : "0x32",
+        "entityID": "0x1D",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fan_tach/SYS_FAN_5"
+    },
+    {
+        "sensorNumber" : "0x33",
+        "entityID": "0x1D",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fan_tach/SYS_FAN_6"
+    },
+    {
+        "sensorNumber" : "0x34",
+        "entityID": "0x1D",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fan_tach/SYS_FAN_7"
+    },
+    {
+        "sensorNumber" : "0x35",
+        "entityID": "0x1D",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fan_tach/SYS_FAN_8"
+    },
+    {
+        "sensorNumber" : "0x36",
+        "entityID": "0x1D",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fan_tach/SYS_FAN_9"
+    },
+    {
+        "sensorNumber" : "0x37",
+        "entityID": "0x1D",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fan_tach/SYS_FAN_10"
+    },
+    {
+        "sensorNumber" : "0x38",
+        "entityID": "0x1D",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fan_tach/SYS_FAN_11"
+    },
+    {
+        "sensorNumber" : "0x39",
+        "entityID": "0x1D",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fan_tach/SYS_FAN_12"
+    },
+    {
+        "sensorNumber" : "0x3A",
+        "entityID": "0x1D",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fan_tach/SYS_FAN_13"
+    },
+    {
+        "sensorNumber" : "0x3B",
+        "entityID": "0x1D",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fan_tach/SYS_FAN_14"
+    },
+    {
+        "sensorNumber" : "0x3E",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/SYS_Air_Inlet"
+    },
+    {
+        "sensorNumber" : "0x3F",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/MB_Air_Inlet"
+    },
+    {
+        "sensorNumber" : "0x40",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/SYS_Air_Outlet_1"
+    },
+    {
+        "sensorNumber" : "0x41",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/SYS_Air_Outlet_2"
+    },
+    {
+        "sensorNumber" : "0x42",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/CPU_CORE_MOSFET"
+    },
+    {
+        "sensorNumber" : "0x43",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/CPU_SOC_MOSFET"
+    },
+    {
+        "sensorNumber" : "0x44",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/DIMM_MOSFET_1"
+    },
+    {
+        "sensorNumber" : "0x45",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/DIMM_MOSFET_2"
+    },
+    {
+        "sensorNumber" : "0x46",
+        "entityID": "0x0B",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/NIC_Temp"
+    },
+    {
+        "sensorNumber" : "0x47",
+        "entityID": "0x0A",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/power/PSU1_Out_Power"
+    },
+    {
+        "sensorNumber" : "0x48",
+        "entityID": "0x0A",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/power/PSU1_Input_Power"
+    },
+    {
+        "sensorNumber" : "0x49",
+        "entityID": "0x0A",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/voltage/PSU1_In_Voltage"
+    },
+    {
+        "sensorNumber" : "0x4A",
+        "entityID": "0x0A",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/voltage/PSU1_Out_Voltage"
+    },
+    {
+        "sensorNumber" : "0x4B",
+        "entityID": "0x0A",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/current/PSU1_In_Current"
+    },
+    {
+        "sensorNumber" : "0x4C",
+        "entityID": "0x0A",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/current/PSU1_Out_Current"
+    },
+    {
+        "sensorNumber" : "0x4D",
+        "entityID": "0x0A",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/PSU1_Temperature"
+    },
+    {
+        "sensorNumber" : "0x4E",
+        "entityID": "0x0A",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fan_tach/PSU1_Fan_Speed_1"
+    },
+    {
+        "sensorNumber" : "0x4F",
+        "entityID": "0x0A",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/power/PSU2_Out_Power"
+    },
+    {
+        "sensorNumber" : "0x50",
+        "entityID": "0x0A",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/power/PSU2_Input_Power"
+    },
+    {
+        "sensorNumber" : "0x51",
+        "entityID": "0x0A",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/voltage/PSU2_In_Voltage"
+    },
+    {
+        "sensorNumber" : "0x52",
+        "entityID": "0x0A",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/voltage/PSU2_Out_Voltage"
+    },
+    {
+        "sensorNumber" : "0x53",
+        "entityID": "0x0A",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/current/PSU2_In_Current"
+    },
+    {
+        "sensorNumber" : "0x54",
+        "entityID": "0x0A",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/current/PSU2_Out_Current"
+    },
+    {
+        "sensorNumber" : "0x55",
+        "entityID": "0x0A",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/PSU2_Temperature"
+    },
+    {
+        "sensorNumber" : "0x56",
+        "entityID": "0x0A",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fan_tach/PSU2_Fan_Speed_1"
+    },
+    {
+        "sensorNumber" : "0x57",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/pattern/Pattern1"
+    },
+    {
+        "sensorNumber" : "0x58",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/pattern/Pattern2"
+    },
+    {
+        "sensorNumber" : "0x59",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/pattern/Pattern3"
+    },
+    {
+        "sensorNumber" : "0x5A",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/pattern/Pattern4"
+    },
+    {
+        "sensorNumber" : "0x5B",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/GPU_Temp"
+    },
+    {
+        "sensorNumber" : "0x5C",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/NVME1_Temp"
+    },
+    {
+        "sensorNumber" : "0x5D",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/NVME2_Temp"
+    },
+    {
+        "sensorNumber" : "0x5E",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/NVME3_Temp"
+    },
+    {
+        "sensorNumber" : "0x5F",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/NVME4_Temp"
+    },
+    {
+        "sensorNumber" : "0x60",
+        "entityID": "0x0A",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/voltage/PDB_VOL_12VOUT"
+    },
+    {
+        "sensorNumber" : "0x61",
+        "entityID": "0x0A",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/current/PDB_I_12VOUT"
+    },
+    {
+        "sensorNumber" : "0x62",
+        "entityID": "0x0A",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/PDB_Temperature"
+    },
+    {
+        "sensorNumber" : "0x63",
+        "entityID": "0x0A",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/power/PDB_PWR_48VIN"
+    },
+    {
+        "sensorNumber" : "0x64",
+        "entityID": "0x0A",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/voltage/PDB_VOL_48VIN"
+    },
+    {
+        "sensorNumber" : "0x65",
+        "entityID": "0x0A",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/current/PDB_I_48VIN"
+    },
+    {
+        "sensorNumber" : "0x66",
+        "entityID": "0x0A",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/voltage/12V_STBY"
+    },
+    {
+        "sensorNumber" : "0x67",
+        "entityID": "0x0A",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/power/PDB_PWR_12VOUT"
+    },
+    {
+        "sensorNumber" : "0x68",
+        "entityID": "0x0A",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/power/SYSTEM_POWER"
+    },
+    {
+        "sensorNumber" : "0x69",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/temperature/M2_Temp"
+    },
+    {
+        "sensorNumber" : "0xA0",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fru_state/IPMI_Power_Diag"
+    },
+    {
+        "sensorNumber" : "0xA1",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fru_state/IPMI_POWER_ON"
+    },
+    {
+        "sensorNumber" : "0xA2",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fru_state/IPMI_POWER_OFF"
+    },
+    {
+        "sensorNumber" : "0xA3",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fru_state/IPMI_POWER_SOFT"
+    },
+    {
+        "sensorNumber" : "0xA4",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fru_state/IPMI_POWER_RESET"
+    },
+    {
+        "sensorNumber" : "0xA5",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fru_state/IPMI_POWER_CYCLE"
+    },
+    {
+        "sensorNumber" : "0xA6",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/restart/SYSTEM_RESTART"
+    },
+    {
+        "sensorNumber" : "0xA7",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/buttons/BUTTON"
+    },
+    {
+        "sensorNumber" : "0xA8",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/versionchange/BMC1_FW_UPDATE"
+    },
+    {
+        "sensorNumber" : "0xA9",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/mgtsubsyshealth/BMC_REBOOT"
+    },
+    {
+        "sensorNumber" : "0xAA",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/mgtsubsyshealth/WATCHDOG_REBOOT"
+    },
+    {
+        "sensorNumber" : "0xAB",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/power_supply/PSU1_STATUS"
+    },
+    {
+        "sensorNumber" : "0xAC",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/power_supply/DCMI_POWER_LIMIT"
+    },
+
+    {
+        "sensorNumber" : "0xAD",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/watchdog/WATCHDOG2"
+    },
+    {
+        "sensorNumber" : "0xAE",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/event_disabled/EVENT_CLEARED"
+    },
+    {
+        "sensorNumber" : "0xAF",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/processor/PROCESSOR_FAIL"
+    },
+    {
+        "sensorNumber" : "0xB0",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/processor/CPU_State"
+    },
+    {
+        "sensorNumber" : "0xB1",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/system_event/MBIST_START"
+    },
+    {
+        "sensorNumber" : "0xB2",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/system_event/MBIST_COMPLETE"
+    },
+    {
+        "sensorNumber" : "0xB3",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/acpi/ACPI_POWER_STATE"
+    },
+    {
+        "sensorNumber" : "0xB4",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/power_unit/POWER_STATUS"
+    },
+    {
+        "sensorNumber" : "0xB5",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/system_event/END_OF_POST"
+    },
+    {
+        "sensorNumber" : "0xB6",
+        "entityID": "0x1D",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fan_present/FAN1_PRESENT"
+    },
+    {
+        "sensorNumber" : "0xB7",
+        "entityID": "0x1D",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fan_present/FAN2_PRESENT"
+    },
+    {
+        "sensorNumber" : "0xB8",
+        "entityID": "0x1D",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fan_present/FAN3_PRESENT"
+    },
+    {
+        "sensorNumber" : "0xB9",
+        "entityID": "0x1D",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fan_present/FAN4_PRESENT"
+    },
+    {
+        "sensorNumber" : "0xBA",
+        "entityID": "0x1D",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fan_present/FAN5_PRESENT"
+    },
+    {
+        "sensorNumber" : "0xBB",
+        "entityID": "0x1D",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fan_present/FAN6_PRESENT"
+    },
+    {
+        "sensorNumber" : "0xBF",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/power_supply/PSU2_STATUS"
+    },
+    {
+        "sensorNumber" : "0xC0",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/power_supply/PDB_STATUS"
+    },
+    {
+        "sensorNumber" : "0xC1",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/buttons/HSC_DISABLE"
+    },
+    {
+        "sensorNumber" : "0xC2",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fru_state/IPMI_HSC_DISABLE"
+    },
+    {
+        "sensorNumber" : "0xC3",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/system_firmware/BIOS1_BOOT_FAIL"
+    },
+    {
+        "sensorNumber" : "0xC4",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/system_firmware/BIOS2_BOOT_FAIL"
+    },
+    {
+        "sensorNumber" : "0xC5",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/system_firmware/SELECT_BIOS1"
+    },
+    {
+        "sensorNumber" : "0xC6",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/system_firmware/SELECT_BIOS2"
+    },
+    {
+        "sensorNumber" : "0xC7",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/buttons/NMI_BUTTON"
+    },
+    {
+        "sensorNumber" : "0xC8",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fru_state/CLEAR_CMOS"
+    },
+    {
+        "sensorNumber" : "0xC9",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/versionchange/BIOS1_FW_UPDATE"
+    },
+    {
+        "sensorNumber" : "0xCA",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/versionchange/BIOS2_FW_UPDATE"
+    },
+    {
+        "sensorNumber" : "0xCB",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/versionchange/BMC2_FW_UPDATE"
+    },
+    {
+        "sensorNumber" : "0xCC",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/versionchange/CPLD_FW_UPDATE"
+    },
+    {
+        "sensorNumber" : "0xCD",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fru_state/SWITCH_BMC1"
+    },
+    {
+        "sensorNumber" : "0xCE",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/fru_state/SWITCH_BMC2"
+    },
+    {
+        "sensorNumber" : "0xD0",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/utilization/BMC_CPU_UTIL"
+    },
+    {
+        "sensorNumber" : "0xD1",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/utilization/BMC_Memory_UTIL"
+    },
+    {
+        "sensorNumber" : "0xD2",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/utilization/BMC_Storage_UTIL"
+    },
+    {
+        "sensorNumber" : "0xD3",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/chassis/SYS_PWR_CAPPING"
+    },
+    {
+        "sensorNumber" : "0xD4",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/processor/CPU_VRHOT"
+    },
+    {
+        "sensorNumber" : "0xD5",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/processor/SOC_VRHOT"
+    },
+    {
+        "sensorNumber" : "0xD6",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/processor/MEM_ABCD_VRHOT"
+    },
+    {
+        "sensorNumber" : "0xD7",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/processor/MEM_EFGH_VRHOT"
+    },
+    {
+        "sensorNumber" : "0xD8",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/versionchange/PSU1_FW_UPDATE"
+    },
+    {
+        "sensorNumber" : "0xD9",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/versionchange/PSU2_FW_UPDATE"
+    },
+    {
+        "sensorNumber" : "0xDA",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "path" : "/xyz/openbmc_project/sensors/versionchange/VR_FW_UPDATE"
+    }
+ ]

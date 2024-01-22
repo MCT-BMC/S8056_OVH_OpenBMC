@@ -1,0 +1,199 @@
+From 4940e89bca1d0a2398bb238bde74b4016d7ec430 Mon Sep 17 00:00:00 2001
+From: JPChang <JP_Chang@wiwynn.com>
+Date: Tue, 24 Dec 2019 17:15:51 +0800
+Subject: [PATCH] Modify debug/manual mode implementation
+
+Description
+- Use origin upstream dbus manual object to control manual mode.
+- Change dbus debug mode object architecture same as upstream code.
+- Remove dbus manual mode object created in the previous commit.
+- Fix bug in checkFanFailures()
+---
+ main.cpp     | 109 +++++++--------------------------------------------
+ pid/zone.cpp |   1 +
+ 2 files changed, 15 insertions(+), 95 deletions(-)
+
+diff --git a/main.cpp b/main.cpp
+index 387eb53..378ab7b 100644
+--- a/main.cpp
++++ b/main.cpp
+@@ -77,17 +77,12 @@ static sdbusplus::asio::connection
+ static sdbusplus::asio::connection
+     passiveBus(io, sdbusplus::bus::new_system().release());
+ 
+-/* Setup debug/manual mode dbus objectPath/interface name. */
+-static constexpr auto debugModeObjPath = "/xyz/openbmc_project/mode/debug";
+-static constexpr auto manualModeObjPath = "/xyz/openbmc_project/mode/manual";
+-static constexpr auto debugModeIntfName =
+-    "xyz.openbmc_project.State.FanCtrl.DebugMode";
+-static constexpr auto manualModeIntfName =
+-    "xyz.openbmc_project.State.FanCtrl.ManualMode";
+-
+-// Register debug/manual mode signal handler
+-void registerSignalHandler(
+-    std::unordered_map<int64_t, std::unique_ptr<PIDZone>>& zones)
++/* Setup debug mode dbus objectPath/interface name */
++static constexpr auto debugModeObjPath = "/xyz/openbmc_project/settings/fanctrl/debug";
++static constexpr auto debugModeIntfName = "xyz.openbmc_project.Control.DebugMode";
++
++// Register debug mode signal handler
++void registerDebugSignalHandler()
+ {
+     char signalSetting[512];
+ 
+@@ -101,78 +96,12 @@ void registerSignalHandler(
+ 
+     memset(signalSetting, 0, sizeof(signalSetting));
+     snprintf(signalSetting, sizeof(signalSetting),
+-        "type='signal',interface='%s',member='Close',path='%s'",
+-        debugModeIntfName, debugModeObjPath);
++             "type='signal',interface='%s',member='Close',path='%s'",
++             debugModeIntfName, debugModeObjPath);
+     static sdbusplus::bus::match::match closeDebugMode(
+         modeControlBus, signalSetting,
+         [](sdbusplus::message::message& message) { debugModeEnabled = false; });
+ 
+-    memset(signalSetting, 0, sizeof(signalSetting));
+-    snprintf(signalSetting, sizeof(signalSetting),
+-             "type='signal',interface='%s',member='Open',path='%s'",
+-             manualModeIntfName, manualModeObjPath);
+-    static sdbusplus::bus::match::match openManualMode(
+-        modeControlBus, signalSetting,
+-        [&zones](sdbusplus::message::message& message) {
+-            int zoneId = 0;
+-            try
+-            {
+-                message.read(zoneId);
+-            }
+-            catch (const std::exception& e)
+-            {
+-                sd_journal_print(LOG_ERR, "Failed read zone ID from signal\n");
+-                return;
+-            }
+-            if (zoneId == 0)
+-            {
+-                for (const auto& zone : zones)
+-                {
+-                    zone.second->setManualMode(true);
+-                }
+-            }
+-            else
+-            {
+-                if (zones.find(zoneId) != zones.end())
+-                {
+-                    zones[zoneId]->setManualMode(true);
+-                }
+-            }
+-        });
+-
+-    memset(signalSetting, 0, sizeof(signalSetting));
+-    snprintf(signalSetting, sizeof(signalSetting),
+-        "type='signal',interface='%s',member='Close',path='%s'",
+-        manualModeIntfName, manualModeObjPath);
+-    static sdbusplus::bus::match::match closeManualMode(
+-        modeControlBus, signalSetting,
+-        [&zones](sdbusplus::message::message& message) {
+-            int zoneId = 0;
+-            try
+-            {
+-                message.read(zoneId);
+-            }
+-            catch (const std::exception& e)
+-            {
+-                sd_journal_print(LOG_ERR, "Failed read zone ID from signal\n");
+-                return;
+-            }
+-            if (zoneId == 0)
+-            {
+-                for (const auto& zone : zones)
+-                {
+-                    zone.second->setManualMode(false);
+-                }
+-            }
+-            else
+-            {
+-                if (zones.find(zoneId) != zones.end())
+-                {
+-                    zones[zoneId]->setManualMode(false);
+-                }
+-            }
+-        });
+-
+     return;
+ }
+ 
+@@ -182,8 +111,6 @@ void restartControlLoops()
+     static std::unordered_map<int64_t, std::unique_ptr<PIDZone>> zones;
+     static std::list<boost::asio::steady_timer> timers;
+ 
+-    registerSignalHandler(zones);
+-    
+     timers.clear();
+ 
+ #if CONFIGURE_DBUS
+@@ -294,7 +221,7 @@ void restartControlLoops()
+     }
+ }
+ 
+-/* If process receive sigint/sigterm write 60% pwm to all pwm files. */
++/* If process receive sigint/sigterm write 80% pwm to all pwm files. */
+ void writePwmFailsafeHandler(int signum)
+ {
+     std::string sigStr;
+@@ -324,7 +251,7 @@ void writePwmFailsafeHandler(int signum)
+     if (pipePtr == nullptr)
+     {
+         sd_journal_print(LOG_ERR, "Fan control failed to create popen. "
+-                                  "Failed to write 60%% pwm to pwm files.\n");
++                                  "Failed to write 80%% pwm to pwm files.\n");
+     }
+     else
+     {
+@@ -374,28 +301,20 @@ int main(int argc, char* argv[])
+     hostBus.request_name("xyz.openbmc_project.Hwmon.external");
+     modeControlBus.request_name("xyz.openbmc_project.State.FanCtrl");
+ 
+-    // Create debug/manual mode object.
+-    sdbusplus::server::manager::manager(
+-        static_cast<sdbusplus::bus::bus&>(modeControlBus), debugModeObjPath);
+-    sdbusplus::server::manager::manager(
+-        static_cast<sdbusplus::bus::bus&>(modeControlBus), manualModeObjPath);
+-
+     // Create debug/manual mode object.
+     std::shared_ptr<sdbusplus::asio::connection> modeCtrlPtr(&modeControlBus);
+     sdbusplus::asio::object_server modeCtrlServer(modeCtrlPtr);
+     modeCtrlServer.add_interface(debugModeObjPath, debugModeIntfName);
+-    modeCtrlServer.add_interface(manualModeObjPath, manualModeIntfName);
+ 
+     // Create debug/manual mode signal
+     const sd_bus_vtable modeVtable[] = {
+-        sdbusplus::vtable::start(), sdbusplus::vtable::signal("Open", "sa{sv}as", 0),
+-        sdbusplus::vtable::signal("Close", "sa{sv}as", 0), sdbusplus::vtable::end()};
++        sdbusplus::vtable::start(), sdbusplus::vtable::signal("Open", "", 0),
++        sdbusplus::vtable::signal("Close", "", 0), sdbusplus::vtable::end()};
+     sdbusplus::server::interface::interface createDebugModeVtable(
+         static_cast<sdbusplus::bus::bus&>(modeControlBus), debugModeObjPath,
+         debugModeIntfName, modeVtable, NULL);
+-    sdbusplus::server::interface::interface createManualModeVtable(
+-        static_cast<sdbusplus::bus::bus&>(modeControlBus), manualModeObjPath,
+-        manualModeIntfName, modeVtable, NULL);
++
++    registerDebugSignalHandler();
+ 
+     /*
+      * All sensors are managed by one manager, but each zone has a pointer to
+diff --git a/pid/zone.cpp b/pid/zone.cpp
+index 85a98cb..a5b2dcf 100644
+--- a/pid/zone.cpp
++++ b/pid/zone.cpp
+@@ -360,6 +360,7 @@ void PIDZone::checkFanFailures(void)
+         {
+             if (value > firstLargestFanTach)
+             {
++                secondLargestFanTach = firstLargestFanTach;
+                 firstLargestFanTach = value;
+             }
+             else
+-- 
+2.24.1
+

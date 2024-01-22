@@ -1,0 +1,134 @@
+From a73d81f786cccd5809bdc8ed58c9b7b32b1d89b6 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Mon, 14 Mar 2022 11:25:30 +0800
+Subject: [PATCH] Add filter function supported for specified sensor
+
+---
+ include/filterutils.hpp             | 89 +++++++++++++++++++++++++++++++++++++
+ include/threshold_event_monitor.hpp |  7 +++
+ 2 files changed, 96 insertions(+)
+ create mode 100755 include/filterutils.hpp
+
+diff --git a/include/filterutils.hpp b/include/filterutils.hpp
+new file mode 100755
+index 0000000..473b8c6
+--- /dev/null
++++ b/include/filterutils.hpp
+@@ -0,0 +1,89 @@
++#include <iostream>
++
++extern "C" {
++    #include <linux/i2c-dev.h>
++    #include <i2c/smbus.h>
++}
++
++static constexpr bool DEBUG = false;
++
++int getRegsInfoWord(uint8_t busId, uint8_t address, uint8_t regs, int16_t* pu16data)
++{
++    std::string i2cBus = "/dev/i2c-" + std::to_string(busId);
++    int fd = open(i2cBus.c_str(), O_RDWR);
++
++    if (fd < 0)
++    {
++        std::cerr << " unable to open i2c device" << i2cBus << "  err=" << fd
++                  << "\n";
++        return -1;
++    }
++
++    if (ioctl(fd, I2C_SLAVE_FORCE, address) < 0)
++    {
++        std::cerr << " unable to set device address\n";
++        close(fd);
++        return -1;
++    }
++
++    unsigned long funcs = 0;
++    if (ioctl(fd, I2C_FUNCS, &funcs) < 0)
++    {
++        std::cerr << " not support I2C_FUNCS\n";
++        close(fd);
++        return -1;
++    }
++
++    if (!(funcs & I2C_FUNC_SMBUS_READ_WORD_DATA))
++    {
++        std::cerr << " not support I2C_FUNC_SMBUS_READ_WORD_DATA\n";
++        close(fd);
++        return -1;
++    }
++
++    *pu16data = i2c_smbus_read_word_data(fd, regs);
++    close(fd);
++
++    if (*pu16data < 0)
++    {
++        return -1;
++    }
++
++    return 0;
++}
++
++bool filterSensor(std::string sensorName)
++{
++    if (DEBUG)
++    {
++        std::cerr << "Sensor name: " << sensorName << std::endl;
++    }
++
++    if(sensorName == "PDB_VOL_12VOUT")
++    {
++        uint8_t bus = 0x03;
++        uint8_t address = 0x60;
++        uint8_t requestReg = 0x79;
++        int16_t responseReg;
++        int32_t regMask = 0xF038; 
++
++        int ret = getRegsInfoWord(bus,address,requestReg,&responseReg);
++
++        if (DEBUG)
++        {
++            std::cerr << "Register["<< std::to_string(requestReg) <<"]: " << std::to_string(responseReg) << std::endl;
++        }
++
++        if (ret < 0)
++        {
++            return false;
++        }
++
++        if(!(responseReg & regMask))
++        {
++            return true;
++        }
++    }
++
++    return false;
++}
+diff --git a/include/threshold_event_monitor.hpp b/include/threshold_event_monitor.hpp
+index b3e5f17..f0963a1 100755
+--- a/include/threshold_event_monitor.hpp
++++ b/include/threshold_event_monitor.hpp
+@@ -17,6 +17,7 @@
+ #pragma once
+ #include <sel_logger.hpp>
+ #include <sensorutils.hpp>
++#include <filterutils.hpp>
+ 
+ #include <string_view>
+ #include <variant>
+@@ -276,6 +277,12 @@ inline static sdbusplus::bus::match::match startThresholdAssertMonitor(
+             }
+         }
+ 
++        if(filterSensor(sensorName))
++        {
++            std::cerr << "Sensor filter : " << sensorName << std::endl;
++            return;
++        }
++
+         std::string journalMsg(std::string(sensorName) + " sensor crossed a " +
+                                threshold + " threshold going " + direction +
+                                ". Reading=" + std::to_string(assertValue) +
+-- 
+2.7.4
+

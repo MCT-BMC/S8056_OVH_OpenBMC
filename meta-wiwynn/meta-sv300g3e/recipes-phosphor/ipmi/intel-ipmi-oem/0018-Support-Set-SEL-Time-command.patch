@@ -1,0 +1,35 @@
+From 676619c07877b495d7646054fcadda4d47678800 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Tue, 21 Apr 2020 12:56:36 +0800
+Subject: [PATCH] Support Set SEL Time command
+
+---
+ src/storagecommands.cpp | 12 +++++++++++-
+ 1 file changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/src/storagecommands.cpp b/src/storagecommands.cpp
+index b8a9aac..7d40356 100644
+--- a/src/storagecommands.cpp
++++ b/src/storagecommands.cpp
+@@ -1231,7 +1231,17 @@ ipmi::RspType<uint32_t> ipmiStorageGetSELTime()
+ ipmi::RspType<> ipmiStorageSetSELTime(uint32_t selTime)
+ {
+     // Set SEL Time is not supported
+-    return ipmi::responseInvalidCommand();
++    // return ipmi::responseInvalidCommand();
++
++    struct timespec selTimeBuf = {};
++
++    selTimeBuf.tv_sec = selTime;
++    if (clock_settime(CLOCK_REALTIME, &selTimeBuf) < 0)
++    {
++        return ipmi::responseUnspecifiedError();
++    }
++
++    return ipmi::responseSuccess();
+ }
+ 
+ void registerStorageFunctions()
+-- 
+2.24.1
+

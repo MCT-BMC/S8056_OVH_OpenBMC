@@ -1,0 +1,137 @@
+From e2576e5776c574e3f53a5ba5fb41a93716b95770 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Mon, 5 Oct 2020 16:32:37 +0800
+Subject: [PATCH] Fix the page for sensors reading feature
+
+---
+ app/common/services/api-utils.js      | 33 ++++++++++++++++++++++++++++-----
+ app/common/services/constants.js      |  6 ++++--
+ app/server-health/styles/sensors.scss |  1 +
+ 3 files changed, 33 insertions(+), 7 deletions(-)
+ mode change 100644 => 100755 app/common/services/constants.js
+
+diff --git a/app/common/services/api-utils.js b/app/common/services/api-utils.js
+index 1886c7a..40ab242 100755
+--- a/app/common/services/api-utils.js
++++ b/app/common/services/api-utils.js
+@@ -925,6 +925,7 @@ window.angular && (function(angular) {
+                     var tempKeyParts = [];
+                     var order = 0;
+                     var customOrder = 0;
++                    var unitConvert = '';
+ 
+                     function getSensorStatus(reading) {
+                       var severityFlags = {
+@@ -972,24 +973,45 @@ window.angular && (function(angular) {
+                       };
+                     }
+ 
++                    function convertUnit(unit){
++                      var sensorSortOrder = '';
++                      if(unit.indexOf('temperature')!= -1){
++                        sensorSortOrder = 'xyz.openbmc_project.Sensor.Value.Unit.DegreesC';
++                      } else if(unit.indexOf('fan_tach')!= -1){
++                        sensorSortOrder = 'xyz.openbmc_project.Sensor.Value.Unit.RPMS';
++                      } else if(unit.indexOf('power')!= -1){
++                        sensorSortOrder = 'xyz.openbmc_project.Sensor.Value.Unit.Watts';
++                      } else if(unit.indexOf('voltage')!= -1){
++                        sensorSortOrder = 'xyz.openbmc_project.Sensor.Value.Unit.Volts';
++                      } else if(unit.indexOf('current')!= -1){
++                        sensorSortOrder = 'xyz.openbmc_project.Sensor.Value.Unit.Amperes';
++                      } else if(unit.indexOf('fan_pwm')!= -1){
++                        sensorSortOrder = 'xyz.openbmc_project.Sensor.Value.Unit.Percent';
++                      }
++                      return sensorSortOrder;
++                    }
++
+                     for (var key in content.data) {
+                       if (content.data.hasOwnProperty(key) &&
+-                          content.data[key].hasOwnProperty('Unit')) {
++                          content.data[key].hasOwnProperty('Associations')) {
+                         severity = getSensorStatus(content.data[key]);
+ 
+                         if (!content.data[key].hasOwnProperty('CriticalLow')) {
+                           content.data[key].CriticalLow = '--';
++                        }
++                        if (!content.data[key].hasOwnProperty('CriticalHigh')) {
+                           content.data[key].CriticalHigh = '--';
+                         }
+ 
+                         if (!content.data[key].hasOwnProperty('WarningLow')) {
+                           content.data[key].WarningLow = '--';
++                        }
++                        if (!content.data[key].hasOwnProperty('WarningHigh')) {
+                           content.data[key].WarningHigh = '--';
+                         }
+ 
+                         tempKeyParts = key.split('/');
+                         title = tempKeyParts.pop();
+-                        title = tempKeyParts.pop() + '_' + title;
+                         title = title.split('_')
+                                     .map(function(item) {
+                                       return item.toLowerCase()
+@@ -1000,11 +1022,12 @@ window.angular && (function(angular) {
+                                     .reduce(function(prev, el) {
+                                       return prev + ' ' + el;
+                                     });
++                        unitConvert = convertUnit(tempKeyParts.pop());
+ 
+                         if (Constants.SENSOR_SORT_ORDER.indexOf(
+-                                content.data[key].Unit) > -1) {
++                                unitConvert) > -1) {
+                           customOrder = Constants.SENSOR_SORT_ORDER.indexOf(
+-                              content.data[key].Unit);
++                              unitConvert);
+                         } else {
+                           customOrder = Constants.SENSOR_SORT_ORDER_DEFAULT;
+                         }
+@@ -1018,7 +1041,7 @@ window.angular && (function(angular) {
+                               title: title,
+                               unit:
+                                   Constants
+-                                      .SENSOR_UNIT_MAP[content.data[key].Unit],
++                                      .SENSOR_UNIT_MAP[unitConvert],
+                               severity_flags: severity.flags,
+                               status: severity.severityText,
+                               order: severity.order,
+diff --git a/app/common/services/constants.js b/app/common/services/constants.js
+old mode 100644
+new mode 100755
+index bef2922..25cc43e
+--- a/app/common/services/constants.js
++++ b/app/common/services/constants.js
+@@ -74,7 +74,8 @@ window.angular && (function(angular) {
+         'xyz.openbmc_project.Sensor.Value.Unit.Meters': 'meters',
+         'xyz.openbmc_project.Sensor.Value.Unit.Watts': 'watts',
+         'xyz.openbmc_project.Sensor.Value.Unit.Amperes': 'amperes',
+-        'xyz.openbmc_project.Sensor.Value.Unit.Joules': 'joules'
++        'xyz.openbmc_project.Sensor.Value.Unit.Joules': 'joules',
++        'xyz.openbmc_project.Sensor.Value.Unit.Percent': 'percent'
+       },
+       SERVER_HEALTH: {
+         critical: 'Critical',
+@@ -89,7 +90,8 @@ window.angular && (function(angular) {
+         'xyz.openbmc_project.Sensor.Value.Unit.Volts',
+         'xyz.openbmc_project.Sensor.Value.Unit.Amperes',
+         'xyz.openbmc_project.Sensor.Value.Unit.Joules',
+-        'xyz.openbmc_project.Sensor.Value.Unit.Meters'
++        'xyz.openbmc_project.Sensor.Value.Unit.Meters',
++        'xyz.openbmc_project.Sensor.Value.Unit.Percent'
+       ],
+       SENSOR_SORT_ORDER_DEFAULT: 8,
+       FIRMWARE: {
+diff --git a/app/server-health/styles/sensors.scss b/app/server-health/styles/sensors.scss
+index 6912f04..c846c8e 100644
+--- a/app/server-health/styles/sensors.scss
++++ b/app/server-health/styles/sensors.scss
+@@ -87,6 +87,7 @@ $thresh-normal: $accent-02--02;
+   display: flex;
+   justify-content: space-between;
+   padding: 0.5rem 1rem;
++  overflow: hidden;
+   @include fontCourierBold;
+ 
+   @include mediaQuery(medium) {
+-- 
+2.7.4
+

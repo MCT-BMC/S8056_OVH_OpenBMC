@@ -1,0 +1,20 @@
+{
+"filters": [
+    {
+    "Description": "Set MAC address - first byte matched 0x19, second byte matched 0x00, and ignore successive 6 bytes",
+    "busId": "0x06",
+    "slaveAddr": "0x54",
+    "slaveAddrMask": "0x00",
+    "command": "0x19 0x00 0x00 0x00 0x00 0x00 0x00 0x00",
+    "commandMask": "0x00 0x00 0xFF 0xFF 0xFF 0xFF 0xFF 0xFF"
+    },
+    {
+    "Description": "Read offset 0x19xx - first byte matched 0x19 and ignore second byte",
+    "busId": "0x06",
+    "slaveAddr": "0x54",
+    "slaveAddrMask": "0x00",
+    "command": "0x19 0x00",
+    "commandMask": "0x00 0xFF"
+    }
+]
+}

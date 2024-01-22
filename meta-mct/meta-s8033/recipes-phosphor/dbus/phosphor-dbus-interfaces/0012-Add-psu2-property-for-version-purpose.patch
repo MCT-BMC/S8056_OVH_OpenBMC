@@ -1,0 +1,23 @@
+From 651d495089335c147033bf955bd648d7eb6f1d15 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Thu, 6 Jan 2022 08:19:14 +0800
+Subject: [PATCH] Add psu2 property for version purpose
+
+---
+ yaml/xyz/openbmc_project/Software/Version.interface.yaml | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/yaml/xyz/openbmc_project/Software/Version.interface.yaml b/yaml/xyz/openbmc_project/Software/Version.interface.yaml
+index 139cbdb..c5f1067 100755
+--- a/yaml/xyz/openbmc_project/Software/Version.interface.yaml
++++ b/yaml/xyz/openbmc_project/Software/Version.interface.yaml
+@@ -51,3 +51,6 @@ enumerations:
+         - name: CPLD
+           description: >
+             The version is a version for the CPLD.
++        - name: PSU2
++          description: >
++            The version is a version for a PSU2.
+-- 
+2.7.4
+

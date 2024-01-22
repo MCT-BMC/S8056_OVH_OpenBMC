@@ -1,0 +1,28 @@
+From d3a1dcfa12e39d732c283c96d90958a30ce27ade Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Thu, 19 May 2022 10:42:29 +0800
+Subject: [PATCH] Support larger vmalloc size.
+
+---
+ arch/arm/mm/mmu.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+ mode change 100644 => 100755 arch/arm/mm/mmu.c
+
+diff --git a/arch/arm/mm/mmu.c b/arch/arm/mm/mmu.c
+old mode 100644
+new mode 100755
+index 274e4f7..04994d5
+--- a/arch/arm/mm/mmu.c
++++ b/arch/arm/mm/mmu.c
+@@ -1121,7 +1121,7 @@ void __init debug_ll_io_init(void)
+ }
+ #endif
+ 
+-static unsigned long __initdata vmalloc_size = 240 * SZ_1M;
++static unsigned long __initdata vmalloc_size = 1024 * SZ_1M;
+ 
+ /*
+  * vmalloc=size forces the vmalloc area to be exactly 'size'
+-- 
+2.7.4
+

@@ -1,0 +1,297 @@
+{
+    "Exposes": [
+        {
+            "SensorType": "fru_state",
+            "Name": "IPMI_POWER_DIAG",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "fru_state",
+            "Name": "IPMI_POWER_ON",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "fru_state",
+            "Name": "IPMI_POWER_OFF",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "fru_state",
+            "Name": "IPMI_POWER_SOFT",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "fru_state",
+            "Name": "IPMI_POWER_RESET",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "fru_state",
+            "Name": "IPMI_POWER_CYCLE",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "restart",
+            "Name": "SYSTEM_RESTART",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "buttons",
+            "Name": "BUTTON",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "versionchange",
+            "Name": "BMC1_FW_UPDATE",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "mgtsubsyshealth",
+            "Name": "BMC_REBOOT",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "mgtsubsyshealth",
+            "Name": "WATCHDOG_REBOOT",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "mgtsubsyshealth",
+            "Name": "BMC_PANIC",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "watchdog",
+            "Name": "WATCHDOG2",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "event_disabled",
+            "Name": "EVENT_CLEARED",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "processor",
+            "Name": "PROCESSOR_FAIL",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "processor",
+            "Name": "CPU_STATE",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "system_event",
+            "Name": "MBIST_START",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "system_event",
+            "Name": "MBIST_COMPLETE",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "acpi",
+            "Name": "ACPI_POWER_STATE",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "power_unit",
+            "Name": "POWER_STATUS",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "system_event",
+            "Name": "END_OF_POST",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "power_supply",
+            "Name": "PDB_STATUS",
+            "StartUnit":"na",
+            "Type": "DiscreteSensor"
+        },
+        {
+            "SensorType": "power_supply",
+            "Name": "HSC_STATUS",
+            "StartUnit":"na",
+            "Type": "DiscreteSensor"
+        },
+        {
+            "SensorType": "buttons",
+            "Name": "HSC_DISABLE",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "fru_state",
+            "Name": "IPMI_HSC_DISABLE",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "fru_state",
+            "Name": "CLEAR_CMOS",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "versionchange",
+            "Name": "BIOS1_FW_UPDATE",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "versionchange",
+            "Name": "SCM_CPLD_UPDATE",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "versionchange",
+            "Name": "MB_CPLD_UPDATE",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "chassis",
+            "Name": "SYS_PWR_CAPPING",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "processor",
+            "Name": "VRHOT",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "processor",
+            "Name": "CORE0_VRHOT",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "processor",
+            "Name": "CORE1_VRHOT",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "processor",
+            "Name": "VDDIO_VRHOT",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "versionchange",
+            "Name": "VR_FW_UPDATE",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "fru_state",
+            "Name": "IPMI_HSC_ACCYCLE",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "board",
+            "Name": "ROT_DETECT",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "board",
+            "Name": "NODE1_DETECT",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "board",
+            "Name": "NODE2_DETECT",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "buttons_evnet",
+            "Name": "NMI_BUTTON",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "fru_state",
+            "Name": "SWITCH_BMC1",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "fru_state",
+            "Name": "SWITCH_BMC2",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "versionchange",
+            "Name": "BMC2_FW_UPDATE",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "system_firmware",
+            "Name": "SELECT_BIOS1",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "system_firmware",
+            "Name": "SELECT_BIOS2",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "system_firmware",
+            "Name": "BIOS1_BOOT_FAIL",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "system_firmware",
+            "Name": "BIOS2_BOOT_FAIL",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        },
+        {
+            "SensorType": "versionchange",
+            "Name": "BIOS2_FW_UPDATE",
+            "StartUnit":"na",
+            "Type": "EventSensor"
+        }
+    ],
+    "Name": "s8053 Event Sensor",
+    "Probe": [
+        "xyz.openbmc_project.FruDevice({'BUS' : 1, 'ADDRESS': 80})"
+    ],
+    "Type": "Board"
+}

@@ -1,0 +1,6 @@
+DEVPATH=/dev/input/by-path/platform-gpio-keys-event
+KEY=32
+TARGET=xyz.openbmc_project.pwrbutton.service
+POLARITY=1
+EXTRA_ARGS=--continue
+

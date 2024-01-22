@@ -1,0 +1,93 @@
+From 99e68f8bd50a0cf33743db65712512fddf74e235 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Tue, 22 Sep 2020 19:27:54 +0800
+Subject: [PATCH] Support start preparing and stop commnad configuration
+
+---
+ socket-handler.c | 49 +++++++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 49 insertions(+)
+ mode change 100644 => 100755 socket-handler.c
+
+diff --git a/socket-handler.c b/socket-handler.c
+old mode 100644
+new mode 100755
+index be7daa4..0c41533
+--- a/socket-handler.c
++++ b/socket-handler.c
+@@ -54,6 +54,19 @@ struct socket_handler {
+ 	int			n_clients;
+ };
+ 
++struct Exec {
++	const char			*command;
++	const char			*address;
++	const char			*byte;
++	const char			*startPreValue;
++	const char			*stopVaule;
++	char				execStartPre[128];
++	char				execStop[128];
++	bool				enable;
++};
++
++struct Exec exec = { .enable = true };
++
+ static struct timeval const socket_handler_timeout = {
+ 	.tv_sec = 0,
+ 	.tv_usec = SOCKET_HANDLER_PKT_US_TIMEOUT
+@@ -69,6 +82,11 @@ static void client_close(struct client *client)
+ 	struct socket_handler *sh = client->sh;
+ 	int idx;
+ 
++	if(exec.enable)
++	{
++		if(system(exec.execStop)){};
++	}
++
+ 	close(client->fd);
+ 	if (client->poller)
+ 		console_poller_unregister(sh->console, client->poller);
+@@ -274,6 +292,11 @@ static enum poller_ret socket_poll(struct handler *handler,
+ 	struct client *client;
+ 	int fd, n;
+ 
++	if(exec.enable)
++	{
++		if(system(exec.execStartPre)){};
++	}
++
+ 	if (!(events & POLLIN))
+ 		return POLLER_OK;
+ 
+@@ -308,6 +331,32 @@ static int socket_init(struct handler *handler, struct console *console,
+ 	struct sockaddr_un addr;
+ 	int rc;
+ 
++	exec.command = config_get_value(config, "exec");
++	if (!exec.command)
++		exec.enable = false;
++
++	exec.address = config_get_value(config, "exec-address");
++	if (!exec.address)
++		exec.enable = false;
++
++	exec.byte = config_get_value(config, "exec-byte");
++	if (!exec.byte)
++		exec.enable = false;
++
++	exec.startPreValue = config_get_value(config, "exec-start-pre-value");
++	if (!exec.startPreValue)
++		exec.enable = false;
++
++	exec.stopVaule = config_get_value(config, "exec-stop-vaule");
++	if (!exec.stopVaule)
++		exec.enable = false;
++
++	if(exec.enable)
++	{
++		sprintf(&exec.execStartPre[0], "%s %s %s %s", exec.command, exec.address, exec.byte, exec.startPreValue);
++		sprintf(&exec.execStop[0], "%s %s %s %s", exec.command, exec.address, exec.byte, exec.stopVaule);
++	}
++
+ 	sh->console = console;
+ 	sh->clients = NULL;
+ 	sh->n_clients = 0;

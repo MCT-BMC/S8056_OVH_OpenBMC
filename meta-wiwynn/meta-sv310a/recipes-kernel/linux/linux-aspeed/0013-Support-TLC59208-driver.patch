@@ -1,0 +1,51 @@
+From ef8f1b2c18d5e07c78e8dffc131349811d6603b9 Mon Sep 17 00:00:00 2001
+From: Ren_Chen <Ren_Chen@wiwynn.com>
+Date: Thu, 1 Jul 2021 15:01:09 +0800
+Subject: [PATCH] Support TLC59208 driver
+
+---
+ drivers/leds/leds-tlc591xx.c | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/leds/leds-tlc591xx.c b/drivers/leds/leds-tlc591xx.c
+index 5b9dfdf743ec..ff222aafd683 100644
+--- a/drivers/leds/leds-tlc591xx.c
++++ b/drivers/leds/leds-tlc591xx.c
+@@ -68,6 +68,11 @@ static const struct tlc591xx tlc59108 = {
+ 	.reg_ledout_offset = 0x0c,
+ };
+ 
++static const struct tlc591xx tlc59208 = {
++	.max_leds = 8,
++	.reg_ledout_offset = 0x0c,
++};
++
+ static int
+ tlc591xx_set_mode(struct regmap *regmap, u8 mode)
+ {
+@@ -140,6 +145,8 @@ static const struct of_device_id of_tlc591xx_leds_match[] = {
+ 	  .data = &tlc59116 },
+ 	{ .compatible = "ti,tlc59108",
+ 	  .data = &tlc59108 },
++	{ .compatible = "ti,tlc59208",
++	  .data = &tlc59208 },
+ 	{},
+ };
+ MODULE_DEVICE_TABLE(of, of_tlc591xx_leds_match);
+@@ -218,6 +225,7 @@ tlc591xx_probe(struct i2c_client *client,
+ static const struct i2c_device_id tlc591xx_id[] = {
+ 	{ "tlc59116" },
+ 	{ "tlc59108" },
++	{ "tlc59208" },
+ 	{},
+ };
+ MODULE_DEVICE_TABLE(i2c, tlc591xx_id);
+@@ -235,4 +243,4 @@ module_i2c_driver(tlc591xx_driver);
+ 
+ MODULE_AUTHOR("Andrew Lunn <andrew@lunn.ch>");
+ MODULE_LICENSE("GPL");
+-MODULE_DESCRIPTION("TLC591XX LED driver");
++MODULE_DESCRIPTION("TLC591XX/TLC59208 LED driver");
+-- 
+2.28.0
+

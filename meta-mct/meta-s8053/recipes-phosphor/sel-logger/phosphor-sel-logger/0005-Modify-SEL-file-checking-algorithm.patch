@@ -1,0 +1,90 @@
+From 8379a8a468308bae1e1f1356a6dc40efa14feb43 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Thu, 16 Feb 2023 12:02:15 +0800
+Subject: [PATCH] Modify SEL file checking algorithm
+
+---
+ src/sel_logger.cpp | 59 ++++++++++++++++++++++++++++++++--------------
+ 1 file changed, 41 insertions(+), 18 deletions(-)
+
+diff --git a/src/sel_logger.cpp b/src/sel_logger.cpp
+index a411a99..8cbee3a 100755
+--- a/src/sel_logger.cpp
++++ b/src/sel_logger.cpp
+@@ -109,32 +109,55 @@ static bool getSELLogFiles(std::vector<std::filesystem::path>& selLogFiles)
+ 
+ static unsigned int initializeRecordId(void)
+ {
++    bool isSELIterRotated = false;
++    int recordID = 0;
++
+     std::vector<std::filesystem::path> selLogFiles;
+     if (!getSELLogFiles(selLogFiles))
+     {
++        std::cerr << "Failed to get SEL Log Files." << std::endl;
+         return selInvalidRecID;
+     }
+-    std::ifstream logStream(selLogFiles.front());
+-    if (!logStream.is_open())
+-    {
+-        return selInvalidRecID;
+-    }
+-    std::string line;
+-    std::string newestEntry;
+-    while (std::getline(logStream, line))
+-    {
+-        newestEntry = line;
+-    }
+ 
+-    std::vector<std::string> newestEntryFields;
+-    boost::split(newestEntryFields, newestEntry, boost::is_any_of(" ,"),
+-                 boost::token_compress_on);
+-    if (newestEntryFields.size() < 4)
++    for (auto i: selLogFiles)
+     {
+-        return selInvalidRecID;
+-    }
++        std::ifstream logStream(i);
++        if (!logStream.is_open())
++        {
++            std::cerr << "SEL Log Files are already opened." << std::endl;
++            return selInvalidRecID;
++        }
++        std::string line;
++        std::string newestEntry;
++        while (std::getline(logStream, line))
++        {
++            newestEntry = line;
++        }
+ 
+-    return std::stoul(newestEntryFields[1]);
++        std::vector<std::string> newestEntryFields;
++        boost::split(newestEntryFields, newestEntry, boost::is_any_of(" ,"),
++                    boost::token_compress_on);
++        if (newestEntryFields.size() < 4)
++        {
++            if (!isSELIterRotated)
++            {
++                std::cerr << "Failed to get the newest SEL count." << std::endl;
++                isSELIterRotated = true;
++                continue;
++            }
++            else
++            {
++                std::cerr << "Still failed to get the newest SEL count." << std::endl;
++                return selInvalidRecID;
++            }
++        }
++        else
++        {
++            std::cerr << "Current recordID: " << newestEntryFields[1] << std::endl;
++            recordID = std::stoul(newestEntryFields[1]);
++        }
++    }
++    return recordID;
+ }
+ 
+ #ifdef SEL_LOGGER_CLEARS_SEL
+-- 
+2.25.1
+

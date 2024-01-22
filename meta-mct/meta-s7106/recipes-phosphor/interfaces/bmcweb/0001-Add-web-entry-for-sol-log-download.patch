@@ -1,0 +1,53 @@
+From 803eb0b593b6cf5f51c9f5849f2a80c4e648fd7c Mon Sep 17 00:00:00 2001
+From: "jeannie.wu" <jeannie.wu@mic.com.tw>
+Date: Mon, 22 Apr 2019 14:27:32 +0800
+Subject: [PATCH] Add web entry for sol log download
+
+---
+ include/openbmc_dbus_rest.hpp | 33 +++++++++++++++++++++++++++++++++
+ 1 file changed, 33 insertions(+)
+
+diff --git a/include/openbmc_dbus_rest.hpp b/include/openbmc_dbus_rest.hpp
+index 6938079..173b59a 100644
+--- a/include/openbmc_dbus_rest.hpp
++++ b/include/openbmc_dbus_rest.hpp
+@@ -2103,6 +2103,39 @@ template <typename... Middlewares> void requestRoutes(Crow<Middlewares...> &app)
+             return;
+         });
+ 
++    BMCWEB_ROUTE(app, "/sol.log")
++        .requires({"ConfigureManager"})
++        .methods("GET"_method)([](const crow::Request &req, crow::Response &res) {
++
++            std::filesystem::path loc(
++                "/var/log/obmc-console.log");
++
++            if (!std::filesystem::exists(loc) ||
++                std::filesystem::is_empty(loc) || !std::filesystem::is_regular_file(loc))
++            {
++                BMCWEB_LOG_ERROR << loc << "SOL data Not found";
++                res.result(boost::beast::http::status::not_found);
++                res.end();
++                return;
++            }
++  
++            std::ifstream readFile(loc);
++            
++            if (readFile.good())
++            {
++                res.addHeader("Content-Type", "application/octet-stream");
++                res.body() = {std::istreambuf_iterator<char>(readFile),
++                              std::istreambuf_iterator<char>()};
++                res.end();
++                return;
++            }else{
++                res.result(boost::beast::http::status::not_found);
++                res.end();
++                return;
++            }
++        });
++
++
+     BMCWEB_ROUTE(app, "/bus/system/<str>/")
+         .requires({"Login"})
+         .methods("GET"_method)([](const crow::Request &req, crow::Response &res,

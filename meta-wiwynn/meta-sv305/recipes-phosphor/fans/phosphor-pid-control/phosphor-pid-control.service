@@ -1,0 +1,15 @@
+[Unit]
+Description=Phosphor-Pid-Control Margin-based Fan Control Daemon
+Wants=mapper-wait@-xyz-openbmc_project-sensors-fan_tach.service
+After=mapper-wait@-xyz-openbmc_project-sensors-fan_tach.service
+
+[Service]
+Restart=always
+ExecStart={bindir}/phosphor-pid-control.sh
+RestartSec=5
+StartLimitInterval=0
+Type=simple
+SyslogIdentifier=phosphor-pid-control
+
+[Install]
+WantedBy=multi-user.target

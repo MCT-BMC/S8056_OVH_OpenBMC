@@ -1,0 +1,99 @@
+From 2dc8cddb0a32181f9943e2d1cb8065abdefcfe9f Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Tue, 22 Mar 2022 14:19:46 +0800
+Subject: [PATCH 12/24] Implement the event log for clear SEL command
+
+Fix SEL issue for bmc store file does not match IPMI SEL elist command
+---
+ dbus-sdr/storagecommands.cpp | 47 ++++++++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 45 insertions(+), 2 deletions(-)
+
+diff --git a/dbus-sdr/storagecommands.cpp b/dbus-sdr/storagecommands.cpp
+index f0ec020..21f3a4b 100755
+--- a/dbus-sdr/storagecommands.cpp
++++ b/dbus-sdr/storagecommands.cpp
+@@ -52,6 +52,30 @@ static int getFileTimestamp(const std::filesystem::path& file)
+     return ::ipmi::sel::invalidTimeStamp;
+ }
+ 
++void generateSelEvent(char const* SensorPath,std::vector<uint8_t> eventData)
++{
++    static constexpr auto ipmiBusName = "xyz.openbmc_project.Logging.IPMI";
++    static constexpr auto ipmiObjPath = "/xyz/openbmc_project/Logging/IPMI";
++    static constexpr auto ipmiIntf = "xyz.openbmc_project.Logging.IPMI";
++
++    sdbusplus::bus::bus bus{ipmid_get_sd_bus_connection()};
++
++    uint16_t genid = 0x20;
++    bool assert=1;
++
++    sdbusplus::message::message writeSEL = bus.new_method_call(
++                            ipmiBusName, ipmiObjPath, ipmiIntf, "IpmiSelAdd");
++    writeSEL.append("Add clear SEL Entry",  std::string(SensorPath), eventData, assert, genid);
++    try
++    {
++        bus.call(writeSEL);
++    }
++    catch (sdbusplus::exception_t& e)
++    {
++        std::cerr << "call IpmiSelAdd failed\n";
++    }
++}
++
+ namespace erase_time
+ {
+ static constexpr const char* selEraseTimestamp = "/var/lib/ipmi/sel_erase_time";
+@@ -1199,6 +1223,8 @@ ipmi::RspType<uint8_t> ipmiStorageClearSEL(ipmi::Context::ptr ctx,
+                                            const std::array<uint8_t, 3>& clr,
+                                            uint8_t eraseOperation)
+ {
++    static constexpr char const* eventCleared = "/xyz/openbmc_project/sensors/event_disabled/EVENT_CLEARED";
++    std::vector<uint8_t> eventData{0x02,0xFF,0xff};
+     if (!checkSELReservation(reservationID))
+     {
+         return ipmi::responseInvalidReservationId();
+@@ -1214,6 +1240,7 @@ ipmi::RspType<uint8_t> ipmiStorageClearSEL(ipmi::Context::ptr ctx,
+     // `erase completed`.
+     if (eraseOperation == ipmi::sel::getEraseStatus)
+     {
++        dynamic_sensors::ipmi::sel::generateSelEvent(eventCleared,eventData);
+         return ipmi::responseSuccess(ipmi::sel::eraseComplete);
+     }
+ 
+@@ -1237,8 +1264,23 @@ ipmi::RspType<uint8_t> ipmiStorageClearSEL(ipmi::Context::ptr ctx,
+     {
+         for (const std::filesystem::path& file : selLogFiles)
+         {
+-            std::error_code ec;
+-            std::filesystem::remove(file, ec);
++            if (0 == file.compare(dynamic_sensors::ipmi::sel::selLogDir / dynamic_sensors::ipmi::sel::selLogFilename))
++            {
++                std::ofstream logStream;
++                logStream.open(file, std::ofstream::out | std::ofstream::trunc);
++                logStream.close();
++            }
++            else
++            {
++                std::error_code ec;
++                std::filesystem::remove(file, ec);
++            }
++
++            auto bus = sdbusplus::bus::new_default();
++            auto msg = bus.new_signal("/", "org.freedesktop.DBus", "ClearSelEvent");
++            bool parameter = true;
++            msg.append(parameter);
++            msg.signal_send();
+         }
+     }
+ 
+@@ -1270,6 +1312,7 @@ ipmi::RspType<uint8_t> ipmiStorageClearSEL(ipmi::Context::ptr ctx,
+     // Save the erase time
+     dynamic_sensors::ipmi::sel::erase_time::save();
+ #endif
++    dynamic_sensors::ipmi::sel::generateSelEvent(eventCleared,eventData);
+     return ipmi::responseSuccess(ipmi::sel::eraseComplete);
+ }
+ 
+-- 
+2.7.4
+

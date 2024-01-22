@@ -1,0 +1,13 @@
+[Unit]
+Description=MiTAC Environment Manager
+Before=mct-node-manager.service
+Before=pdb-status-sel.service
+Before=hsc-status-sel.service
+
+[Service]
+ExecStart=/usr/bin/env mct-env-manager
+Type=simple
+SyslogIdentifier=mct-env-manager
+
+[Install]
+WantedBy=sysinit.target

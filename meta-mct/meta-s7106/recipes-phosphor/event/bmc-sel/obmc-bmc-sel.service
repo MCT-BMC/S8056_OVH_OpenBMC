@@ -1,0 +1,13 @@
+[Unit]
+Description=Check and generate BMC SEL
+
+After=obmc-sync-pch-rtc.service
+[Service]
+Restart=no
+ExecStartPre=/bin/bash -c 'while [ ! -e /run/time_sync_done ]; do sleep 1; done'
+ExecStart=/usr/sbin/bmc-sel.sh
+SyslogIdentifier=bmc-sel
+TimeoutSec=infinity
+
+[Install]
+WantedBy={SYSTEMD_DEFAULT_TARGET}

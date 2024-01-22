@@ -1,0 +1,81 @@
+From 0d86e4c1dc52c94919972ebbe187fbbcf765c041 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Thu, 26 Mar 2020 16:53:39 +0800
+Subject: [PATCH] Support CPU margin reading
+
+---
+ drivers/hwmon/peci-cputemp.c | 16 ++++++++++++++--
+ 1 file changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/hwmon/peci-cputemp.c b/drivers/hwmon/peci-cputemp.c
+index b9fe91281d58..5e4fc9a96699 100644
+--- a/drivers/hwmon/peci-cputemp.c
++++ b/drivers/hwmon/peci-cputemp.c
+@@ -9,7 +9,7 @@
+ #include <linux/platform_device.h>
+ #include "peci-hwmon.h"
+ 
+-#define DEFAULT_CHANNEL_NUMS	5
++#define DEFAULT_CHANNEL_NUMS	6
+ #define CORETEMP_CHANNEL_NUMS	CORE_NUMS_MAX
+ #define CPUTEMP_CHANNEL_NUMS	(DEFAULT_CHANNEL_NUMS + CORETEMP_CHANNEL_NUMS)
+ 
+@@ -19,6 +19,7 @@ struct temp_group {
+ 	struct peci_sensor_data		tcontrol;
+ 	struct peci_sensor_data		tthrottle;
+ 	struct peci_sensor_data		tjmax;
++	struct peci_sensor_data		margin;
+ 	struct peci_sensor_data		core[CORETEMP_CHANNEL_NUMS];
+ };
+ 
+@@ -43,6 +44,7 @@ enum cputemp_channels {
+ 	channel_tcontrol,
+ 	channel_tthrottle,
+ 	channel_tjmax,
++	channel_margin,
+ 	channel_core,
+ };
+ 
+@@ -64,6 +66,9 @@ static const u32 config_table[DEFAULT_CHANNEL_NUMS + 1] = {
+ 	/* Tjmax temperature */
+ 	HWMON_T_LABEL | HWMON_T_INPUT,
+ 
++	/* Margin */
++	HWMON_T_LABEL | HWMON_T_INPUT,
++
+ 	/* Core temperature - for all core channels */
+ 	HWMON_T_LABEL | HWMON_T_INPUT | HWMON_T_MAX | HWMON_T_CRIT |
+ 	HWMON_T_CRIT_HYST,
+@@ -74,7 +79,8 @@ static const char *cputemp_label[DEFAULT_CHANNEL_NUMS] = {
+ 	"DTS",
+ 	"Tcontrol",
+ 	"Tthrottle",
+-	"Tjmax"
++	"Tjmax",
++	"Margin"
+ };
+ 
+ static s32 ten_dot_six_to_millidegree(s32 val)
+@@ -277,6 +283,10 @@ static int cputemp_read(struct device *dev,
+ 		case channel_tjmax:
+ 			*val = priv->temp.tjmax.value;
+ 			break;
++		case channel_margin:
++			priv->temp.margin.value = priv->temp.die.value - priv->temp.tjmax.value;
++			*val = priv->temp.margin.value;
++			break;
+ 		default:
+ 			core_index = channel - DEFAULT_CHANNEL_NUMS;
+ 			ret = get_core_temp(priv, core_index);
+@@ -427,6 +437,8 @@ static int peci_cputemp_probe(struct platform_device *pdev)
+ 	priv->temp_config[priv->config_idx++] = config_table[channel_tcontrol];
+ 	priv->temp_config[priv->config_idx++] = config_table[channel_tthrottle];
+ 	priv->temp_config[priv->config_idx++] = config_table[channel_tjmax];
++	priv->temp_config[priv->config_idx++] = config_table[channel_margin];
++
+ 
+ 	ret = create_core_temp_info(priv);
+ 	if (ret)
+-- 
+2.24.1
+

@@ -1,0 +1,43 @@
+From 863039be6e6fb50bac1e8790e107b427b79a5c92 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Tue, 15 Mar 2022 14:04:17 +0800
+Subject: [PATCH 4/9] Update NMI output default voltage level and support log
+ SEL
+
+---
+ src/power_control.cpp | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/src/power_control.cpp b/src/power_control.cpp
+index 8726075..5973d6a 100755
+--- a/src/power_control.cpp
++++ b/src/power_control.cpp
+@@ -848,6 +848,7 @@ static void nmiButtonPressLog()
+     sd_journal_send("MESSAGE=PowerControl: NMI button pressed", "PRIORITY=%i",
+                     LOG_INFO, "REDFISH_MESSAGE_ID=%s",
+                     "OpenBMC.0.1.NMIButtonPressed", NULL);
++    logSELEvent("NMI Button SEL Entry","/xyz/openbmc_project/sensors/pwr_button/NMI_BUTTON",0x04,0xFF,0xFF);
+ }
+ 
+ static void nmiDiagIntLog()
+@@ -2308,7 +2309,7 @@ static void nmiSetEnableProperty(bool value)
+ 
+ static void nmiReset(void)
+ {
+-    static constexpr const uint8_t value = 1;
++    static constexpr const uint8_t value = 0;
+     const static constexpr int nmiOutPulseTimeMs = 200;
+ 
+     lg2::info("NMI out action");
+@@ -2960,7 +2961,7 @@ int main(int argc, char* argv[])
+     // initialize NMI_OUT GPIO.
+     if (!nmiOutConfig.lineName.empty())
+     {
+-        setGPIOOutput(nmiOutConfig.lineName, 0, nmiOutLine);
++        setGPIOOutput(nmiOutConfig.lineName, 1, nmiOutLine);
+     }
+ 
+     // initialize BUTTON_LOCK GPIO.
+-- 
+2.7.4
+

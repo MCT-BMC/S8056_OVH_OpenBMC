@@ -1,0 +1,288 @@
+[
+    {
+       "Exposes": [
+            {
+                "Address": "0x58",
+                "Bus": "3",
+                "Name": "POWER_MODULE",
+                "Labels": ["vout1", "iout1", "temp1", "pout1"],
+                "vout1_Name": "PDB1_12V_VOUT",
+                "iout1_Name": "PDB1_12V_IOUT",
+                "temp1_Name": "PDB1_Temp",
+                "pout1_Name": "PDB1_12V_POUT",
+                "PowerStates": [
+                 {
+                     "Label": "vout1",
+                     "PowerState": "BiosPost"
+                 },
+                 {
+                     "Label": "iout1",
+                     "PowerState": "BiosPost"
+                 },
+                 {
+                     "Label": "temp1",
+                     "PowerState": "Always"
+                 },
+                 {
+                     "Label": "pout1",
+                     "PowerState": "BiosPost"
+                 }
+            ],
+            "Thresholds": [
+                 {
+                     "Direction": "greater than",
+                     "Label": "vout1",
+                     "Name": "upper critical",
+                     "Severity": 1,
+                     "Value": 12.5
+                 },
+                 {
+                     "Direction": "less than",
+                     "Label": "vout1",
+                     "Name": "lower critical",
+                     "Hysteresis": 3,
+                     "Severity": 1,
+                     "Value": 11.64
+                 },
+                 {
+                     "Direction": "greater than",
+                     "Label": "temp1",
+                     "Name": "upper critical",
+                     "Severity": 1,
+                     "Value": 105
+                 }
+             ],
+             "Type": "pmbus"
+           },
+           {
+               "Connector": {
+                "Name":"Sys FAN Connector 1",
+                "Pwm": 0,
+                "PwmName": "SYS_PWM_1",
+                "Tachs": [
+                    0
+                ]
+               },
+               "Index": 0,
+               "Name": "SYS_FAN_1_A",
+               "PowerState": "Always",
+               "Address": "0x22",
+               "Bus": 16,
+               "Thresholds": [
+                   {
+                       "Direction": "less than",
+                        "Name": "lower critical",
+                        "Severity": 1,
+                        "Value": 2500
+                   }
+               ],
+               "Type": "AspeedFan"
+           },
+           {
+               "Connector": {
+                "Name":"Sys FAN Connector 2",
+                "Pwm": 1,
+                "PwmName": "SYS_PWM_2",
+                "Tachs": [
+                    1
+                ]
+               },
+               "Index": 1,
+               "Name": "SYS_FAN_2_A",
+               "PowerState": "Always",
+               "Address": "0x22",
+               "Bus": 16,
+               "Thresholds": [
+                   {
+                       "Direction": "less than",
+                       "Name": "lower critical",
+                       "Severity": 1,
+                       "Value": 2500
+                   }
+               ],
+               "Type": "AspeedFan"
+           },
+           {
+               "Connector": {
+                "Name":"Sys FAN Connector 3",
+                "Pwm": 2,
+                "PwmName": "SYS_PWM_3",
+                "Tachs": [
+                    2
+                ]
+               },
+               "Index": 2,
+               "Name": "SYS_FAN_3_A",
+               "PowerState": "Always",
+               "Address": "0x22",
+               "Bus": 16,
+               "Thresholds": [
+                   {
+                       "Direction": "less than",
+                       "Name": "lower critical",
+                       "Severity": 1,
+                       "Value": 2500
+                   }
+               ],
+               "Type": "AspeedFan"
+           },
+           {
+               "Connector": {
+                "Name":"Sys FAN Connector 4",
+                "Pwm": 3,
+                "PwmName": "SYS_PWM_4",
+                "Tachs": [
+                    3
+                ]
+               },
+               "Index": 3,
+               "Name": "SYS_FAN_4_A",
+               "PowerState": "Always",
+               "Address": "0x23",
+               "Bus": 16,
+               "Thresholds": [
+                   {
+                       "Direction": "less than",
+                       "Name": "lower critical",
+                       "Severity": 1,
+                       "Value": 2500
+                   }
+               ],
+               "Type": "AspeedFan"
+           },
+           {
+               "Connector": {
+                "Name":"Sys FAN Connector 5",
+                "Pwm": 4,
+                "PwmName": "SYS_PWM_5",
+                "Tachs": [
+                    4
+                ]
+               },
+               "Index": 4,
+               "Name": "SYS_FAN_5_A",
+               "PowerState": "Always",
+               "Address": "0x23",
+               "Bus": 16,
+               "Thresholds": [
+                   {
+                       "Direction": "less than",
+                       "Name": "lower critical",
+                       "Severity": 1,
+                       "Value": 2500
+                   }
+               ],
+               "Type": "AspeedFan"
+           },
+           {
+               "Connector": {
+                "Name":"Sys FAN Connector 6",
+                "Pwm": 5,
+                "PwmName": "SYS_PWM_6",
+                "Tachs": [
+                    5
+                ]
+               },
+               "Index": 5,
+               "Name": "SYS_FAN_6_A",
+               "PowerState": "Always",
+               "Address": "0x23",
+               "Bus": 16,
+               "Thresholds": [
+                   {
+                       "Direction": "less than",
+                       "Name": "lower critical",
+                       "Severity": 1,
+                       "Value": 2500
+                   }
+               ],
+               "Type": "AspeedFan"
+           },
+           {
+               "Name": "FAN1_PRESENCE",
+               "GpioName": "FAN1_PRSNT",
+               "Path": "fan_present",
+               "Polarity": "HIGH",
+               "EventMon": "NULL",
+               "PowerState": "Always",
+               "Type": "FanPresenceSensor"
+           },
+           {
+               "Name": "FAN2_PRESENCE",
+               "GpioName": "FAN2_PRSNT",
+               "Path": "fan_present",
+               "Polarity": "HIGH",
+              "EventMon": "NULL",
+               "PowerState": "Always",
+               "Type": "FanPresenceSensor"
+           },
+           {
+               "Name": "FAN3_PRESENCE",
+               "GpioName": "FAN3_PRSNT",
+               "Path": "fan_present",
+               "Polarity": "HIGH",
+               "EventMon": "NULL",
+               "PowerState": "Always",
+               "Type": "FanPresenceSensor"
+           },
+           {
+               "Name": "FAN4_PRESENCE",
+               "GpioName": "FAN4_PRSNT",
+               "Path": "fan_present",
+               "Polarity": "HIGH",
+               "EventMon": "NULL",
+               "PowerState": "Always",
+               "Type": "FanPresenceSensor"
+           },
+           {
+               "Name": "FAN5_PRESENCE",
+               "GpioName": "FAN5_PRSNT",
+               "Path": "fan_present",
+               "Polarity": "HIGH",
+               "EventMon": "NULL",
+               "PowerState": "Always",
+               "Type": "FanPresenceSensor"
+           },
+           {
+               "Name": "FAN6_PRESENCE",
+               "GpioName": "FAN6_PRSNT",
+               "Path": "fan_present",
+               "Polarity": "HIGH",
+               "EventMon": "NULL",
+               "PowerState": "Always",
+               "Type": "FanPresenceSensor"
+           },
+           {
+               "Address": "$address",
+               "Bus": "$bus",
+               "Name": "PDB_FRU",
+               "Type": "EEPROM"
+           },
+           {
+               "Address": "0x45",
+               "Bus": "$bus",
+               "Name": "FAN_POWER_NODE_1",
+               "MaxValue": 250,
+               "Type": "HwmonPower"
+           },
+           {
+               "Address": "0x44",
+               "Bus": "$bus",
+               "Name": "FAN_POWER_NODE_2",
+               "MaxValue": 250,
+               "Type": "HwmonPower"
+           }
+       ],
+       "Name": "s8056 PDB Node 2",
+        "Probe": [
+            "xyz.openbmc_project.FruDevice({'BUS' : 1, 'ADDRESS': 80})"
+        ],
+       "Type": "PowerSupply",
+       "xyz.openbmc_project.Inventory.Decorator.Asset": {
+           "Manufacturer": "$BOARD_MANUFACTURER",
+           "Model": "$BOARD_PRODUCT_NAME",
+           "PartNumber": "$BOARD_PART_NUMBER",
+           "SerialNumber": "$BOARD_SERIAL_NUMBER"
+       }
+   }
+]

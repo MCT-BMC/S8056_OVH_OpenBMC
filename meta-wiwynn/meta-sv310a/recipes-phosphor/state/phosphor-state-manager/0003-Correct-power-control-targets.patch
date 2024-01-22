@@ -1,0 +1,62 @@
+From 7d0a3fae43efa98f75790e59ab30565edf0d00e4 Mon Sep 17 00:00:00 2001
+From: Ren_Chen <Ren_Chen@wiwynn.com>
+Date: Tue, 27 Jul 2021 15:14:01 +0800
+Subject: [PATCH] Correct power control targets
+
+---
+ host_state_manager.cpp | 16 ++++++++++++----
+ 1 file changed, 12 insertions(+), 4 deletions(-)
+
+diff --git a/host_state_manager.cpp b/host_state_manager.cpp
+index ffb37b1..6fe2617 100644
+--- a/host_state_manager.cpp
++++ b/host_state_manager.cpp
+@@ -66,9 +66,10 @@ constexpr auto ACTIVATING_STATE = "activating";
+ 
+ /* Map a transition to it's systemd target */
+ const std::map<server::Host::Transition, std::string> SYSTEMD_TARGET_TABLE = {
+-    {server::Host::Transition::Off, HOST_STATE_SOFT_POWEROFF_TGT},
++    {server::Host::Transition::Off, HOST_STATE_POWEROFF_TGT},
+     {server::Host::Transition::On, HOST_STATE_POWERON_TGT},
+     {server::Host::Transition::Reboot, HOST_STATE_REBOOT_TGT},
++    {server::Host::Transition::SoftOff, HOST_STATE_SOFT_POWEROFF_TGT},
+ // Some systems do not support a warm reboot so just map the reboot
+ // requests to our normal cold reboot in that case
+ #if ENABLE_WARM_REBOOT
+@@ -134,7 +135,12 @@ void Host::determineInitialState()
+ 
+ void Host::executeTransition(Transition tranReq)
+ {
+-    auto sysdUnit = SYSTEMD_TARGET_TABLE.find(tranReq)->second;
++    auto findTarget = SYSTEMD_TARGET_TABLE.find(tranReq);
++    if (findTarget == SYSTEMD_TARGET_TABLE.end())
++    {
++        return;
++    }
++    auto sysdUnit = findTarget->second;
+ 
+     auto method = this->bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH,
+                                             SYSTEMD_INTERFACE, "StartUnit");
+@@ -279,7 +285,8 @@ void Host::sysStateChangeJobRemoved(sdbusplus::message::message& msg)
+     // Read the msg and populate each variable
+     msg.read(newStateID, newStateObjPath, newStateUnit, newStateResult);
+ 
+-    if ((newStateUnit == HOST_STATE_POWEROFF_TGT) &&
++    if ((newStateUnit == HOST_STATE_POWEROFF_TGT ||
++         newStateUnit == HOST_STATE_SOFT_POWEROFF_TGT) &&
+         (newStateResult == "done") &&
+         (!stateActive(HOST_STATE_POWERON_MIN_TGT)))
+     {
+@@ -391,7 +398,8 @@ Host::Transition Host::requestedHostTransition(Transition value)
+     // never prevent a power on, it should just decrement
+     // the count to 0.  The quiesce handling is where the
+     // check of this count will occur
+-    if (value != server::Host::Transition::Off)
++    if ((value != server::Host::Transition::Off) ||
++        (value != server::Host::Transition::Unknown))
+     {
+         decrementRebootCount();
+     }
+-- 
+2.32.0
+

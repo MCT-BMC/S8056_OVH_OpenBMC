@@ -1,0 +1,26 @@
+From ea968302a932e3401891e251df013e34e9ef0023 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Fri, 20 Sep 2019 07:39:28 +0800
+Subject: [PATCH 1/2] at24.c Disable root only
+
+---
+ drivers/misc/eeprom/at24.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/misc/eeprom/at24.c b/drivers/misc/eeprom/at24.c
+index 518945b2f737..bc919c991a12 100644
+--- a/drivers/misc/eeprom/at24.c
++++ b/drivers/misc/eeprom/at24.c
+@@ -685,7 +685,8 @@ static int at24_probe(struct i2c_client *client)
+ 	nvmem_config.name = dev_name(dev);
+ 	nvmem_config.dev = dev;
+ 	nvmem_config.read_only = !writable;
+-	nvmem_config.root_only = !(flags & AT24_FLAG_IRUGO);
++	nvmem_config.root_only = false;
++	// nvmem_config.root_only = !(flags & AT24_FLAG_IRUGO);
+ 	nvmem_config.owner = THIS_MODULE;
+ 	nvmem_config.compat = true;
+ 	nvmem_config.base_dev = dev;
+-- 
+2.22.0
+

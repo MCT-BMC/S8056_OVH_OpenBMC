@@ -1,0 +1,309 @@
+From 77e24dfe984aaeb5c5f3df5a453a805b73baeb00 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Mon, 23 Mar 2020 21:54:12 +0800
+Subject: [PATCH] Refer to linear result for PID PWM calculation
+
+Description
+- PID PWM would be added by linear PWM after the temperature exceeds PID setpoint.
+- Add debug print of PID coefficients
+---
+ pid/ec/pid.cpp             | 24 ++++++++++++++++
+ pid/fancontroller.cpp      | 12 ++++++--
+ pid/pidloop.cpp            |  8 ++++++
+ pid/stepwisecontroller.cpp | 30 +++++++++++++++++++-
+ pid/thermalcontroller.cpp  | 58 +++++++++++++++++++++++++++++++++++++-
+ pid/zone.cpp               | 19 +++++++++++++
+ 6 files changed, 147 insertions(+), 4 deletions(-)
+
+diff --git a/pid/ec/pid.cpp b/pid/ec/pid.cpp
+index a8283ff..c007160 100644
+--- a/pid/ec/pid.cpp
++++ b/pid/ec/pid.cpp
+@@ -16,6 +16,9 @@
+ 
+ #include "pid.hpp"
+ #include <cmath>
++#include <systemd/sd-journal.h>
++
++extern bool debugModeEnabled;
+ 
+ namespace ec
+ {
+@@ -121,6 +124,27 @@ double pid(pid_info_t* pidinfoptr, double input, double setpoint,
+     pidinfoptr->initialized = true;
+     pidinfoptr->lastOutput = output;
+ 
++    if (debugModeEnabled && (0 != pidinfoptr->proportionalCoeff) && (0 != pidinfoptr->integralCoeff) && (0 != pidinfoptr->integralCoeff))
++    {
++        sd_journal_print(LOG_INFO, "setpoint: %g\n", setpoint);
++        sd_journal_print(LOG_INFO, "input: %g\n", input);
++        sd_journal_print(LOG_INFO, "p coeff: %g\n", pidinfoptr->proportionalCoeff);
++        sd_journal_print(LOG_INFO, "i coeff: %g\n", pidinfoptr->integralCoeff);
++        sd_journal_print(LOG_INFO, "d coeff: %g\n", pidinfoptr->derivativeCoeff);
++        sd_journal_print(LOG_INFO, "i min: %g\n", pidinfoptr->integralLimit.min);
++        sd_journal_print(LOG_INFO, "i max: %g\n", pidinfoptr->integralLimit.max);
++        sd_journal_print(LOG_INFO, "integral: %g\n", pidinfoptr->integral);
++        sd_journal_print(LOG_INFO, "ts: %g\n", pidinfoptr->ts);
++        sd_journal_print(LOG_INFO, "f coeff: %g\n", pidinfoptr->feedFwdGain);
++        sd_journal_print(LOG_INFO, "Kp: %g\n", proportionalTerm);
++        sd_journal_print(LOG_INFO, "Ki: %g\n", integralTerm);
++        sd_journal_print(LOG_INFO, "Kd: %g\n", derivativeTerm);
++        sd_journal_print(LOG_INFO, "FF: %g\n", feedFwdTerm);
++        sd_journal_print(LOG_INFO, "posHysteresis: %g\n", pidinfoptr->positiveHysteresis);
++        sd_journal_print(LOG_INFO, "negHysteresis: %g\n", pidinfoptr->negativeHysteresis);
++        sd_journal_print(LOG_INFO, "output: %g\n", output);
++    }
++
+     return output;
+ }
+ 
+diff --git a/pid/fancontroller.cpp b/pid/fancontroller.cpp
+index ec69882..77b0b66 100644
+--- a/pid/fancontroller.cpp
++++ b/pid/fancontroller.cpp
+@@ -23,6 +23,9 @@
+ #include <algorithm>
+ #include <iostream>
+ 
++#include <math.h>
++extern int64_t zoneID;
++
+ std::unique_ptr<PIDController>
+     FanController::createFanPid(ZoneInterface* owner, const std::string& id,
+                                 const std::vector<std::string>& inputs,
+@@ -113,7 +116,8 @@ double FanController::setptProc(void)
+ 
+ void FanController::outputProc(double value)
+ {
+-    double percent = value;
++    double percent = round(value);
++    static int64_t lastZone = 0;
+ 
+     /* If doing tuning, don't go into failsafe mode. */
+     if (!tuningEnabled)
+@@ -132,7 +136,11 @@ void FanController::outputProc(double value)
+         {
+             if (debugModeEnabled)
+             {
+-                sd_journal_print(LOG_INFO, "Fans output pwm: %lg%%", percent);
++                if (lastZone != zoneID)
++                {
++                    lastZone = zoneID;
++                    sd_journal_print(LOG_INFO, "Fans output pwm: %lg %%", percent);
++                }
+             }
+         }
+     }
+diff --git a/pid/pidloop.cpp b/pid/pidloop.cpp
+index a765316..3934e8e 100644
+--- a/pid/pidloop.cpp
++++ b/pid/pidloop.cpp
+@@ -26,9 +26,17 @@
+ #include <memory>
+ #include <thread>
+ #include <vector>
++#include <systemd/sd-journal.h>
++
++int64_t zoneID;
+ 
+ static void processThermals(PIDZone* zone)
+ {
++    if (debugModeEnabled)
++    {
++        zoneID = zone->getZoneID();
++        sd_journal_print(LOG_INFO, "---------- zone %lld ----------\n", zoneID);
++    }
+     // Get the latest margins.
+     zone->updateSensors();
+     // Zero out the set point goals.
+diff --git a/pid/stepwisecontroller.cpp b/pid/stepwisecontroller.cpp
+index 5d984ae..941e28e 100644
+--- a/pid/stepwisecontroller.cpp
++++ b/pid/stepwisecontroller.cpp
+@@ -31,6 +31,12 @@
+ #include <memory>
+ #include <thread>
+ #include <vector>
++#include <math.h>
++
++std::map<std::string, double> compensationPwm;
++static constexpr auto cpuStr = "CPU";
++static constexpr uint8_t cpuStrLen = 3;
++static constexpr uint8_t cpuStrPos = 7;
+ 
+ void StepwiseController::process(void)
+ {
+@@ -105,6 +111,11 @@ double StepwiseController::inputProc(void)
+ 
+ void StepwiseController::outputProc(double value)
+ {
++    std::string name = getID();
++    std::string revisedName;
++
++    value = round(value);
++
+     if (get_stepwise_info().isCeiling)
+     {
+         _owner->addRPMCeiling(value);
+@@ -116,7 +127,24 @@ void StepwiseController::outputProc(double value)
+     if (debugModeEnabled)
+     {
+         sd_journal_print(LOG_INFO, "%s stepwise output pwm: %lg",
+-                         getID().c_str(), value);
++                         name.c_str(), value);
++    }
++
++// Refer to the pattern Linear_CPU
++
++    if (0 == name.compare(cpuStrPos, cpuStrLen, cpuStr))
++    {
++        std::pair<std::map<std::string, double>::iterator, bool> ret;
++
++        revisedName = name.substr(cpuStrPos);
++
++        ret = compensationPwm.insert(std::pair<std::string, double>(revisedName, value));
++
++        if (false == ret.second)
++        {
++            // The key has already existed
++            compensationPwm[revisedName] = value;
++        }
+     }
+     return;
+ }
+diff --git a/pid/thermalcontroller.cpp b/pid/thermalcontroller.cpp
+index 13ba0bb..72ad990 100644
+--- a/pid/thermalcontroller.cpp
++++ b/pid/thermalcontroller.cpp
+@@ -25,6 +25,19 @@
+ #include <algorithm>
+ #include <iostream>
+ 
++#include <map>
++#include <math.h>
++
++static constexpr auto service = "xyz.openbmc_project.CPUSensor";
++static constexpr auto objPath = "/xyz/openbmc_project/sensors/temperature/";
++static constexpr auto interface = "org.freedesktop.DBus.Properties";
++static constexpr auto cpuStr = "CPU";
++static constexpr uint8_t cpuStrPos = 4;
++static constexpr uint8_t cpuStrLen = 3;
++
++extern std::map<std::string, double> compensationPwm;
++extern std::map<std::string, double> sensorTempBuf;
++
+ ThermalType getThermalType(const std::string& typeString)
+ {
+     /* Currently it only supports the two types. */
+@@ -53,6 +66,7 @@ std::unique_ptr<PIDController> ThermalController::createThermalPid(
+     auto thermal = std::make_unique<ThermalController>(id, inputs, type, owner);
+ 
+     ec::pid_info_t* info = thermal->getPIDInfo();
++
+     thermal->setSetpoint(setpoint);
+ 
+     initializePIDStruct(info, initial);
+@@ -108,10 +122,52 @@ double ThermalController::setptProc(void)
+ #endif
+     return setpoint;
+ }
+-
+ // bmc_set_pid_output
+ void ThermalController::outputProc(double value)
+ {
++    double sp = getSetpoint();
++    double temp = 0;
++
++    value = round(value);
++
++    std::string name = getID();
++    // Refer to the pattern Pid_CPU
++    if (0 == name.compare(cpuStrPos, cpuStrLen, cpuStr))
++    {
++        std::string revisedName;
++        std::map<std::string, double>::iterator iter;
++
++        revisedName = name.substr(cpuStrPos);
++
++        iter = sensorTempBuf.find(revisedName);
++        if (iter != sensorTempBuf.end())
++        {
++            temp = iter->second;
++        }
++
++        iter = compensationPwm.find(revisedName);
++
++        if (iter != compensationPwm.end())
++        {
++            if (debugModeEnabled)
++            {
++                sd_journal_print(LOG_INFO, "===set point: %lg", sp);
++                sd_journal_print(LOG_INFO, "===PID pwm: %lg", value);
++            }
++            
++            // PID PWM only be added to stepwise PWM when temperature is over set point
++            if (temp > sp)
++            {
++                value += iter->second;
++
++                if (value > 100)
++                {
++                    value = 100;
++                }
++            }
++        }
++    }
++
+     _owner->addSetPoint(value);
+ 
+     if (debugModeEnabled)
+diff --git a/pid/zone.cpp b/pid/zone.cpp
+index a5b2dcf..5519f0b 100644
+--- a/pid/zone.cpp
++++ b/pid/zone.cpp
+@@ -35,10 +35,16 @@
+ #include <fstream>
+ #include <iostream>
+ #include <memory>
++#include <math.h>
+ 
+ using tstamp = std::chrono::high_resolution_clock::time_point;
+ using namespace std::literals::chrono_literals;
+ 
++std::map<std::string, double> sensorTempBuf;
++static constexpr auto cpuStr = "CPU";
++static constexpr uint8_t cpuStrLen = 3;
++static constexpr uint8_t cpuStrPos = 0;
++
+ double PIDZone::getMaxSetPointRequest(void) const
+ {
+     return _maximumSetPoint;
+@@ -410,12 +416,25 @@ void PIDZone::updateSensors(void)
+     {
+         auto sensor = _mgr.getSensor(t);
+         ReadReturn r = sensor->read();
++        r.value = round(r.value);
+         int64_t timeout = sensor->getTimeout();
+ 
+         if (debugModeEnabled)
+         {
+             sd_journal_print(LOG_INFO, "%s temperature sensor reading: %lg",
+                              t.c_str(), r.value);
++
++            if (0 == t.compare(cpuStrPos, cpuStrLen, cpuStr))
++            {
++                std::pair<std::map<std::string, double>::iterator, bool> ret;
++
++                ret = sensorTempBuf.insert(std::pair<std::string, double>(t, r.value));
++                if (false == ret.second)
++                {
++                    // The key has already existed
++                    sensorTempBuf[t] = r.value;
++                }
++            }
+         }
+ 
+         _cachedValuesByName[t] = r.value;
+-- 
+2.24.1
+

@@ -1,0 +1,115 @@
+From 396a85b766d7d958f6d89ba1476b932668c64caa Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Fri, 15 May 2020 14:37:27 +0800
+Subject: [PATCH] Support random power on feature to always-on policy
+
+---
+ discover_system_state.cpp                     | 59 +++++++++++++++++++
+ .../phosphor-discover-system-state@.service   |  1 +
+ 2 files changed, 60 insertions(+)
+
+diff --git a/discover_system_state.cpp b/discover_system_state.cpp
+index 836011a..b1f6264 100644
+--- a/discover_system_state.cpp
++++ b/discover_system_state.cpp
+@@ -12,6 +12,8 @@
+ #include "settings.hpp"
+ #include "xyz/openbmc_project/Common/error.hpp"
+ #include "xyz/openbmc_project/Control/Power/RestorePolicy/server.hpp"
++#include <chrono>
++#include <random>
+ 
+ namespace phosphor
+ {
+@@ -113,6 +115,57 @@ void setProperty(sdbusplus::bus::bus& bus, const std::string& path,
+     return;
+ }
+ 
++uint32_t getRandomDelayTime(sdbusplus::bus::bus& bus,
++                            settings::Objects& settings)
++{
++    auto method = bus.new_method_call(
++        settings.service(settings.powerRestorePolicy, settings::powerRestoreIntf).c_str(),
++        settings.powerRestorePolicy.c_str(), "org.freedesktop.DBus.Properties", "Get");
++    method.append(settings::powerRestoreIntf, "PowerRestoreDelay");
++
++    sdbusplus::message::variant<std::string> result;
++    try
++    {
++        auto reply = bus.call(method);
++        reply.read(result);
++    }
++    catch (const SdBusError& e)
++    {
++        log<level::ERR>("Error in PowerRestoreDelay Get",
++                        entry("ERROR=%s", e.what()));
++        elog<InternalFailure>();
++        return 0;
++    }
++    auto powerDelay = sdbusplus::message::variant_ns::get<std::string>(result);
++
++    uint32_t delayTime = 0;
++    std::random_device rd;
++    std::mt19937 generator(rd());
++
++    if (RestorePolicy::Delay::Disable ==
++        RestorePolicy::convertDelayFromString(powerDelay))
++    {
++        delayTime = 0;
++    }
++    else if (RestorePolicy::Delay::In1min ==
++             RestorePolicy::convertDelayFromString(powerDelay))
++    {
++        std::uniform_int_distribution<uint32_t> uniform(0,60);
++        delayTime = uniform(generator);
++    }
++    else if (RestorePolicy::Delay::In3min ==
++             RestorePolicy::convertDelayFromString(powerDelay))
++    {
++        std::uniform_int_distribution<uint32_t> uniform(0,180);
++        delayTime = uniform(generator);
++    }
++
++    sd_journal_print(LOG_INFO, "Restore delay policy: %s, time: %d\n",
++                     powerDelay.c_str(), delayTime);
++
++    return delayTime;
++}
++
+ } // namespace manager
+ } // namespace state
+ } // namespace phosphor
+@@ -178,6 +231,9 @@ int main(int argc, char** argv)
+     if (RestorePolicy::Policy::AlwaysOn ==
+         RestorePolicy::convertPolicyFromString(powerPolicy))
+     {
++        uint32_t sleepTime = getRandomDelayTime(bus, settings);
++        std::this_thread::sleep_for (std::chrono::seconds(sleepTime));
++
+         log<level::INFO>("power_policy=ALWAYS_POWER_ON, powering host on");
+         setProperty(bus, hostPath, HOST_BUSNAME, "RequestedHostTransition",
+                     convertForMessage(server::Host::Transition::On));
+@@ -194,5 +250,8 @@ int main(int argc, char** argv)
+                     hostReqState);
+     }
+ 
++    std::system("mkdir -p /run/openbmc/");
++    std::system("touch /run/openbmc/power-restore-checked@0");
++
+     return 0;
+ }
+diff --git a/service_files/phosphor-discover-system-state@.service b/service_files/phosphor-discover-system-state@.service
+index 21554c9..2e8868f 100644
+--- a/service_files/phosphor-discover-system-state@.service
++++ b/service_files/phosphor-discover-system-state@.service
+@@ -8,6 +8,7 @@ Wants=mapper-wait@-xyz-openbmc_project-state-chassis%i.service
+ After=mapper-wait@-xyz-openbmc_project-state-chassis%i.service
+ After=op-reset-chassis-on@%i.service
+ ConditionPathExists=!/run/openbmc/chassis@%i-on
++ConditionPathExists=!/run/openbmc/power-restore-checked@%i
+ 
+ [Service]
+ Restart=no
+-- 
+2.24.1
+

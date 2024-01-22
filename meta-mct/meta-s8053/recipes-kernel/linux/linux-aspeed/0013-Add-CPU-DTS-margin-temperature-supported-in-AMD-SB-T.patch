@@ -1,0 +1,49 @@
+From c6c22a98389b3d66c2f07c22a7a8f8af25017261 Mon Sep 17 00:00:00 2001
+From: Janny Au <janny.au@mic.com.tw>
+Date: Thu, 10 Mar 2022 17:19:34 +0800
+Subject: [PATCH] Add-CPU-DTS-margin-temperature-supported-in-AMD-SB-T
+
+---
+ drivers/hwmon/sbtsi_temp.c | 15 +++++++++++++--
+ 1 file changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/hwmon/sbtsi_temp.c b/drivers/hwmon/sbtsi_temp.c
+index e35357c48b8e..dc486fdd3c69 100644
+--- a/drivers/hwmon/sbtsi_temp.c
++++ b/drivers/hwmon/sbtsi_temp.c
+@@ -34,6 +34,7 @@
+ 
+ #define SBTSI_TEMP_MIN	0
+ #define SBTSI_TEMP_MAX	255875
++#define SBTSI_MARGIN	95000
+ 
+ /* Each client has this additional data */
+ struct sbtsi_data {
+@@ -122,7 +123,14 @@ static int sbtsi_read(struct device *dev, enum hwmon_sensor_types type,
+ 	if (temp_dec < 0)
+ 		return temp_dec;
+ 
+-	*val = sbtsi_reg_to_mc(temp_int, temp_dec);
++	if((attr == hwmon_temp_input) && (channel == 1))
++	{
++		*val = sbtsi_reg_to_mc(temp_int, temp_dec) - SBTSI_MARGIN;
++	}
++	else
++	{
++		*val = sbtsi_reg_to_mc(temp_int, temp_dec);
++	}
+ 
+ 	return 0;
+ }
+@@ -184,7 +192,10 @@ static umode_t sbtsi_is_visible(const void *data,
+ 
+ static const struct hwmon_channel_info *sbtsi_info[] = {
+ 	HWMON_CHANNEL_INFO(chip, HWMON_C_REGISTER_TZ),
+-	HWMON_CHANNEL_INFO(temp, HWMON_T_INPUT | HWMON_T_MIN | HWMON_T_MAX),
++	HWMON_CHANNEL_INFO(temp,
++	                   HWMON_T_INPUT | HWMON_T_MIN | HWMON_T_MAX,
++	                   HWMON_T_INPUT
++	                  ),
+ 	NULL
+ };
+ 

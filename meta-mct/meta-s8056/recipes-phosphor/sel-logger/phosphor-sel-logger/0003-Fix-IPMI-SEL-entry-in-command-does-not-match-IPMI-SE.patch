@@ -1,0 +1,87 @@
+From a0693eaba56103d0b4eb88658e57af2baabe10cc Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Tue, 20 Apr 2021 17:51:51 +0800
+Subject: [PATCH] Fix IPMI SEL entry in command does not match IPMI SEL in file
+ issue
+
+%% original patch: 0003-Fix-IPMI-SEL-entry-in-command-does-not-match-IPMI-SE.patch
+---
+ .../xyz.openbmc_project.Logging.IPMI.service       |  2 ++
+ src/sel_logger.cpp                                 | 27 ++++++++++++++++++++++
+ 2 files changed, 29 insertions(+)
+ mode change 100644 => 100755 service_files/xyz.openbmc_project.Logging.IPMI.service
+ mode change 100644 => 100755 src/sel_logger.cpp
+
+diff --git a/service_files/xyz.openbmc_project.Logging.IPMI.service b/service_files/xyz.openbmc_project.Logging.IPMI.service
+old mode 100644
+new mode 100755
+index 9b8ae41..08d0144
+--- a/service_files/xyz.openbmc_project.Logging.IPMI.service
++++ b/service_files/xyz.openbmc_project.Logging.IPMI.service
+@@ -3,7 +3,9 @@ Description=IPMI SEL Logging Service
+ 
+ [Service]
+ Restart=always
++ExecStartPre=/bin/bash -c 'if [ ! -f /var/lib/ipmi/ipmi_sel ]; then mkdir /var/lib/ipmi/; touch /var/lib/ipmi/ipmi_sel; fi; touch /run/sel-logger-ready;'
+ ExecStart=/usr/bin/sel-logger
++ExecStop=/bin/bash -c 'rm -rf /run/sel-logger-ready;'
+ Type=simple
+ 
+ [Install]
+diff --git a/src/sel_logger.cpp b/src/sel_logger.cpp
+old mode 100644
+new mode 100755
+index 5f330e0..366b843
+--- a/src/sel_logger.cpp
++++ b/src/sel_logger.cpp
+@@ -30,6 +30,24 @@
+ #include <iostream>
+ #include <sstream>
+ 
++static bool clearSelEnable = false;
++
++inline static sdbusplus::bus::match::match startClearSelMonitor(
++    std::shared_ptr<sdbusplus::asio::connection> conn)
++{
++    auto clearSelMatcherCallback = [conn](sdbusplus::message::message &msg)
++    {
++            bool value;
++            msg.read(value);
++            clearSelEnable = value;
++    };
++    sdbusplus::bus::match::match clearSelMatcher(
++        static_cast<sdbusplus::bus::bus &>(*conn),
++        "type='signal',member='ClearSelEvent'",
++        std::move(clearSelMatcherCallback));
++    return clearSelMatcher;
++}
++
+ struct DBusInternalError final : public sdbusplus::exception_t
+ {
+     const char* name() const noexcept override
+@@ -109,6 +127,12 @@ static unsigned int getNewRecordId(void)
+         recordId = selInvalidRecID;
+     }
+ 
++    if(clearSelEnable)
++    {
++        recordId = selInvalidRecID;
++        clearSelEnable = false;
++    }
++
+     if (++recordId >= selInvalidRecID)
+     {
+         recordId = 1;
+@@ -202,6 +226,9 @@ int main(int argc, char* argv[])
+         });
+     ifaceAddSel->initialize();
+ 
++    sdbusplus::bus::match::match clearSelMonitor =
++        startClearSelMonitor(conn);
++
+ #ifdef SEL_LOGGER_MONITOR_THRESHOLD_EVENTS
+     sdbusplus::bus::match::match thresholdAssertMonitor =
+         startThresholdAssertMonitor(conn);
+-- 
+2.7.4
+

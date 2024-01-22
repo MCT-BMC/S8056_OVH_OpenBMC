@@ -1,0 +1,40 @@
+From f27e3f6c91a514267bd36aab44b3d46f7ace4d93 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Wed, 16 Mar 2022 16:37:35 +0800
+Subject: [PATCH 07/24] Update firmware revision format and error handling
+
+Add the detect for firwmare revision
+Using decimal format for BMC firmware revision
+---
+ apphandler.cpp | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/apphandler.cpp b/apphandler.cpp
+index 0adf930..1f0e6b4 100755
+--- a/apphandler.cpp
++++ b/apphandler.cpp
+@@ -519,7 +519,7 @@ int convertVersion(std::string s, Revision& rev)
+         location = token.find_first_of(".-");
+         if (!token.empty())
+         {
+-            commits = std::stoi(token.substr(0, location), 0, 16);
++            commits = std::stoi(token.substr(0, location), 0, 10);
+             rev.d[0] = (commits >> 8) | (commits << 8);
+ 
+             // commit number we skip
+@@ -627,6 +627,12 @@ ipmi::RspType<uint8_t,  // Device ID
+             devId.fw[1] = rev.minor % 10 + (rev.minor / 10) * 16;
+             std::memcpy(&devId.aux, rev.d, 4);
+         }
++
++        if(devId.fw[0] == 0x00 && devId.fw[1] == 0x00)
++        {
++            dev_id_initialized = false;
++            return ipmi::responseCommandNotAvailable();
++        }
+     }
+     if (!dev_id_initialized)
+     {
+-- 
+2.7.4
+

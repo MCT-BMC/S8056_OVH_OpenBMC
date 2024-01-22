@@ -1,0 +1,38 @@
+[
+    {
+        "LineName": "FP_LOCK",
+        "Direction": "Output",
+        "Value":1,
+        "PIN":"GPIOE0"
+    },
+    {
+        "LineName": "PWM_SET_COMPLETE",
+        "Direction": "Output",
+        "Value":0,
+        "PIN":"GPIOV7"
+    },
+    {
+        "LineName": "FM_BMC_READY",
+        "Direction": "Output",
+        "Value":0,
+        "PIN":"GPIOG1"
+    },
+    {
+        "LineName": "BMC_CPU_PRDY_R_N",
+        "Direction": "Output",
+        "Value":0,
+        "PIN":"GPIOY0"
+    },
+    {
+        "LineName": "SPI_MUX_BIOS",
+        "Direction": "Output",
+        "Value":0,
+        "PIN":"GPIOD3"
+    },  
+    {
+        "LineName": "BMC_INIT",
+        "Direction": "Output",
+        "Value":0,
+        "PIN":"GPIOB6"
+    }
+]

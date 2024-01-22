@@ -1,0 +1,68 @@
+{
+    "Exposes": [
+        {
+            "Address": "0x28",
+            "Bus": 0,
+            "Name": "SYS_Air_Inlet_1",
+            "Name1": "SYS_Air_Inlet",
+            "Name2": "SYS_Air_Outlet",
+            "Name3": "MB_Air_Inlet",
+            "HysteresisVal": 3,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Label": "SYS_Air_Inlet_1",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 40,
+                    "Index": 1
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "SYS_Air_Inlet",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 70,
+                    "Index": 2
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "SYS_Air_Outlet",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 70,
+                    "Index": 3
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "MB_Air_Inlet",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 50,
+                    "Index": 4
+                }
+            ],
+            "Type": "TMP75"
+        }
+    ],
+    "Name": "s8056 DCSCM",
+    "Probe": [
+        "xyz.openbmc_project.FruDevice({'BUS' : 1, 'ADDRESS': 80})"
+    ],
+    "Type": "Board",
+    "xyz.openbmc_project.Inventory.Decorator.Asset": {
+        "ChassisType": "$CHASSIS_TYPE",
+        "ChassisPartNumber": "$CHASSIS_PART_NUMBER",
+        "ChassisSerial": "$CHASSIS_SERIAL_NUMBER",
+        "ChassisExtra": "$CHASSIS_INFO_AM1",
+        "BoardMfgDate": "$BOARD_MANUFACTURE_DATE",
+        "BoardMfg": "$BOARD_MANUFACTURER",
+        "BoardProduct": "$BOARD_PRODUCT_NAME",
+        "BoardSerial": "$BOARD_SERIAL_NUMBER",
+        "BoardPartNumber": "$BOARD_PART_NUMBER",
+        "ProductName": "$PRODUCT_PRODUCT_NAME",
+        "ProductPartNumber": "$PRODUCT_PART_NUMBER",
+        "ProductVersion": "$PRODUCT_VERSION",
+        "ProductSerial": "$PRODUCT_SERIAL_NUMBER"
+    }
+}

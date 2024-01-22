@@ -1,0 +1,386 @@
+From 433a1be80cc39138b45c95ec044fb5dec1938c4e Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Wed, 16 Mar 2022 16:17:42 +0800
+Subject: [PATCH 05/24] Implement the DCMI power reading and power limit
+ command
+
+---
+ dcmihandler.cpp | 222 ++++++++++++++++++++++++++++++++++++++++++++++++++++++--
+ dcmihandler.hpp |  37 ++++++++++
+ 2 files changed, 251 insertions(+), 8 deletions(-)
+ mode change 100644 => 100755 dcmihandler.cpp
+ mode change 100644 => 100755 dcmihandler.hpp
+
+diff --git a/dcmihandler.cpp b/dcmihandler.cpp
+old mode 100644
+new mode 100755
+index a7a3bf1..222d00d
+--- a/dcmihandler.cpp
++++ b/dcmihandler.cpp
+@@ -7,6 +7,7 @@
+ #include <bitset>
+ #include <cmath>
+ #include <fstream>
++#include <chrono>
+ #include <ipmid/api.hpp>
+ #include <ipmid/utils.hpp>
+ #include <nlohmann/json.hpp>
+@@ -15,18 +16,32 @@
+ #include <sdbusplus/bus.hpp>
+ #include <variant>
+ #include <xyz/openbmc_project/Common/error.hpp>
++#include <xyz/openbmc_project/Control/Power/Cap/server.hpp>
+ 
+ using namespace phosphor::logging;
+ using InternalFailure =
+     sdbusplus::xyz::openbmc_project::Common::Error::InternalFailure;
++using PowerLimit =
++    sdbusplus::xyz::openbmc_project::Control::Power::server::Cap;
+ 
+ void register_netfn_dcmi_functions() __attribute__((constructor));
+ 
+ constexpr auto PCAP_PATH = "/xyz/openbmc_project/control/host0/power_cap";
+ constexpr auto PCAP_INTERFACE = "xyz.openbmc_project.Control.Power.Cap";
++constexpr auto HOST_TIME_PATH = "/xyz/openbmc_project/time/bmc";
++constexpr auto TIME_INTERFACE = "xyz.openbmc_project.Time.EpochTime";
++constexpr auto POWER_PATH = "/xyz/openbmc_project/DCMI/Power";
++constexpr auto POWER_INTERFACE = "xyz.openbmc_project.DCMI.Value";
+ 
+ constexpr auto POWER_CAP_PROP = "PowerCap";
+ constexpr auto POWER_CAP_ENABLE_PROP = "PowerCapEnable";
++constexpr auto EXCEPTION_ACTION_PROP = "ExceptionAction";
++constexpr auto CORRECTION_TIME_PROP = "CorrectionTime";
++constexpr auto SAMPLING_PERIOD_PROP = "SamplingPeriod";
++constexpr auto PROPERTY_ELAPSED = "Elapsed";
++constexpr auto PERIOD_MAX_VALUE = "PeriodMaxValue";
++constexpr auto PERIOD_MIN_VALUE = "PeriodMinValue";
++constexpr auto PERIOD_AVERAGE_VALUE = "PeriodAverageValue";
+ 
+ constexpr auto DCMI_PARAMETER_REVISION = 2;
+ constexpr auto DCMI_SPEC_MAJOR_VERSION = 1;
+@@ -52,6 +67,10 @@ constexpr auto DHCP_OPT12_ENABLED = "SendHostNameEnabled";
+ constexpr auto SENSOR_VALUE_INTF = "xyz.openbmc_project.Sensor.Value";
+ constexpr auto SENSOR_VALUE_PROP = "Value";
+ 
++constexpr auto exception_action_none = 0x00;
++constexpr auto exception_action_off_and_log = 0x01;
++constexpr auto exception_action_log = 0x11;
++
+ using namespace phosphor::logging;
+ 
+ namespace dcmi
+@@ -111,6 +130,72 @@ bool getPcapEnabled(sdbusplus::bus::bus& bus)
+     return std::get<bool>(pcapEnabled);
+ }
+ 
++uint8_t getAction(sdbusplus::bus::bus& bus)
++{
++    auto settingService = ipmi::getService(bus, PCAP_INTERFACE, PCAP_PATH);
++
++    auto method = bus.new_method_call(settingService.c_str(), PCAP_PATH,
++                                      "org.freedesktop.DBus.Properties", "Get");
++
++    method.append(PCAP_INTERFACE, EXCEPTION_ACTION_PROP);
++    auto reply = bus.call(method);
++
++    if (reply.is_method_error())
++    {
++        log<level::ERR>("Error in getAction prop");
++        elog<InternalFailure>();
++    }
++    std::variant<std::string> result;
++    reply.read(result);
++
++    auto exceptionAction = std::get<std::string>(result);
++    uint8_t convetExceptionAction;
++
++    switch(PowerLimit::convertActionFromString(exceptionAction))
++    {
++        case PowerLimit::Action::None:
++            convetExceptionAction = exception_action_none;
++            break;
++        case PowerLimit::Action::OffAndLog:
++            convetExceptionAction = exception_action_off_and_log;
++            break;
++        case PowerLimit::Action::Log:
++            convetExceptionAction = exception_action_log;
++            break;
++        default:
++            convetExceptionAction = exception_action_none;
++            break;
++    }
++
++    return convetExceptionAction;
++}
++
++uint32_t getTimeStamp(sdbusplus::bus::bus& bus)
++{
++    using namespace std::chrono;
++    auto service = ipmi::getService(bus, TIME_INTERFACE, HOST_TIME_PATH);
++    std::variant<uint64_t> value;
++    uint64_t host_time_usec = 0;
++
++    // Get host time
++    auto method = bus.new_method_call(service.c_str(), HOST_TIME_PATH,
++                                    "org.freedesktop.DBus.Properties", "Get");
++
++    method.append(TIME_INTERFACE, PROPERTY_ELAPSED);
++    auto reply = bus.call(method);
++    if (reply.is_method_error())
++    {
++        log<level::ERR>("Error getting time",
++                        entry("SERVICE=%s", service.c_str()),
++                        entry("PATH=%s", HOST_TIME_PATH));
++        return 0;
++    }
++    reply.read(value);
++    host_time_usec = std::get<uint64_t>(value);
++
++    return duration_cast<seconds>(microseconds(host_time_usec)).count();
++}
++
+ void setPcap(sdbusplus::bus::bus& bus, const uint32_t powerCap)
+ {
+     auto service = ipmi::getService(bus, PCAP_INTERFACE, PCAP_PATH);
+@@ -149,6 +234,80 @@ void setPcapEnable(sdbusplus::bus::bus& bus, bool enabled)
+     }
+ }
+ 
++void setAction(sdbusplus::bus::bus& bus, uint8_t action)
++{
++
++    auto exceptionAction = PowerLimit::Action::None;
++
++    switch(action)
++    {
++        case exception_action_none:
++            exceptionAction = PowerLimit::Action::None;
++            break;
++        case exception_action_off_and_log:
++            exceptionAction = PowerLimit::Action::OffAndLog;
++            break;
++        case exception_action_log:
++            exceptionAction = PowerLimit::Action::Log;
++            break;
++    }
++
++    auto service = ipmi::getService(bus, PCAP_INTERFACE, PCAP_PATH);
++
++    auto method = bus.new_method_call(service.c_str(), PCAP_PATH,
++                                      "org.freedesktop.DBus.Properties", "Set");
++
++    method.append(PCAP_INTERFACE, EXCEPTION_ACTION_PROP);
++    method.append(std::variant<PowerLimit::Action>(exceptionAction));
++
++
++    auto reply = bus.call(method);
++
++    if (reply.is_method_error())
++    {
++        log<level::ERR>("Error in setPcapEnabled property");
++        elog<InternalFailure>();
++    }
++}
++
++void setCorrectionTime(sdbusplus::bus::bus& bus, const uint32_t correctionTime)
++{
++    auto service = ipmi::getService(bus, PCAP_INTERFACE, PCAP_PATH);
++
++    auto method = bus.new_method_call(service.c_str(), PCAP_PATH,
++                                      "org.freedesktop.DBus.Properties", "Set");
++
++    method.append(PCAP_INTERFACE, CORRECTION_TIME_PROP);
++    method.append(std::variant<uint32_t>(correctionTime));
++
++    auto reply = bus.call(method);
++
++    if (reply.is_method_error())
++    {
++        log<level::ERR>("Error in setPcap property");
++        elog<InternalFailure>();
++    }
++}
++
++void setSamplingPeriod(sdbusplus::bus::bus& bus, const uint16_t samplingPeriod)
++{
++    auto service = ipmi::getService(bus, PCAP_INTERFACE, PCAP_PATH);
++
++    auto method = bus.new_method_call(service.c_str(), PCAP_PATH,
++                                      "org.freedesktop.DBus.Properties", "Set");
++
++    method.append(PCAP_INTERFACE, SAMPLING_PERIOD_PROP);
++    method.append(std::variant<uint16_t>(samplingPeriod));
++
++    auto reply = bus.call(method);
++
++    if (reply.is_method_error())
++    {
++        log<level::ERR>("Error in setPcap property");
++        elog<InternalFailure>();
++    }
++}
++
+ void readAssetTagObjectTree(dcmi::assettag::ObjectTree& objectTree)
+ {
+     static constexpr auto mapperBusName = "xyz.openbmc_project.ObjectMapper";
+@@ -316,11 +475,20 @@ ipmi_ret_t getPowerLimit(ipmi_netfn_t netfn, ipmi_cmd_t cmd,
+     sdbusplus::bus::bus sdbus{ipmid_get_sd_bus_connection()};
+     uint32_t pcapValue = 0;
+     bool pcapEnable = false;
++    uint8_t exceptionAction = 0;
++    uint32_t correctionTime = 0;
++    uint16_t samplingPeriod = 0;
+ 
+     try
+     {
+-        pcapValue = dcmi::getPcap(sdbus);
+-        pcapEnable = dcmi::getPcapEnabled(sdbus);
++        auto service = ipmi::getService(sdbus, PCAP_INTERFACE, PCAP_PATH);
++        auto properties = ipmi::getAllDbusProperties(sdbus, service, PCAP_PATH,
++                                                     PCAP_INTERFACE);
++        pcapValue = std::get<uint32_t>(properties[POWER_CAP_PROP]);
++        pcapEnable = std::get<bool>(properties[POWER_CAP_ENABLE_PROP]);
++        exceptionAction = dcmi::getAction(sdbus);
++        correctionTime = std::get<uint32_t>(properties[CORRECTION_TIME_PROP]);
++        samplingPeriod = std::get<uint16_t>(properties[SAMPLING_PERIOD_PROP]);
+     }
+     catch (const InternalFailure& e)
+     {
+@@ -333,10 +501,10 @@ ipmi_ret_t getPowerLimit(ipmi_netfn_t netfn, ipmi_cmd_t cmd,
+      * with the correction time limit is hardcoded to Hard Power Off system
+      * and log event to SEL.
+      */
+-    constexpr auto exception = 0x01;
+-    responseData->exceptionAction = exception;
+-
++    responseData->exceptionAction = exceptionAction;
++    responseData->correctionTime = correctionTime;
+     responseData->powerLimit = static_cast<uint16_t>(pcapValue);
++    responseData->samplingPeriod = samplingPeriod;
+ 
+     /*
+      * Correction time limit and Statistics sampling period is currently not
+@@ -376,6 +544,9 @@ ipmi_ret_t setPowerLimit(ipmi_netfn_t netfn, ipmi_cmd_t cmd,
+     try
+     {
+         dcmi::setPcap(sdbus, requestData->powerLimit);
++        dcmi::setAction(sdbus, requestData->exceptionAction);
++        dcmi::setCorrectionTime(sdbus, requestData->correctionTime);
++        dcmi::setSamplingPeriod(sdbus, requestData->samplingPeriod);
+     }
+     catch (const InternalFailure& e)
+     {
+@@ -1193,15 +1364,50 @@ ipmi_ret_t getPowerReading(ipmi_netfn_t netfn, ipmi_cmd_t cmd,
+         return IPMI_CC_UNSPECIFIED_ERROR;
+     }
+ 
++    bool pcapEnable = false;
++    uint16_t samplingPeriod = 0;
++    uint32_t timeStamp = 0;
++    try
++    {
++        auto service = ipmi::getService(bus, PCAP_INTERFACE, PCAP_PATH);
++        auto properties = ipmi::getAllDbusProperties(bus, service, PCAP_PATH,
++                                                     PCAP_INTERFACE);
++        pcapEnable = std::get<bool>(properties[POWER_CAP_ENABLE_PROP]);
++        samplingPeriod = std::get<uint16_t>(properties[SAMPLING_PERIOD_PROP]);
++        timeStamp = dcmi::getTimeStamp(bus);
++    }
++    catch (InternalFailure& e)
++    {
++        return IPMI_CC_UNSPECIFIED_ERROR;
++    }
++
++    double periodMaxValue,periodMinValue,periodAverageValue;
++    try
++    {
++        auto powerService = ipmi::getService(bus, POWER_INTERFACE, POWER_PATH);
++        auto powerProperties = ipmi::getAllDbusProperties(bus, powerService, POWER_PATH,
++                                                     POWER_INTERFACE);
++        periodMaxValue = std::get<double>(powerProperties[PERIOD_MAX_VALUE]);
++        periodMinValue = std::get<double>(powerProperties[PERIOD_MIN_VALUE]);
++        periodAverageValue = std::get<double>(powerProperties[PERIOD_AVERAGE_VALUE]);
++    }
++    catch (InternalFailure& e)
++    {
++        return IPMI_CC_UNSPECIFIED_ERROR;
++    }
++
+     // TODO: openbmc/openbmc#2819
+     // Minimum, Maximum, Average power, TimeFrame, TimeStamp,
+     // PowerReadingState readings need to be populated
+     // after Telemetry changes.
+     uint16_t totalPower = static_cast<uint16_t>(power);
+     responseData->currentPower = totalPower;
+-    responseData->minimumPower = totalPower;
+-    responseData->maximumPower = totalPower;
+-    responseData->averagePower = totalPower;
++    responseData->minimumPower = periodMinValue;
++    responseData->maximumPower = periodMaxValue;
++    responseData->averagePower = periodAverageValue;
++    responseData->timeStamp = timeStamp;
++    responseData->timeFrame = static_cast<uint32_t>(samplingPeriod*1000);
++    responseData->powerReadingState = pcapEnable << 6;
+ 
+     *data_len = sizeof(*responseData);
+     return rc;
+diff --git a/dcmihandler.hpp b/dcmihandler.hpp
+old mode 100644
+new mode 100755
+index 4f35bc6..795a0d4
+--- a/dcmihandler.hpp
++++ b/dcmihandler.hpp
+@@ -207,6 +207,22 @@ uint32_t getPcap(sdbusplus::bus::bus& bus);
+  */
+ bool getPcapEnabled(sdbusplus::bus::bus& bus);
+ 
++/** @brief Read the power exception action
++ *
++ *  @param [in] bus - dbus connection
++ *
++ *  @return On success return the power exception action.
++ */
++uint8_t getAction(sdbusplus::bus::bus& bus);
++
++/** @brief Read the current timestamp
++ *
++ *  @param [in] bus - dbus connection
++ *
++ *  @return On success return the current timestamp.
++ */
++uint32_t getTimeStamp(sdbusplus::bus::bus& bus);
++
+ /** @struct GetPowerLimitResponse
+  *
+  *  DCMI payload for Get Power Limit command response.
+@@ -250,6 +266,27 @@ struct SetPowerLimitRequest
+  */
+ void setPcapEnable(sdbusplus::bus::bus& bus, bool enabled);
+ 
++/** @brief Set the power exception action
++ *
++ *  @param[in] bus - dbus connection
++ *  @param[in] action - power exception action value
++ */
++void setAction(sdbusplus::bus::bus& bus, uint8_t action);
++
++/** @brief Set the correction time
++ *
++ *  @param[in] bus - dbus connection
++ *  @param[in] correctionTime - correction time value in milliseconds
++ */
++void setCorrectionTime(sdbusplus::bus::bus& bus, const uint32_t correctionTime);
++
++/** @brief Set the sampling period
++ *
++ *  @param[in] bus - dbus connection
++ *  @param[in] samplingPeriod - sampling period value in second
++ */
++void setSamplingPeriod(sdbusplus::bus::bus& bus, const uint16_t samplingPeriod);
++
+ /** @struct ApplyPowerLimitRequest
+  *
+  *  DCMI payload for Activate/Deactivate Power Limit command request.
+-- 
+2.7.4
+

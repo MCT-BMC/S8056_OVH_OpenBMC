@@ -1,0 +1,29 @@
+From d07a8b6d9bb4d23e3d3303aad6be72acafa8a89d Mon Sep 17 00:00:00 2001
+From: Eli Huang <Eli_Huang@wiwynn.com>
+Date: Tue, 10 Nov 2020 14:52:13 +0800
+Subject: [PATCH] Limit setting page in pmbus
+
+---
+ drivers/hwmon/pmbus/pmbus_core.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/hwmon/pmbus/pmbus_core.c b/drivers/hwmon/pmbus/pmbus_core.c
+index 4b058d38fc1d..131460993c73 100644
+--- a/drivers/hwmon/pmbus/pmbus_core.c
++++ b/drivers/hwmon/pmbus/pmbus_core.c
+@@ -153,8 +153,10 @@ int pmbus_set_page(struct i2c_client *client, int page, int phase)
+ 	struct pmbus_data *data = i2c_get_clientdata(client);
+ 	int rv;
+ 
+-	if (page < 0)
+-		return 0;
++	if ((page < 0) || (page > 1 && page < 0xFF))
++	{
++		return 0;
++	}
+ 
+ 	if (!(data->info->func[page] & PMBUS_PAGE_VIRTUAL) &&
+ 	    data->info->pages > 1 && page != data->currpage) {
+-- 
+2.28.0
+

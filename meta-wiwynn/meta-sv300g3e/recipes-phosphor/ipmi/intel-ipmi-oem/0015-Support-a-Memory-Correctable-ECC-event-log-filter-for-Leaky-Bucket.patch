@@ -1,0 +1,70 @@
+From 0e003c711fc4570c05a5a107ba94a0364e03950d Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Fri, 17 Jan 2020 09:55:00 +0800
+Subject: [PATCH] Support a Memory Correctable ECC event log filter for Leaky
+ Bucket
+
+---
+ src/storagecommands.cpp | 36 +++++++++++++++++++++++++++++++++++-
+ 1 file changed, 35 insertions(+), 1 deletion(-)
+
+diff --git a/src/storagecommands.cpp b/src/storagecommands.cpp
+index be6318e..b8a9aac 100644
+--- a/src/storagecommands.cpp
++++ b/src/storagecommands.cpp
+@@ -1054,17 +1054,51 @@ ipmi::RspType<uint16_t, // Next Record ID
+     return ipmi::responseUnspecifiedError();
+ }
+ 
+-static constexpr char const* ipmiSELService =    "xyz.openbmc_project.Logging.IPMI";
++static constexpr char const* ipmiSELService = "xyz.openbmc_project.Logging.IPMI";
+ static constexpr char const* ipmiSELPath = "/xyz/openbmc_project/Logging/IPMI";
+ static constexpr char const* ipmiSELAddInterface = "xyz.openbmc_project.Logging.IPMI";
+ static const std::string ipmiSELAddMessage = "SEL Entry";
+ 
++static constexpr char const* leakyBucketService = "xyz.openbmc_project.LeakyBucket";
++static const std::string dimmObjPathPrefix = "/xyz/openbmc_project/leaky_bucket/dimm_slot/";
++static constexpr char const* eccErrorInterface = "xyz.openbmc_project.DimmEcc.Count";
++
++constexpr static const uint16_t genIdBios = 0x21;
++constexpr static const uint8_t sensorTypeMem = 0x0c;
++constexpr static const uint8_t eventTypeSpecific = 0x6f;
++constexpr static const uint8_t eventDataMemCorrEcc = 0x0;
++
+ ipmi::RspType<uint16_t> ipmiStorageAddSELEntry(
+     uint16_t recordID, uint8_t recordType, uint32_t timestamp,
+     uint16_t generatorID, uint8_t evmRev, uint8_t sensorType, uint8_t sensorNum,
+     uint8_t eventType, uint8_t eventData1, uint8_t eventData2,
+     uint8_t eventData3)
+ {
++    // Filter Memory Correctable Ecc Event
++    if((generatorID == genIdBios) &&
++       (sensorType == sensorTypeMem) &&
++       (eventType == eventTypeSpecific) &&
++       ((eventData1 & 0x0f) == eventDataMemCorrEcc))
++    {
++        std::string dimmObjPath = dimmObjPathPrefix + std::to_string(sensorNum);
++
++        std::shared_ptr<sdbusplus::asio::connection> bus = getSdBus();
++        sdbusplus::message::message addMemEcc = bus->new_method_call(
++        leakyBucketService, dimmObjPath.c_str(), eccErrorInterface, "DimmEccAssert");
++
++        try
++        {
++            auto ret = bus->call(addMemEcc);
++        }
++        catch (sdbusplus::exception_t& e)
++        {
++            std::cerr << "failed to add correctable memory ecc\n";
++        }
++
++        uint16_t resID = 0xFFFF;
++        return ipmi::responseSuccess(resID);
++    }
++
+     // Per the IPMI spec, need to cancel any reservation when a SEL entry is
+     // added
+     cancelSELReservation();
+-- 
+2.24.1
+

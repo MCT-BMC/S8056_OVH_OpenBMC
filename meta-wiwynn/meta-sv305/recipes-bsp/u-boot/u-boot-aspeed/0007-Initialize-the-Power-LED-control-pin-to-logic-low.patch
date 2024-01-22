@@ -1,0 +1,74 @@
+From 5cd4c5d3a7b643900fbddcda5f6d3d468e1e6b2f Mon Sep 17 00:00:00 2001
+From: Eli Huang <Eli_Huang@wiwynn.com>
+Date: Wed, 13 Jan 2021 16:08:01 +0800
+Subject: [PATCH] Initialize the Power LED control pin to logic low
+
+---
+ board/aspeed/ast-g5/ast-g5.c | 37 ++++++++++++++++++++++++++++++++++++
+ 1 file changed, 37 insertions(+)
+
+diff --git a/board/aspeed/ast-g5/ast-g5.c b/board/aspeed/ast-g5/ast-g5.c
+index a6a16c55c0..7c94ecfd85 100644
+--- a/board/aspeed/ast-g5/ast-g5.c
++++ b/board/aspeed/ast-g5/ast-g5.c
+@@ -56,6 +56,9 @@ DECLARE_GLOBAL_DATA_PTR;
+ #define GPIO_EFGH_DIR             0x24
+ #define GPIO_MNOP_DATA            0x78
+ #define GPIO_MNOP_DIR             0x7c
++#define GPIO_QRST_DATA            0x80
++#define GPIO_QRST_DIR             0x84
++#define GPIO_QRST_TOL             0x12c
+ #define BMC_LED_PWR_GRN           31
+ #define BMC_LED_PWR_AMBER         5
+ 
+@@ -245,6 +248,39 @@ void Set_Default_Status_LED()
+     ast_reg32 |= BIT(BMC_LED_PWR_AMBER);
+     *(volatile ulong *) (GPIO_REG_BASE + GPIO_MNOP_DIR) = ast_reg32;
+ }
++ 
++/*--------------------------------------------------------------------
++ * @fn Set_Default_Power_LED
++ * @brief Set the BMC power LED control pin to low (ON) as default.
++ * @brief The power LED would be mainly contrlled by SLP-S5 from PCH.
++ *--------------------------------------------------------------------*/
++void Set_Default_Power_LED()
++{
++    ulong reg_addr = 0;
++    ulong temp = 0;
++
++    /* Set GPIOS2 (Power) to O(L) - ON
++     */
++
++    // Data
++    reg_addr = GPIO_REG_BASE + GPIO_QRST_DATA;
++    temp = *((volatile ulong *) reg_addr);
++    temp &= ~(0x00040000);  // GPIOS2 (Power) to low
++    *((volatile ulong *) reg_addr) = temp;
++
++    // Direction
++    reg_addr = GPIO_REG_BASE + GPIO_QRST_DIR;
++    temp = *((volatile ulong *) reg_addr);
++    temp |= 0x00040000;     // GPIOS2 (Power) to output
++    *((volatile ulong *) reg_addr) = temp;
++
++    // Tolerance
++    reg_addr = GPIO_REG_BASE + GPIO_QRST_TOL;
++    temp = *((volatile ulong *) reg_addr);
++    temp |= 0x00040000;     // GPIOS2 (Power) to output be tolerance
++    *((volatile ulong *) reg_addr) = temp;
++}
++
+ 
+ int board_init(void)
+ {
+@@ -256,6 +292,7 @@ int board_init(void)
+ 	Set_Default_UART_Route();
+ 	SCU_Init();
+         Set_Default_Status_LED();
++        Set_Default_Power_LED();
+ 
+ 	return 0;
+ }
+-- 
+2.28.0
+

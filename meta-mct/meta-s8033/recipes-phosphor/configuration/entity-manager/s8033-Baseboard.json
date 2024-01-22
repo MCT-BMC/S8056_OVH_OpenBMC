@@ -1,0 +1,836 @@
+{
+    "Exposes": [
+        {
+            "Address": "0x4c",
+            "Bus": 0,
+            "Name": "CPU_Temp",
+            "Name1": "CPU_DTS_Margin",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Label": "CPU_Temp",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 95,
+                    "Index": 1
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "CPU_DTS_Margin",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 0,
+                    "Index": 2
+                }
+            ],
+            "Type": "TMP75"
+        },
+        {
+            "Class": "MUX",
+            "Name": "PCA9544",
+            "Bus": 7,
+            "Address": "0x70",
+            "DimmSlotNum": 16,
+            "DimmGroupCounter": 1,
+            "DelayTime": 0,
+            "PowerState": "On",
+            "Name0": "P0_UMC0_CH_A0",
+            "Name1": "P0_UMC0_CH_A1",
+            "Name2": "P0_UMC1_CH_B0",
+            "Name3": "P0_UMC1_CH_B1",
+            "Name4": "P0_UMC3_CH_C0",
+            "Name5": "P0_UMC3_CH_C1",
+            "Name6": "P0_UMC2_CH_D0",
+            "Name7": "P0_UMC2_CH_D1",
+            "Name8": "P0_UMC6_CH_E0",
+            "Name9": "P0_UMC6_CH_E1",
+            "Name10": "P0_UMC7_CH_F0",
+            "Name11": "P0_UMC7_CH_F1",
+            "Name12": "P0_UMC5_CH_G0",
+            "Name13": "P0_UMC5_CH_G1",
+            "Name14": "P0_UMC4_CH_H0",
+            "Name15": "P0_UMC4_CH_H1",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 85
+                }
+            ],
+            "Type": "DIMMTempSensor"
+        },
+        {
+            "Address": "0x28",
+            "Bus": 5,
+            "Name": "SYS_Air_Inlet",
+            "Name1": "SYS_Air_Outlet_2",
+            "Name2": "SYS_Air_Outlet_1",
+            "Name3": "MB_Air_Inlet",
+            "HysteresisVal": 3,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Label": "SYS_Air_Inlet",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 40,
+                    "Index": 1
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "SYS_Air_Outlet_2",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 70,
+                    "Index": 2
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "SYS_Air_Outlet_1",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 70,
+                    "Index": 3
+                },
+                {
+                    "Direction": "greater than",
+                    "Label": "MB_Air_Inlet",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 50,
+                    "Index": 4
+                }
+            ],
+            "Type": "TMP75"
+        },
+        {
+            "Index": 0,
+            "Name": "P5V_AUX",
+            "PowerState": "Always",
+            "ScaleFactor": 0.2722,
+            "MaxReading": 10,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 5.518
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 4.488
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 1,
+            "Name": "P3V3_AUX",
+            "PowerState": "Always",
+            "ScaleFactor": 0.4112,
+            "MaxReading": 5,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 3.584
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 2.697
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 2,
+            "Name": "P12V",
+            "PowerState": "On",
+            "ScaleFactor": 0.113,
+            "MaxReading": 20,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 12.978
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 10.458
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 3,
+            "Name": "P5V",
+            "PowerState": "On",
+            "ScaleFactor": 0.2722,
+            "MaxReading": 10,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 5.518
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 4.488
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 4,
+            "Name": "P3V3",
+            "PowerState": "On",
+            "ScaleFactor": 0.4112,
+            "MaxReading": 5,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 3.584
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 2.697
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 5,
+            "Name": "PVPP_ABCD",
+            "PowerState": "On",
+            "ScaleFactor": 0.5360,
+            "MaxReading": 5,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 2.808
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 2.197
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 6,
+            "Name": "PVPP_EFGH",
+            "PowerState": "On",
+            "ScaleFactor": 0.5360,
+            "MaxReading": 5,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 2.808
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 2.197
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 7,
+            "Name": "P1V8_AUX",
+            "PowerState": "Always",
+            "ScaleFactor": 0.75,
+            "MaxReading": 3,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 1.993
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 1.495
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 8,
+            "Name": "P1V8",
+            "PowerState": "On",
+            "ScaleFactor": 0.75,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 1.993
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 1.495
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 9,
+            "Name": "PVDDCR_CPU",
+            "PowerState": "On",
+            "ScaleFactor": 1,
+            "MaxReading": 3,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 1.430
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 0.551
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 10,
+            "Name": "PVDDCR_SOC",
+            "PowerState": "On",
+            "ScaleFactor": 1,
+            "MaxReading": 3,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 1.170
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 0.560
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 11,
+            "Name": "PVDDCR_SOC_AUX",
+            "PowerState": "Always",
+            "ScaleFactor": 1,
+            "MaxReading": 2,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 0.990
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 0.810
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 12,
+            "Name": "PVDDIO_ABCD",
+            "PowerState": "On",
+            "ScaleFactor": 1,
+            "MaxReading": 3,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 1.320
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 1.080
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Index": 13,
+            "Name": "PVDDIO_EFGH",
+            "PowerState": "On",
+            "ScaleFactor": 1,
+            "MaxReading": 3,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 1.320
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 1.080
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "BridgeGpio": [
+                {
+                    "Name": "BAT_MON",
+                    "Polarity": "Low"
+                }
+            ],
+            "Index": 15,
+            "Name": "RTC_BAT",
+            "PowerState": "Always",
+            "ScaleFactor": 0.3333,
+            "MaxReading": 5,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 3.482
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 2.3
+                }
+            ],
+            "Type": "ADC"
+        },
+        {
+            "Connector": {
+                "Name": "CPU Fan Connector 1",
+                "Pwm": 1,
+                "PwmName": "SYS_PWM_5",
+                "Tachs": [
+                    1
+                ]
+            },
+            "Index": 1,
+            "Name": "SYS_FAN_5",
+            "PowerState": "On",
+            "PresenceSensorName": "FAN5_PRESENT",
+            "Thresholds": [
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 100
+                }
+            ],
+            "Type": "AspeedFan"
+        },
+        {
+            "Connector": {
+                "Name": "Sys FAN Connector 2",
+                "Pwm": 2,
+                "PwmName": "SYS_PWM_4",
+                "Tachs": [
+                    2
+                ]
+            },
+            "Index": 2,
+            "Name": "SYS_FAN_4",
+            "PowerState": "On",
+            "PresenceSensorName": "FAN4_PRESENT",
+            "Thresholds": [
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 100
+                }
+            ],
+            "Type": "AspeedFan"
+        },
+        {
+            "Connector": {
+                "Name": "Sys FAN Connector 5",
+                "Pwm": 3,
+                "PwmName": "SYS_PWM_3",
+                "Tachs": [
+                    5
+                ]
+            },
+            "Index": 5,
+            "Name": "SYS_FAN_3",
+            "PowerState": "On",
+            "PresenceSensorName": "FAN3_PRESENT",
+            "Thresholds": [
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 100
+                }
+            ],
+            "Type": "AspeedFan"
+        },
+        {
+            "Connector": {
+                "Name": "Sys FAN Connector 6",
+                "Pwm": 4,
+                "PwmName": "SYS_PWM_2",
+                "Tachs": [
+                    6
+                ]
+            },
+            "Index": 6,
+            "Name": "SYS_FAN_2",
+            "PowerState": "Always",
+            "PresenceSensorName": "FAN2_PRESENT",
+            "Thresholds": [
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 100
+                }
+            ],
+            "Type": "AspeedFan"
+        },
+        {
+            "Connector": {
+                "Name": "Sys FAN Connector 7",
+                "Pwm": 5,
+                "PwmName": "SYS_PWM_1",
+                "Tachs": [
+                    7
+                ]
+            },
+            "Index": 7,
+            "Name": "SYS_FAN_1",
+            "PowerState": "Always",
+            "PresenceSensorName": "FAN1_PRESENT",
+            "Thresholds": [
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 100
+                }
+            ],
+            "Type": "AspeedFan"
+        },
+        {
+            "Address": "0x60",
+            "Bus": 4,
+            "Reg": "0x8e",
+            "Class": "MOSTemp",
+            "Name": "CPU_CORE_MOSFET",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 125
+                }
+            ],
+            "Type": "MOSTempSensor"
+        },
+        {
+            "Address": "0x61",
+            "Bus": 4,
+            "Reg": "0x8d",
+            "Class": "MOSTemp",
+            "Name": "CPU_SOC_MOSFET",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 125
+                }
+            ],
+            "Type": "MOSTempSensor"
+        },
+        {
+            "Address": "0x63",
+            "Bus": 4,
+            "Reg": "0x8d",
+            "Class": "MOSTemp",
+            "Name": "DIMM_MOSFET_1",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 110
+                }
+            ],
+            "Type": "MOSTempSensor"
+        },
+        {
+            "Address": "0x64",
+            "Bus": 4,
+            "Reg": "0x8d",
+            "Class": "MOSTemp",
+            "Name": "DIMM_MOSFET_2",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 110
+                }
+            ],
+            "Type": "MOSTempSensor"
+        },
+        {
+            "Name": "Pattern",
+            "MaxSensor": "4",
+            "MaxValue": "255",
+            "MinValue": "0",
+            "Type": "SolPatternSensor"
+        },
+        {
+            "Name": "FAN1_PRESENT",
+            "GpioName": "FAN_PRESENT7",
+            "Path": "fan_present",
+            "Polarity": "HIGH",
+            "EventMon": "NULL",
+            "PowerState": "Always",
+            "Type": "FanPresenceSensor"
+        },
+        {
+            "Name": "FAN2_PRESENT",
+            "GpioName": "FAN_PRESENT6",
+            "Path": "fan_present",
+            "Polarity": "HIGH",
+            "EventMon": "NULL",
+            "PowerState": "Always",
+            "Type": "FanPresenceSensor"
+        },
+        {
+            "Name": "FAN3_PRESENT",
+            "GpioName": "FAN_PRESENT5",
+            "Path": "fan_present",
+            "Polarity": "HIGH",
+            "EventMon": "NULL",
+            "PowerState": "Always",
+            "Type": "FanPresenceSensor"
+        },
+        {
+            "Name": "FAN4_PRESENT",
+            "GpioName": "FAN_PRESENT2",
+            "Path": "fan_present",
+            "Polarity": "HIGH",
+            "EventMon": "NULL",
+            "PowerState": "Always",
+            "Type": "FanPresenceSensor"
+        },
+        {
+            "Name": "FAN5_PRESENT",
+            "GpioName": "FAN_PRESENT1",
+            "Path": "fan_present",
+            "Polarity": "HIGH",
+            "EventMon": "NULL",
+            "PowerState": "Always",
+            "Type": "FanPresenceSensor"
+        },
+        {
+            "Address": "0x53",
+            "Bus": "18",
+            "Name": "NVME1 FRU",
+            "Type": "EEPROM"
+        },
+        {
+            "Address": "0x6A",
+            "Bus": "18",
+            "Name": "NVME1 Temp",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 80
+                }
+            ],
+            "Type": "I2cNVMe"
+        },
+        {
+            "Address": "0x53",
+            "Bus": "19",
+            "Name": "NVME2 FRU",
+            "Type": "EEPROM"
+        },
+        {
+            "Address": "0x6A",
+            "Bus": "19",
+            "Name": "NVME2 Temp",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 80
+                }
+            ],
+            "Type": "I2cNVMe"
+        },
+        {
+            "Address": "0x53",
+            "Bus": "20",
+            "Name": "NVME3 FRU",
+            "Type": "EEPROM"
+        },
+        {
+            "Address": "0x6A",
+            "Bus": "20",
+            "Name": "NVME3 Temp",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 80
+                }
+            ],
+            "Type": "I2cNVMe"
+        },
+        {
+            "Address": "0x53",
+            "Bus": "21",
+            "Name": "NVME4 FRU",
+            "Type": "EEPROM"
+        },
+        {
+            "Address": "0x6A",
+            "Bus": "21",
+            "Name": "NVME4 Temp",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 80
+                }
+            ],
+            "Type": "I2cNVMe"
+        },
+        {
+            "Name": "NIC_Temp",
+            "Bus": 5,
+            "Address": "0x1F",
+            "Command": "0x01",
+            "SensorType": "temp",
+            "Mode": "Byte",
+            "MaxReading": 255,
+            "MinReading": 0,
+            "Type": "NIC",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 102
+                }
+            ]
+        },
+        {
+            "Name": "SYSTEM_POWER",
+            "sensorUnit": "power",
+            "MaxReading": 1000,
+            "MinReading": 0,
+            "PullTime": 1,
+            "Type": "Virtual",
+            "Class": "sysfs",
+            "parameter0": "/sys/bus/i2c/drivers/adm1275/3-0010/hwmon/hwmon*/power1_input",
+            "sensorUnit0": "power",
+            "scaleFactor0" : 1000000,
+            "parameter1": "/sys/bus/i2c/drivers/pmbus/3-0058/hwmon/hwmon*/power1_input",
+            "sensorUnit1": "power",
+            "scaleFactor1": 1000000,
+            "parameter2": "/sys/bus/i2c/drivers/pmbus/3-0059/hwmon/hwmon*/power1_input",
+            "sensorUnit2": "power",
+            "scaleFactor2": 1000000,
+            "expression0" : "+",
+            "expression1" : "+"
+        },
+        {
+            "Address": "0x53",
+            "Bus": "22",
+            "Name": "M2 FRU",
+            "Type": "EEPROM"
+        },
+        {
+            "Address": "0x6A",
+            "Bus": "22",
+            "Name": "M2 Temp",
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 77
+                }
+            ],
+            "Type": "I2cNVMe"
+        }
+    ],
+    "Name": "s8033 Baseboard",
+    "Probe": [
+        "xyz.openbmc_project.FruDevice({'BUS' : 2})",
+        "AND",
+        "xyz.openbmc_project.FruDevice({'ADDRESS': 80})",
+        "MATCH_ONE"
+    ],
+    "Type": "Board",
+    "xyz.openbmc_project.Inventory.Decorator.Asset": {
+        "ChassisType": "$CHASSIS_TYPE",
+        "ChassisPartNumber": "$CHASSIS_PART_NUMBER",
+        "ChassisSerial": "$CHASSIS_SERIAL_NUMBER",
+        "ChassisExtra": "$CHASSIS_INFO_AM1",
+        "BoardMfgDate": "$BOARD_MANUFACTURE_DATE",
+        "BoardMfg": "$BOARD_MANUFACTURER",
+        "BoardProduct": "$BOARD_PRODUCT_NAME",
+        "BoardSerial": "$BOARD_SERIAL_NUMBER",
+        "BoardPartNumber": "$BOARD_PART_NUMBER",
+        "ProductName": "$PRODUCT_PRODUCT_NAME",
+        "ProductPartNumber": "$PRODUCT_PART_NUMBER",
+        "ProductVersion": "$PRODUCT_VERSION",
+        "ProductSerial": "$PRODUCT_SERIAL_NUMBER"
+    }
+}

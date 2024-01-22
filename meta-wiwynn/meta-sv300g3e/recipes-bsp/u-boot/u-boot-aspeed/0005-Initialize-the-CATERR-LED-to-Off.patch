@@ -1,0 +1,66 @@
+From f542282acf60d2effd296dd3c301b7fd49ae4d76 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Fri, 24 Apr 2020 13:32:34 +0800
+Subject: [PATCH] Initialize the CATERR LED to Off
+
+---
+ board/aspeed/ast-g5/ast-g5.c | 29 +++++++++++++++++++++++++++++
+ 1 file changed, 29 insertions(+)
+
+diff --git a/board/aspeed/ast-g5/ast-g5.c b/board/aspeed/ast-g5/ast-g5.c
+index 88bb86cfd8..4ef33e333f 100644
+--- a/board/aspeed/ast-g5/ast-g5.c
++++ b/board/aspeed/ast-g5/ast-g5.c
+@@ -44,6 +44,8 @@ DECLARE_GLOBAL_DATA_PTR;
+ #define HOST_INTERFACE_CTL_5      0x80
+ 
+ #define GPIO_REG_BASE             0x1e780000
++#define GPIO_EFGH_DATA            0x020
++#define GPIO_EFGH_DIR             0x024
+ #define GPIO_YZAAAB_DATA          0x1e0
+ #define GPIO_YZAAAB_DIR           0x1e4
+ 
+@@ -208,6 +210,32 @@ void Set_Default_Status_LED()
+     *((volatile ulong *) reg_addr) = temp;
+ }
+ 
++/*--------------------------------------------------------------------
++ * @fn Set_Default_Caterr_LED
++ * @brief Set the Caterr LED to OFF as default
++ *
++ *--------------------------------------------------------------------*/
++void Set_Default_Caterr_LED()
++{
++    ulong reg_addr = 0;
++    ulong temp = 0;
++
++    /* Set GPIOF6 (Caterr) to O(H) - OFF
++     */
++
++    // Data
++    reg_addr = GPIO_REG_BASE + GPIO_EFGH_DATA;
++    temp = *((volatile ulong *) reg_addr);
++    temp |= 0x00004000;     // GPIOF6 (Caterr) to high
++    *((volatile ulong *) reg_addr) = temp;
++
++    // Direction
++    reg_addr = GPIO_REG_BASE + GPIO_EFGH_DIR;
++    temp = *((volatile ulong *) reg_addr);
++    temp |= 0x00004000;     // GPIOF6 (Caterr)
++    *((volatile ulong *) reg_addr) = temp;
++}
++
+ int board_init(void)
+ {
+ 	gd->bd->bi_boot_params = CONFIG_SYS_SDRAM_BASE + 0x100;
+@@ -217,6 +245,7 @@ int board_init(void)
+     Set_Default_Fan_PWM(DEFAULT_PWM);
+     Set_Default_UART_Route();
+     Set_Default_Status_LED();
++    Set_Default_Caterr_LED();
+ 
+ 	return 0;
+ }
+-- 
+2.24.1
+

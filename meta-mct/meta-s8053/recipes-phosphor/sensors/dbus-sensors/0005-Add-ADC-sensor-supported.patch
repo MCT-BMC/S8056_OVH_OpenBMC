@@ -1,0 +1,219 @@
+From e6175425ddca3cd7dba2160eae3a4cd05676bb14 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Wed, 23 Mar 2022 10:34:00 +0800
+Subject: [PATCH] Add ADC sensor supported
+
+[PATCH] Add-ADC-sensor-supported
+[PATCH] Update ADC boundary retry for monitoring upper critical
+---
+ include/ADCSensor.hpp |  8 ++++++--
+ src/ADCSensor.cpp     | 52 ++++++++++++++++++++++++++++++++++++++++++++-------
+ src/ADCSensorMain.cpp | 15 +++++++++++----
+ 3 files changed, 62 insertions(+), 13 deletions(-)
+ mode change 100644 => 100755 include/ADCSensor.hpp
+ mode change 100644 => 100755 src/ADCSensor.cpp
+ mode change 100644 => 100755 src/ADCSensorMain.cpp
+
+diff --git a/include/ADCSensor.hpp b/include/ADCSensor.hpp
+old mode 100644
+new mode 100755
+index 9d2369b..a599add
+--- a/include/ADCSensor.hpp
++++ b/include/ADCSensor.hpp
+@@ -72,20 +72,24 @@ class ADCSensor : public Sensor, public std::enable_shared_from_this<ADCSensor>
+               std::vector<thresholds::Threshold>&& thresholds,
+               const double scaleFactor, const float pollRate,
+               PowerState readState, const std::string& sensorConfiguration,
+-              std::optional<BridgeGpio>&& bridgeGpio);
++              std::optional<BridgeGpio>&& bridgeGpio,
++              const std::pair<size_t, size_t>& limits);
+     ~ADCSensor() override;
+     void setupRead(void);
+ 
+   private:
+     sdbusplus::asio::object_server& objServer;
+     boost::asio::posix::stream_descriptor inputDev;
+-    boost::asio::deadline_timer waitTimer;
++    boost::asio::steady_timer waitTimer;
+     std::shared_ptr<boost::asio::streambuf> readBuf;
+     std::string path;
+     double scaleFactor;
+     unsigned int sensorPollMs;
+     std::optional<BridgeGpio> bridgeGpio;
+     thresholds::ThresholdTimer thresholdTimer;
++    PowerState readState;
++    int retry;
++    double upperCritical;
+     void handleResponse(const boost::system::error_code& err);
+     void checkThresholds(void) override;
+ };
+diff --git a/src/ADCSensor.cpp b/src/ADCSensor.cpp
+old mode 100644
+new mode 100755
+index a8287b4..70616f3
+--- a/src/ADCSensor.cpp
++++ b/src/ADCSensor.cpp
+@@ -40,6 +40,8 @@ static constexpr double roundFactor = 10000;     // 3 decimal places
+ static constexpr double maxVoltageReading = 1.8; // pre sensor scaling
+ static constexpr double minVoltageReading = 0;
+ 
++static constexpr uint8_t MAX_UC_RETRY = 3;
++
+ ADCSensor::ADCSensor(const std::string& path,
+                      sdbusplus::asio::object_server& objectServer,
+                      std::shared_ptr<sdbusplus::asio::connection>& conn,
+@@ -48,15 +50,16 @@ ADCSensor::ADCSensor(const std::string& path,
+                      const double scaleFactor, const float pollRate,
+                      PowerState readState,
+                      const std::string& sensorConfiguration,
+-                     std::optional<BridgeGpio>&& bridgeGpio) :
++                     std::optional<BridgeGpio>&& bridgeGpio,
++                     const std::pair<size_t, size_t>& limits) :
+     Sensor(escapeName(sensorName), std::move(thresholdsIn), sensorConfiguration,
+            "xyz.openbmc_project.Configuration.ADC", false, false,
+-           maxVoltageReading / scaleFactor, minVoltageReading / scaleFactor,
++           limits.second, limits.first,
+            conn, readState),
+     std::enable_shared_from_this<ADCSensor>(), objServer(objectServer),
+     inputDev(io), waitTimer(io), path(path), scaleFactor(scaleFactor),
+     sensorPollMs(static_cast<unsigned int>(pollRate * 1000)),
+-    bridgeGpio(std::move(bridgeGpio)), thresholdTimer(io)
++    bridgeGpio(std::move(bridgeGpio)), thresholdTimer(io), readState(readState), retry(0)
+ {
+     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
+     int fd = open(path.c_str(), O_RDONLY);
+@@ -80,6 +83,18 @@ ADCSensor::ADCSensor(const std::string& path,
+     association = objectServer.add_interface(
+         "/xyz/openbmc_project/sensors/voltage/" + name, association::interface);
+     setInitialProperties(sensor_paths::unitVolts);
++
++    upperCritical = std::numeric_limits<double>::max();
++    for (const auto& threshold : thresholds)
++    {
++        if(threshold.level == thresholds::Level::CRITICAL &&
++           threshold.direction == thresholds::Direction::HIGH)
++        {
++            upperCritical = threshold.value;
++            break;
++        }
++
++    }
+ }
+ 
+ ADCSensor::~ADCSensor()
+@@ -111,7 +126,7 @@ void ADCSensor::setupRead(void)
+         // value. Guarantee that the HW signal can be stable, the HW signal
+         // could be instability.
+         waitTimer.expires_from_now(
+-            boost::posix_time::milliseconds(bridgeGpio->setupTimeMs));
++            boost::asio::chrono::milliseconds(bridgeGpio->setupTimeMs));
+         waitTimer.async_wait(
+             [weakRef, buffer](const boost::system::error_code& ec) {
+                 std::shared_ptr<ADCSensor> self = weakRef.lock();
+@@ -173,7 +188,23 @@ void ADCSensor::handleResponse(const boost::system::error_code& err)
+             rawValue = std::stod(response);
+             double nvalue = (rawValue / sensorScaleFactor) / scaleFactor;
+             nvalue = std::round(nvalue * roundFactor) / roundFactor;
+-            updateValue(nvalue);
++            //debug only: need to investigate driver if any data exceed upper critical reported
++            if (nvalue >= upperCritical)
++            {
++                if(retry < MAX_UC_RETRY)
++                {
++                    std::cerr << name << " sensor reading UC for " << retry << " times, rawValue:" << rawValue << std::endl;
++                    retry++;
++                }
++            }
++            else{
++                retry = 0;
++            }
++
++            if ((nvalue < upperCritical) || (retry >= MAX_UC_RETRY))
++            {
++                updateValue(nvalue);
++            }
+         }
+         catch (const std::invalid_argument&)
+         {
+@@ -200,7 +231,7 @@ void ADCSensor::handleResponse(const boost::system::error_code& err)
+         return; // we're no longer valid
+     }
+     inputDev.assign(fd);
+-    waitTimer.expires_from_now(boost::posix_time::milliseconds(sensorPollMs));
++    waitTimer.expires_from_now(boost::asio::chrono::milliseconds(sensorPollMs));
+     waitTimer.async_wait([weakRef](const boost::system::error_code& ec) {
+         std::shared_ptr<ADCSensor> self = weakRef.lock();
+         if (ec == boost::asio::error::operation_aborted)
+@@ -234,5 +265,12 @@ void ADCSensor::checkThresholds(void)
+         return;
+     }
+ 
+-    thresholds::checkThresholdsPowerDelay(weak_from_this(), thresholdTimer);
++    if(readState == PowerState::always)
++    {
++        thresholds::checkThresholds(this);
++    }
++    else
++    {
++        thresholds::checkThresholdsPowerDelay(weak_from_this(), thresholdTimer);
++    }
+ }
+diff --git a/src/ADCSensorMain.cpp b/src/ADCSensorMain.cpp
+old mode 100644
+new mode 100755
+index fd61680..1560805
+--- a/src/ADCSensorMain.cpp
++++ b/src/ADCSensorMain.cpp
+@@ -253,6 +253,13 @@ void createSensors(
+                     }
+                 }
+ 
++                constexpr double defaultMaxReading = 20;
++                constexpr double defaultMinReading = 0;
++                auto limits =
++                std::make_pair(defaultMinReading, defaultMaxReading);
++
++                findLimits(limits, baseConfiguration);
++
+                 auto& sensor = sensors[sensorName];
+                 sensor = nullptr;
+ 
+@@ -301,7 +308,7 @@ void createSensors(
+                 sensor = std::make_shared<ADCSensor>(
+                     path.string(), objectServer, dbusConnection, io, sensorName,
+                     std::move(sensorThresholds), scaleFactor, pollRate,
+-                    readState, *interfacePath, std::move(bridgeGpio));
++                    readState, *interfacePath, std::move(bridgeGpio), limits);
+                 sensor->setupRead();
+             }
+         });
+@@ -325,7 +332,7 @@ int main()
+         createSensors(io, objectServer, sensors, systemBus, nullptr);
+     });
+ 
+-    boost::asio::deadline_timer filterTimer(io);
++    boost::asio::steady_timer filterTimer(io);
+     std::function<void(sdbusplus::message::message&)> eventHandler =
+         [&](sdbusplus::message::message& message) {
+             if (message.is_method_error())
+@@ -335,7 +342,7 @@ int main()
+             }
+             sensorsChanged->insert(message.get_path());
+             // this implicitly cancels the timer
+-            filterTimer.expires_from_now(boost::posix_time::seconds(1));
++            filterTimer.expires_from_now(boost::asio::chrono::seconds(1));
+ 
+             filterTimer.async_wait([&](const boost::system::error_code& ec) {
+                 if (ec == boost::asio::error::operation_aborted)
+@@ -383,7 +390,7 @@ int main()
+             }
+ 
+             // this implicitly cancels the timer
+-            filterTimer.expires_from_now(boost::posix_time::seconds(1));
++            filterTimer.expires_from_now(boost::asio::chrono::seconds(1));
+ 
+             filterTimer.async_wait([&](const boost::system::error_code& ec) {
+                 if (ec == boost::asio::error::operation_aborted)
+-- 
+2.7.4
+

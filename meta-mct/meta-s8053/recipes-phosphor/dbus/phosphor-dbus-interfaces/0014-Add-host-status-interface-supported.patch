@@ -1,0 +1,76 @@
+From 314397ef36ac0d9c8e3c887f289991acd9ae1ea4 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Tue, 8 Feb 2022 14:18:22 +0800
+Subject: [PATCH] Add host status interface supported
+
+---
+ gen/xyz/openbmc_project/OEM/HostStatus/meson.build | 13 +++++++++++++
+ gen/xyz/openbmc_project/OEM/meson.build            | 15 +++++++++++++++
+ xyz/openbmc_project/OEM/HostStatus.interface.yaml  |  9 +++++++++
+ 3 files changed, 37 insertions(+)
+ create mode 100755 gen/xyz/openbmc_project/OEM/HostStatus/meson.build
+ create mode 100755 xyz/openbmc_project/OEM/HostStatus.interface.yaml
+
+diff --git a/gen/xyz/openbmc_project/OEM/HostStatus/meson.build b/gen/xyz/openbmc_project/OEM/HostStatus/meson.build
+new file mode 100755
+index 0000000..8e3df91
+--- /dev/null
++++ b/gen/xyz/openbmc_project/OEM/HostStatus/meson.build
+@@ -0,0 +1,13 @@
++# Generated file; do not modify.
++generated_sources += custom_target(
++    'xyz/openbmc_project/OEM/HostStatus__cpp'.underscorify(),
++    input: [ meson.source_root() / 'xyz/openbmc_project/OEM/HostStatus.interface.yaml',  ],
++    output: [ 'server.cpp', 'server.hpp', 'client.hpp',  ],
++    command: [
++        sdbuspp_gen_meson_prog, '--command', 'cpp',
++        '--output', meson.current_build_dir(),
++        '--tool', sdbusplusplus_prog,
++        '--directory', meson.source_root(),
++        'xyz/openbmc_project/OEM/HostStatus',
++    ],
++)
+diff --git a/gen/xyz/openbmc_project/OEM/meson.build b/gen/xyz/openbmc_project/OEM/meson.build
+index 0e68c2d..c94cba7 100755
+--- a/gen/xyz/openbmc_project/OEM/meson.build
++++ b/gen/xyz/openbmc_project/OEM/meson.build
+@@ -42,4 +42,19 @@ generated_others += custom_target(
+         'xyz/openbmc_project/OEM/SystmeInfo',
+     ],
+     build_by_default: true,
++)
++
++subdir('HostStatus')
++generated_others += custom_target(
++    'xyz/openbmc_project/OEM/HostStatus__markdown'.underscorify(),
++    input: [ meson.source_root() / 'xyz/openbmc_project/OEM/HostStatus.interface.yaml',  ],
++    output: [ 'HostStatus.md' ],
++    command: [
++        sdbuspp_gen_meson_prog, '--command', 'markdown',
++        '--output', meson.current_build_dir(),
++        '--tool', sdbusplusplus_prog,
++        '--directory', meson.source_root(),
++        'xyz/openbmc_project/OEM/HostStatus',
++    ],
++    build_by_default: true,
+ )
+\ No newline at end of file
+diff --git a/xyz/openbmc_project/OEM/HostStatus.interface.yaml b/xyz/openbmc_project/OEM/HostStatus.interface.yaml
+new file mode 100755
+index 0000000..a7b8efb
+--- /dev/null
++++ b/xyz/openbmc_project/OEM/HostStatus.interface.yaml
+@@ -0,0 +1,9 @@
++description: >
++    Implement to provide status for host attributes.
++
++properties:
++    - name: AmdMbistStatus
++      type: uint32
++      description: >
++         Setting of AMD memory BIST test
++# vim: tabstop=8 expandtab shiftwidth=4 softtabstop=4
+\ No newline at end of file
+-- 
+2.7.4
+

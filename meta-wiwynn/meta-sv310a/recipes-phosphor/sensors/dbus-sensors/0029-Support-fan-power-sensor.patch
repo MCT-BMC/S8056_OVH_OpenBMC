@@ -1,0 +1,516 @@
+From da18a45418b667b943b15305cf5ea1067325365c Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Tue, 9 Nov 2021 10:25:35 +0800
+Subject: [PATCH] Support fan power sensor
+
+%% original patch: 0029-Support-fan-power-sensor.patch
+---
+ include/{NICSensor.hpp => I2CSensor.hpp}      |  21 +++-
+ meson_options.txt                             |   2 +-
+ service_files/meson.build                     |   2 +-
+ ... => xyz.openbmc_project.i2csensor.service} |   4 +-
+ src/{NICSensor.cpp => I2CSensor.cpp}          | 112 ++++++++++++++----
+ src/{NICSensorMain.cpp => I2CSensorMain.cpp}  |  77 +++++++++---
+ src/meson.build                               |   8 +-
+ 7 files changed, 171 insertions(+), 55 deletions(-)
+ rename include/{NICSensor.hpp => I2CSensor.hpp} (67%)
+ rename service_files/{xyz.openbmc_project.nicsensor.service => xyz.openbmc_project.i2csensor.service} (83%)
+ rename src/{NICSensor.cpp => I2CSensor.cpp} (58%)
+ rename src/{NICSensorMain.cpp => I2CSensorMain.cpp} (75%)
+
+diff --git a/include/NICSensor.hpp b/include/I2CSensor.hpp
+similarity index 67%
+rename from include/NICSensor.hpp
+rename to include/I2CSensor.hpp
+index fbf0931..eb24b6d 100644
+--- a/include/NICSensor.hpp
++++ b/include/I2CSensor.hpp
+@@ -7,13 +7,14 @@
+ 
+ enum class ReadMode
+ {
+-    READ_BYTE = 0
++    READ_BYTE = 0,
++    READ_WORD = 1
+ };
+ 
+-class NICSensor : public Sensor, public std::enable_shared_from_this<NICSensor>
++class I2CSensor : public Sensor, public std::enable_shared_from_this<I2CSensor>
+ {
+   public:
+-    NICSensor(const std::string& path, const std::string& objectType,
++    I2CSensor(const std::string& path, const std::string& objectType,
+               sdbusplus::asio::object_server& objectServer,
+               std::shared_ptr<sdbusplus::asio::connection>& conn,
+               boost::asio::io_service& io, const std::string& sensorName,
+@@ -24,8 +25,10 @@ class NICSensor : public Sensor, public std::enable_shared_from_this<NICSensor>
+               const uint8_t busId, const uint8_t slaveAddr,
+               const uint8_t cmdCode, const ReadMode readMode,
+               const double scaleVal, const double offsetVal,
+-              const std::optional<double>& tctlMax, const bool isSensorFailure);
+-    ~NICSensor();
++              const std::string& label, const double rLoad,
++              const std::string& type, const std::optional<double>& tctlMax,
++              const bool isSensorFailure, const double scaleFactor);
++    ~I2CSensor();
+     void setupRead(void);
+ 
+   private:
+@@ -39,8 +42,14 @@ class NICSensor : public Sensor, public std::enable_shared_from_this<NICSensor>
+     double senValue;
+     double scaleVal;
+     double offsetVal;
++    std::string label;
++    double rLoad;
++    double scaleFactor;
++    uint8_t averageCount;
++    std::string sensorModel;
++    std::vector<double> regAverage;
+     thresholds::ThresholdTimer thresholdTimer;
+-    bool visitNICReg(void);
++    bool visitReg(void);
+     void handleResponse(void);
+     void checkThresholds(void) override;
+ };
+diff --git a/meson_options.txt b/meson_options.txt
+index 912b2bb..e551dfd 100644
+--- a/meson_options.txt
++++ b/meson_options.txt
+@@ -8,7 +8,7 @@ option('hwmon-temp', type: 'feature', value: 'enabled', description: 'Enable HWM
+ option('intrusion', type: 'feature', value: 'enabled', description: 'Enable intrusion sensor.',)
+ option('ipmb', type: 'feature', value: 'enabled', description: 'Enable IPMB sensor.',)
+ option('mcu', type: 'feature', value: 'enabled', description: 'Enable MCU sensor.',)
+-option('nic', type: 'feature', value: 'enabled', description: 'Enable NIC sensor.',)
++option('i2c', type: 'feature', value: 'enabled', description: 'Enable I2C sensor.',)
+ option('nvme', type: 'feature', value: 'disabled', description: 'Enable NVMe sensor.',)
+ option('nvme-i2c', type: 'feature', value: 'disabled', description: 'Enable NVME sensor.',)
+ option('pattern', type: 'feature', value: 'disabled', description: 'Enable Pattern sensor.',)
+diff --git a/service_files/meson.build b/service_files/meson.build
+index 1a381e0..2ddad17 100644
+--- a/service_files/meson.build
++++ b/service_files/meson.build
+@@ -9,7 +9,7 @@ unit_files = [
+     ['ipmb', 'xyz.openbmc_project.ipmbsensor.service'],
+     ['intrusion', 'xyz.openbmc_project.intrusionsensor.service'],
+     ['mcu', 'xyz.openbmc_project.mcutempsensor.service'],
+-    ['nic', 'xyz.openbmc_project.nicsensor.service'],
++    ['i2c', 'xyz.openbmc_project.i2csensor.service'],
+     ['nvme', 'xyz.openbmc_project.nvmesensor.service'],
+     ['nvme-i2c', 'xyz.openbmc_project.nvmesensor.service'],
+     ['pattern', 'xyz.openbmc_project.patternsensor.service'],
+diff --git a/service_files/xyz.openbmc_project.nicsensor.service b/service_files/xyz.openbmc_project.i2csensor.service
+similarity index 83%
+rename from service_files/xyz.openbmc_project.nicsensor.service
+rename to service_files/xyz.openbmc_project.i2csensor.service
+index 25b6baf..ed2115f 100644
+--- a/service_files/xyz.openbmc_project.nicsensor.service
++++ b/service_files/xyz.openbmc_project.i2csensor.service
+@@ -1,5 +1,5 @@
+ [Unit]
+-Description=NIC card Sensor
++Description=I2C Sensor
+ StopWhenUnneeded=false
+ After=xyz.openbmc_project.EntityManager.service
+ Wants=mapper-wait@-xyz-openbmc_project-inventory-done.service
+@@ -8,7 +8,7 @@ After=mapper-wait@-xyz-openbmc_project-inventory-done.service
+ [Service]
+ Restart=always
+ RestartSec=5
+-ExecStart=/usr/bin/nicsensor
++ExecStart=/usr/bin/i2csensor
+ 
+ [Install]
+ WantedBy=multi-user.target
+diff --git a/src/NICSensor.cpp b/src/I2CSensor.cpp
+similarity index 58%
+rename from src/NICSensor.cpp
+rename to src/I2CSensor.cpp
+index 8223601..fecf5ea 100644
+--- a/src/NICSensor.cpp
++++ b/src/I2CSensor.cpp
+@@ -3,7 +3,7 @@
+ #include <openbmc/libobmci2c.h>
+ #include <unistd.h>
+ 
+-#include <NICSensor.hpp>
++#include <I2CSensor.hpp>
+ #include <boost/algorithm/string/predicate.hpp>
+ #include <boost/algorithm/string/replace.hpp>
+ #include <sdbusplus/asio/connection.hpp>
+@@ -15,10 +15,9 @@
+ 
+ static constexpr bool DEBUG = false;
+ 
+-static constexpr unsigned int sensorPollMs = 1000;
++static unsigned int sensorPollMs = 1000;
+ static constexpr unsigned int sensorScaleFactor = 1000;
+-
+-NICSensor::NICSensor(const std::string& path, const std::string& objectType,
++I2CSensor::I2CSensor(const std::string& path, const std::string& objectType,
+                      sdbusplus::asio::object_server& objectServer,
+                      std::shared_ptr<sdbusplus::asio::connection>& conn,
+                      boost::asio::io_service& io, const std::string& sensorName,
+@@ -29,14 +28,18 @@ NICSensor::NICSensor(const std::string& path, const std::string& objectType,
+                      const uint8_t busId, const uint8_t slaveAddr,
+                      const uint8_t cmdCode, const ReadMode readMode,
+                      const double scaleVal, const double offsetVal,
++                     const std::string& label, const double rLoad,
++                     const std::string& type,
+                      const std::optional<double>& tctlMax,
+-                     const bool isSensorFailure) :
++                     const bool isSensorFailure, const double scaleFactor) :
+     Sensor(boost::replace_all_copy(sensorName, " ", "_"),
+            std::move(_thresholds), sensorConfiguration, objectType, false,
+            maxValue, minValue, conn, readState, isSensorFailure),
+     objServer(objectServer), waitTimer(io), path(path), busId(busId),
+     slaveAddr(slaveAddr), cmdCode(cmdCode), readMode(readMode),
+-    scaleVal(scaleVal), offsetVal(offsetVal), thresholdTimer(io, this)
++    scaleVal(scaleVal), offsetVal(offsetVal), label(label), rLoad(rLoad),
++    scaleFactor(scaleFactor), averageCount(10), sensorModel(type),
++    thresholdTimer(io, this)
+ {
+     sensorInterface = objectServer.add_interface(
+         dbusPath, "xyz.openbmc_project.Sensor.Value");
+@@ -60,7 +63,7 @@ NICSensor::NICSensor(const std::string& path, const std::string& objectType,
+     setInitialProperties(conn, sensor_paths::unitDegreesC);
+ }
+ 
+-NICSensor::~NICSensor()
++I2CSensor::~I2CSensor()
+ {
+     // close the Timer to cancel async operations
+     waitTimer.cancel();
+@@ -70,32 +73,85 @@ NICSensor::~NICSensor()
+     objServer.remove_interface(association);
+ }
+ 
+-void NICSensor::setupRead(void)
++void I2CSensor::setupRead(void)
+ {
+-    std::weak_ptr<NICSensor> weakRef = weak_from_this();
+-
+-    bool res = visitNICReg();
+-    if (res != true)
++    std::weak_ptr<I2CSensor> weakRef = weak_from_this();
++    bool res;
++    if (sensorModel == "MAX16550")
+     {
+-        incrementError();
++        readMode = ReadMode::READ_WORD;
++        if (label == "pout")
++        {
++
++            sensorPollMs = 3000;
++            double vout = 0, iout = 0;
++            // Get VOUT value from chip
++            cmdCode = 0x8b;
++            scaleFactor = 7578;
++            offsetVal = 0;
++            scaleVal = 100;
++            res = visitReg();
++            if (res != true)
++            {
++                incrementError();
++            }
++            else
++            {
++                vout = senValue;
++                // Get IOUT value from chip
++                cmdCode = 0x8c;
++                scaleFactor = 3.824 * rLoad;
++                offsetVal = 4300;
++                scaleVal = 1000;
++                res = visitReg();
++                if (res != true)
++                {
++                    incrementError();
++                }
++                else
++                {
++                    iout = senValue;
++
++                    // Simple moving average for POUT
++                    if (regAverage.size() >= averageCount)
++                    {
++                        std::rotate(regAverage.begin(), regAverage.begin() + 1,
++                                    regAverage.end());
++                        regAverage.pop_back();
++                    }
++                    regAverage.push_back(vout * iout);
++                    senValue =
++                        std::reduce(regAverage.begin(), regAverage.end()) /
++                        regAverage.size();
++                    handleResponse();
++                }
++            }
++        }
+     }
+     else
+     {
+-        handleResponse();
++        res = visitReg();
++        if (res != true)
++        {
++            incrementError();
++        }
++        else
++        {
++            handleResponse();
++        }
+     }
+-
+     waitTimer.expires_from_now(std::chrono::milliseconds(sensorPollMs));
+     waitTimer.async_wait([weakRef](const boost::system::error_code& ec) {
+-        std::shared_ptr<NICSensor> self = weakRef.lock();
++        std::shared_ptr<I2CSensor> self = weakRef.lock();
+         if (ec == boost::asio::error::operation_aborted)
+         {
+             if (self)
+             {
+-                std::cerr << "NICSensor " << self->name << " read cancelled\n";
++                std::cerr << "I2CSensor " << self->name << " read cancelled\n";
+             }
+             else
+             {
+-                std::cerr << "NICSensor read cancelled no self\n";
++                std::cerr << "I2CSensor read cancelled no self\n";
+             }
+             return; // we're being canceled
+         }
+@@ -106,11 +162,11 @@ void NICSensor::setupRead(void)
+         }
+         else
+         {
+-            std::cerr << "NICSensor weakref no self\n";
++            std::cerr << "I2CSensor weakref no self\n";
+         }
+     });
+ }
+-bool NICSensor::visitNICReg(void)
++bool I2CSensor::visitReg(void)
+ {
+     int fd = -1;
+     int res = -1;
+@@ -132,7 +188,7 @@ bool NICSensor::visitNICReg(void)
+     std::vector<uint8_t> cmdData;
+     cmdData.assign(1, cmdCode);
+     std::vector<uint8_t> readBuf;
+-    int8_t raw_value;
++    int raw_value;
+     switch (readMode)
+     {
+         case ReadMode::READ_BYTE:
+@@ -142,6 +198,14 @@ bool NICSensor::visitNICReg(void)
+                                         readBuf.data());
+             raw_value = static_cast<int8_t>(readBuf.at(0));
+             break;
++        case ReadMode::READ_WORD:
++            readBuf.assign(2, 0x0);
++            res = i2c_master_write_read(fd, slaveAddr, cmdData.size(),
++                                        cmdData.data(), readBuf.size(),
++                                        readBuf.data());
++            raw_value = static_cast<uint16_t>(readBuf.at(0)) |
++                        (static_cast<uint16_t>(readBuf.at(1) << 8));
++            break;
+         default:
+             res = -1;
+     }
+@@ -158,14 +222,14 @@ bool NICSensor::visitNICReg(void)
+ 
+     if (raw_value != 0)
+     {
+-        senValue = raw_value * scaleVal + offsetVal;
++        senValue = (raw_value * scaleVal + offsetVal) / scaleFactor;
+     }
+ 
+     close_i2c_dev(fd);
+     return true;
+ }
+ 
+-void NICSensor::handleResponse()
++void I2CSensor::handleResponse()
+ {
+     if (readingStateGood())
+     {
+@@ -176,7 +240,7 @@ void NICSensor::handleResponse()
+     }
+ }
+ 
+-void NICSensor::checkThresholds(void)
++void I2CSensor::checkThresholds(void)
+ {
+     if (!readingStateGood())
+     {
+diff --git a/src/NICSensorMain.cpp b/src/I2CSensorMain.cpp
+similarity index 75%
+rename from src/NICSensorMain.cpp
+rename to src/I2CSensorMain.cpp
+index 67cbf7b..ec12fa8 100644
+--- a/src/NICSensorMain.cpp
++++ b/src/I2CSensorMain.cpp
+@@ -1,4 +1,4 @@
+-#include <NICSensor.hpp>
++#include <I2CSensor.hpp>
+ #include <Utils.hpp>
+ #include <boost/algorithm/string/predicate.hpp>
+ #include <boost/algorithm/string/replace.hpp>
+@@ -12,17 +12,18 @@
+ 
+ namespace fs = std::filesystem;
+ static std::vector<std::string> sensorTypes = {
+-    "xyz.openbmc_project.Configuration.NIC"};
++    "xyz.openbmc_project.Configuration.NIC",
++    "xyz.openbmc_project.Configuration.MAX16550"};
+ 
+ static std::map<std::string, ReadMode> modeTable = {
+-    {"Byte", ReadMode::READ_BYTE}};
++    {"Byte", ReadMode::READ_BYTE}, {"Word", ReadMode::READ_WORD}};
+ 
+ static constexpr double maxReading = 255;
+ static constexpr double minReading = 0;
+ 
+ void createSensors(
+     boost::asio::io_service& io, sdbusplus::asio::object_server& objectServer,
+-    boost::container::flat_map<std::string, std::shared_ptr<NICSensor>>&
++    boost::container::flat_map<std::string, std::shared_ptr<I2CSensor>>&
+         sensors,
+     std::shared_ptr<sdbusplus::asio::connection>& dbusConnection,
+     const std::shared_ptr<boost::container::flat_set<std::string>>&
+@@ -71,30 +72,39 @@ void createSensors(
+             continue;
+         }
+ 
++        uint64_t command = 0;
+         auto findCommand = baseConfigMap->find("Command");
+-        if (findCommand == baseConfigMap->end())
++        if (findCommand != baseConfigMap->end())
++        {
++            command = std::get<uint64_t>(findCommand->second);
++        }
++        else
+         {
+             std::cerr << sensorName << " missing command\n";
+-            continue;
+         }
+-        auto command = std::get<uint64_t>(findCommand->second);
+ 
+         /* Convert Method: Byte, Word*/
++        std::string modeString;
+         auto findtModeString = baseConfigMap->find("Mode");
+-        if (findtModeString == baseConfigMap->end())
++        if (findtModeString != baseConfigMap->end())
++        {
++            modeString = std::get<std::string>(findtModeString->second);
++        }
++        else
+         {
+             std::cerr << sensorName << " missing mode\n";
+-            continue;
+         }
+-        auto modeString = std::get<std::string>(findtModeString->second);
+ 
++        ReadMode readMode;
+         auto findMode = modeTable.find(modeString);
+-        if (findMode == modeTable.end())
++        if (findMode != modeTable.end())
++        {
++            readMode = findMode->second;
++        }
++        else
+         {
+             std::cerr << sensorName << " invalid mode: " << modeString << "\n";
+-            continue;
+         }
+-        ReadMode readMode = findMode->second;
+ 
+         double scaleVal = 1;
+         auto findScaleVal = baseConfigMap->find("ScaleValue");
+@@ -119,6 +129,38 @@ void createSensors(
+             tctlMax = std::visit(VariantToDoubleVisitor(), findTctlMax->second);
+         }
+ 
++        double scaleFactor = 1;
++        auto findScaleFactor = baseConfigMap->find("ScaleFactor");
++        if (findScaleFactor != baseConfigMap->end())
++        {
++            scaleFactor =
++                std::visit(VariantToDoubleVisitor(), findScaleFactor->second);
++        }
++
++        std::string label;
++        auto findLabel = baseConfigMap->find("Label");
++        if (findLabel != baseConfigMap->end())
++        {
++            label = std::visit(VariantToStringVisitor(), findLabel->second);
++            std::cerr << "Label=" << label << "\n";
++        }
++
++        double rLoad = 0;
++        auto findRLoad = baseConfigMap->find("RLoad");
++        if (findRLoad != baseConfigMap->end())
++        {
++            rLoad = std::visit(VariantToDoubleVisitor(), findRLoad->second);
++        }
++
++        std::string sensorModel;
++        auto findType = baseConfigMap->find("Type");
++        if (findType != baseConfigMap->end())
++        {
++            sensorModel =
++                std::visit(VariantToStringVisitor(), findType->second);
++            std::cerr << "Model = " << sensorModel << "\n";
++        }
++
+         // on rescans, only update sensors we were signaled by
+         auto findSensor = sensors.find(sensorName);
+         bool isSensorFailure = false;
+@@ -146,11 +188,12 @@ void createSensors(
+             sensorsChanged->erase(*interfacePath);
+         }
+ 
+-        sensors[sensorName] = std::make_shared<NICSensor>(
++        sensors[sensorName] = std::make_shared<I2CSensor>(
+             i2cPath, objectType, objectServer, dbusConnection, io, sensorName,
+             std::move(sensorThresholds), *interfacePath, dbusPath,
+             limits.second, limits.first, readState, bus, address, command,
+-            readMode, scaleVal, offsetVal, tctlMax, isSensorFailure);
++            readMode, scaleVal, offsetVal, label, rLoad, sensorModel, tctlMax,
++            isSensorFailure, scaleFactor);
+         sensors[sensorName]->setupRead();
+     }
+ }
+@@ -159,9 +202,9 @@ int main()
+ {
+     boost::asio::io_service io;
+     auto systemBus = std::make_shared<sdbusplus::asio::connection>(io);
+-    systemBus->request_name("xyz.openbmc_project.NICSensor");
++    systemBus->request_name("xyz.openbmc_project.I2CSensor");
+     sdbusplus::asio::object_server objectServer(systemBus);
+-    boost::container::flat_map<std::string, std::shared_ptr<NICSensor>> sensors;
++    boost::container::flat_map<std::string, std::shared_ptr<I2CSensor>> sensors;
+     std::vector<std::unique_ptr<sdbusplus::bus::match::match>> matches;
+     std::shared_ptr<boost::container::flat_set<std::string>> sensorsChanged =
+         std::make_shared<boost::container::flat_set<std::string>>();
+diff --git a/src/meson.build b/src/meson.build
+index 3b75101..32c7536 100644
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -190,11 +190,11 @@ if get_option('mcu').enabled()
+     )
+ endif
+ 
+-if get_option('nic').enabled()
++if get_option('i2c').enabled()
+     executable(
+-        'nicsensor',
+-        'NICSensor.cpp',
+-        'NICSensorMain.cpp',
++        'i2csensor',
++        'I2CSensor.cpp',
++        'I2CSensorMain.cpp',
+         dependencies: [
+             i2c,
+             sdbusplus,
+-- 
+2.25.1
+

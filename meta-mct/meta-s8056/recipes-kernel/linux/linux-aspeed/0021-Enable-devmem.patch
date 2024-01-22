@@ -1,0 +1,28 @@
+From 9b64e84a0074f377e4d6a4481d53f054d20591c8 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Thu, 26 May 2022 09:24:09 +0800
+Subject: [PATCH] Enable devmem
+
+---
+ drivers/char/mem.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+ mode change 100644 => 100755 drivers/char/mem.c
+
+diff --git a/drivers/char/mem.c b/drivers/char/mem.c
+old mode 100644
+new mode 100755
+index 7cb861e0..4dd472b
+--- a/drivers/char/mem.c
++++ b/drivers/char/mem.c
+@@ -755,7 +755,7 @@ static struct class *mem_class;
+ static int __init chr_dev_init(void)
+ {
+ 	int minor;
+-
++	devmem = true;
+ 	if (register_chrdev(MEM_MAJOR, "mem", &memory_fops))
+ 		printk("unable to get major %d for memory devs\n", MEM_MAJOR);
+ 
+-- 
+2.7.4
+

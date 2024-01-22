@@ -1,0 +1,15 @@
+[Unit]
+Description=Heart beat LED control
+
+After=phosphor-ipmi-host.service
+[Service]
+Restart=always
+ExecStart=/usr/sbin/hbled_blink.sh
+SyslogIdentifier=hbled
+#Type=dbus
+#BusName=org.openbmc.HostIpmikcs
+TimeoutSec=infinity
+
+[Install]
+WantedBy={SYSTEMD_DEFAULT_TARGET}
+

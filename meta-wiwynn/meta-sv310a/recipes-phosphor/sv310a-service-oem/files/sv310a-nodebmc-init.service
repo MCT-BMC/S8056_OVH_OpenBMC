@@ -1,0 +1,11 @@
+[Unit]
+Description=SV310A initialize different node of BMCs
+Before=ipmb.service
+Before=xyz.openbmc_project.EntityManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/sv310a-nodebmc-init.sh
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,52 @@
+From 6dfdc24605330bb6c919f8c3d4f9f07654599a45 Mon Sep 17 00:00:00 2001
+From: Ren_Chen <Ren_Chen@wiwynn.com>
+Date: Fri, 18 Jun 2021 14:03:50 +0800
+Subject: [PATCH] Disable version compare judgement in image upload API
+
+---
+ include/image_upload.hpp | 27 +++++++++++----------------
+ 1 file changed, 11 insertions(+), 16 deletions(-)
+
+diff --git a/include/image_upload.hpp b/include/image_upload.hpp
+index 651d242..556131c 100644
+--- a/include/image_upload.hpp
++++ b/include/image_upload.hpp
+@@ -69,24 +69,19 @@ inline void
+                 interfaces;
+             m.read(path, interfaces);
+ 
+-            if (std::find_if(interfaces.begin(), interfaces.end(),
+-                             [](const auto& i) {
+-                                 return i.first ==
+-                                        "xyz.openbmc_project.Software.Version";
+-                             }) != interfaces.end())
++            timeout.cancel();
++
++            std::size_t index = path.str.rfind('/');
++            if (index != std::string::npos)
+             {
+-                timeout.cancel();
+-                std::string leaf = path.filename();
+-                if (leaf.empty())
+-                {
+-                    leaf = path.str;
+-                }
+-
+-                asyncResp->res.jsonValue = {
+-                    {"data", leaf}, {"message", "200 OK"}, {"status", "ok"}};
+-                BMCWEB_LOG_DEBUG << "ending response";
+-                fwUpdateMatcher = nullptr;
++                path.str.erase(0, index + 1);
+             }
++            asyncResp->res.jsonValue = {{"data", std::move(path.str)},
++                             {"message", "200 OK"},
++                             {"status", "ok"}};
++            BMCWEB_LOG_DEBUG << "ending response";
++            asyncResp->res.end();
++            fwUpdateMatcher = nullptr;
+         };
+     fwUpdateMatcher = std::make_unique<sdbusplus::bus::match::match>(
+         *crow::connections::systemBus,
+-- 
+2.28.0
+

@@ -1,0 +1,327 @@
+From dda5e694d102fe6c3b71dd6baa2613be9a8e9aa2 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Mon, 14 Mar 2022 17:14:51 +0800
+Subject: [PATCH] Implement some power feature
+
+---
+ meson.build                                        |   2 +-
+ ....openbmc_project.Chassis.Control.Power@.service |   2 +
+ src/power_control.cpp                              | 159 +++++++++++++++++++--
+ 3 files changed, 150 insertions(+), 13 deletions(-)
+ mode change 100644 => 100755 meson.build
+ mode change 100644 => 100755 service_files/xyz.openbmc_project.Chassis.Control.Power@.service
+ mode change 100644 => 100755 src/power_control.cpp
+
+diff --git a/meson.build b/meson.build
+old mode 100644
+new mode 100755
+index 4507df2..ec8711c
+--- a/meson.build
++++ b/meson.build
+@@ -35,7 +35,7 @@ deps = [
+   dependency('systemd'),
+   dependency('sdbusplus', fallback: ['sdbusplus', 'sdbusplus_dep']),
+   dependency('phosphor-logging', fallback: ['phosphor-logging', 'phosphor_logging_dep']),
+-
++  dependency('phosphor-dbus-interfaces'),
+ ]
+ 
+ executable(
+diff --git a/service_files/xyz.openbmc_project.Chassis.Control.Power@.service b/service_files/xyz.openbmc_project.Chassis.Control.Power@.service
+old mode 100644
+new mode 100755
+index 4d676c2..cc58b1e
+--- a/service_files/xyz.openbmc_project.Chassis.Control.Power@.service
++++ b/service_files/xyz.openbmc_project.Chassis.Control.Power@.service
+@@ -1,6 +1,8 @@
+ [Unit]
+ Description=Intel Power Control for the Host %i
+ ConditionPathExists=/usr/share/x86-power-control/power-config-host%i.json
++After=mct-default-setting.service
++After=phosphor-ipmi-host.service
+ 
+ [Service]
+ Restart=always
+diff --git a/src/power_control.cpp b/src/power_control.cpp
+old mode 100644
+new mode 100755
+index b897c3b..339c9b6
+--- a/src/power_control.cpp
++++ b/src/power_control.cpp
+@@ -31,6 +31,11 @@
+ #include <filesystem>
+ #include <fstream>
+ #include <string_view>
++#include <chrono>
++#include <random>
++#include <iostream>
++
++#include "xyz/openbmc_project/Control/Power/RestoreDelay/server.hpp"
+ 
+ namespace power_control
+ {
+@@ -653,6 +658,7 @@ static void setRestartCauseProperty(const std::string& cause)
+     restartCauseIface->set_property("RestartCause", cause);
+ }
+ 
++
+ static void resetACBootProperty()
+ {
+     if ((causeSet.contains(RestartCause::command)) ||
+@@ -710,6 +716,82 @@ static void setRestartCause()
+     setRestartCauseProperty(restartCause);
+ }
+ 
++static void logSELEvent(std::string enrty, std::string path ,
++                     uint8_t eventData0, uint8_t eventData1, uint8_t eventData2)
++{
++    std::vector<uint8_t> eventData(3, 0xFF);
++    eventData[0] = eventData0;
++    eventData[1] = eventData1;
++    eventData[2] = eventData2;
++    uint16_t genid = 0x20;
++
++    sdbusplus::message::message writeSEL = conn->new_method_call(
++        "xyz.openbmc_project.Logging.IPMI", "/xyz/openbmc_project/Logging/IPMI",
++        "xyz.openbmc_project.Logging.IPMI", "IpmiSelAdd");
++    writeSEL.append(enrty, path, eventData, true, (uint16_t)genid);
++    try
++    {
++        conn->call(writeSEL);
++    }
++    catch (std::exception& e)
++    {
++        std::cerr << "Failed to log the button event:" << e.what() << "\n";
++    }
++}
++
++static void setIdLed(bool assert)
++{
++    sdbusplus::message::message method = conn->new_method_call(
++        "xyz.openbmc_project.LED.GroupManager", "/xyz/openbmc_project/led/groups/enclosure_identify",
++        "org.freedesktop.DBus.Properties", "Set");
++    method.append("xyz.openbmc_project.Led.Group","Asserted", std::variant<bool>(assert));
++    try
++    {
++        conn->call(method);
++    }
++    catch (std::exception& e)
++    {
++        std::cerr << "Failed to set the id led event:" << e.what() << "\n";
++    }
++}
++
++static bool getIdLed()
++{
++    sdbusplus::message::message method = conn->new_method_call(
++        "xyz.openbmc_project.LED.GroupManager", "/xyz/openbmc_project/led/groups/enclosure_identify",
++        "org.freedesktop.DBus.Properties", "Get");
++    method.append("xyz.openbmc_project.Led.Group","Asserted");
++    std::variant<bool> status;
++    try
++    {
++        auto reply = conn->call(method);
++        reply.read(status);
++    }
++    catch (std::exception& e)
++    {
++        std::cerr << "Failed to get the id led event:" << e.what() << "\n";
++        return false;
++    }
++    return std::get<bool>(status);
++}
++
++static void setDimmStatus(uint32_t status)
++{
++    sdbusplus::message::message method = conn->new_method_call(
++        "xyz.openbmc_project.Settings", "/xyz/openbmc_project/oem/SensorStatus",
++        "org.freedesktop.DBus.Properties", "Set");
++    method.append("xyz.openbmc_project.OEM.SensorStatus","DIMMSensorStatus",
++                  std::variant<uint32_t>(status));
++    try
++    {
++        conn->call(method);
++    }
++    catch (std::exception& e)
++    {
++        std::cerr << "Failed to set the id led event:" << e.what() << "\n";
++    }
++}
++
+ static void systemPowerGoodFailedLog()
+ {
+     sd_journal_send(
+@@ -740,6 +822,7 @@ static void powerButtonPressLog()
+     sd_journal_send("MESSAGE=PowerControl: power button pressed", "PRIORITY=%i",
+                     LOG_INFO, "REDFISH_MESSAGE_ID=%s",
+                     "OpenBMC.0.1.PowerButtonPressed", NULL);
++    logSELEvent("Power Button SEL Entry","/xyz/openbmc_project/sensors/buttons/BUTTON",0x00,0xFF,0xFF);
+ }
+ 
+ static void resetButtonPressLog()
+@@ -747,6 +830,7 @@ static void resetButtonPressLog()
+     sd_journal_send("MESSAGE=PowerControl: reset button pressed", "PRIORITY=%i",
+                     LOG_INFO, "REDFISH_MESSAGE_ID=%s",
+                     "OpenBMC.0.1.ResetButtonPressed", NULL);
++    logSELEvent("Reset Button SEL Entry","/xyz/openbmc_project/sensors/buttons/BUTTON",0x02,0xFF,0xFF);
+ }
+ 
+ static void nmiButtonPressLog()
+@@ -898,8 +982,44 @@ static void invokePowerRestorePolicy(const std::string& policy)
+     savePowerState(powerState);
+ }
+ 
+-static void powerRestorePolicyDelay(int delay)
++void randomPowerDelay(uint32_t& delay)
++{
++    using namespace sdbusplus::xyz::openbmc_project::Control::Power::server;
++
++    auto bus = sdbusplus::bus::new_default();
++
++    auto method = bus.new_method_call(
++       "xyz.openbmc_project.Settings", "/xyz/openbmc_project/control/power_restore_delay",
++        "org.freedesktop.DBus.Properties", "Get");
++    method.append("xyz.openbmc_project.Control.Power.RestoreDelay", "PowerRestoreAlwaysOnPolicy");
++
++    std::variant<std::string> result;
++    try
++    {
++        auto reply = bus.call(method);
++        reply.read(result);
++    }
++    catch (std::exception& e)
++    {
++        std::cerr << "Error in PowerRestoreAlwaysOnPolicy Get " << "ERROR=%s" << e.what() << "\n";
++        return;
++    }
++
++    auto powerAlwaysOnPolicy = std::get<std::string>(result);
++
++    if (RestoreDelay::AlwaysOnPolicy::Random ==
++        RestoreDelay::convertAlwaysOnPolicyFromString(powerAlwaysOnPolicy))
++    {
++        std::random_device rd;
++        std::default_random_engine gen = std::default_random_engine(rd());
++        std::uniform_int_distribution<int> dis(0,delay);
++        delay = dis(gen);
++    }
++}
++
++static void powerRestorePolicyDelay(uint32_t delayInput)
+ {
++    uint32_t delay = delayInput;
+     // Async events may call this twice, but we only want to run once
+     static bool delayStarted = false;
+     if (delayStarted)
+@@ -909,16 +1029,18 @@ static void powerRestorePolicyDelay(int delay)
+     delayStarted = true;
+     // Calculate the delay from now to meet the requested delay
+     // Subtract the approximate uboot time
+-    static constexpr const int ubootSeconds = 20;
+-    delay -= ubootSeconds;
++    /*static constexpr const int ubootSeconds = 20;
++    delay -= ubootSeconds;*/
+     // Subtract the time since boot
+-    struct sysinfo info = {};
++    /*struct sysinfo info = {};
+     if (sysinfo(&info) == 0)
+     {
+         delay -= info.uptime;
+     }
+     // 0 is the minimum delay
+-    delay = std::max(delay, 0);
++    delay = std::max(delay, 0);*/
++
++    randomPowerDelay(delay);
+ 
+     static boost::asio::steady_timer powerRestorePolicyTimer(io);
+     powerRestorePolicyTimer.expires_after(std::chrono::seconds(delay));
+@@ -1010,14 +1132,14 @@ static void powerRestorePolicyStart()
+             "Power.RestoreDelay'",
+             [](sdbusplus::message::message& msg) {
+                 std::string interfaceName;
+-                boost::container::flat_map<std::string, std::variant<uint16_t>>
++                boost::container::flat_map<std::string, std::variant<uint32_t>>
+                     propertiesChanged;
+-                int delay = 0;
++                uint32_t delay = 0;
+                 try
+                 {
+                     msg.read(interfaceName, propertiesChanged);
+                     delay =
+-                        std::get<uint16_t>(propertiesChanged.begin()->second);
++                        std::get<uint32_t>(propertiesChanged.begin()->second);
+                 }
+                 catch (const std::exception& e)
+                 {
+@@ -1034,13 +1156,13 @@ static void powerRestorePolicyStart()
+     // Check if it's already on DBus
+     conn->async_method_call(
+         [](boost::system::error_code ec,
+-           const std::variant<uint16_t>& delayProperty) {
++           const std::variant<uint32_t>& delayProperty) {
+             if (ec)
+             {
+                 return;
+             }
+             powerRestoreDelayMatch.reset();
+-            const uint16_t* delay = std::get_if<uint16_t>(&delayProperty);
++            const uint32_t* delay = std::get_if<uint32_t>(&delayProperty);
+             if (delay == nullptr)
+             {
+                 lg2::error("Unable to read power restore delay value");
+@@ -1637,7 +1759,9 @@ static void currentHostStateMonitor()
+ 
+                 // Set the restart cause set for this restart
+                 setRestartCause();
+-                resetACBootProperty();
++                //resetACBootProperty();
++                // Using ast2500 register for ACBoot property
++                // resetACBootProperty();
+                 sd_journal_send("MESSAGE=Host system DC power is off",
+                                 "PRIORITY=%i", LOG_INFO,
+                                 "REDFISH_MESSAGE_ID=%s",
+@@ -2195,6 +2319,10 @@ static void nmiButtonHandler(bool state)
+ static void idButtonHandler(bool state)
+ {
+     idButtonIface->set_property("ButtonPressed", !state);
++    if (!state == true)
++    {
++        setIdLed(!getIdLed());
++    }
+ }
+ 
+ static void pltRstHandler(bool pltRst)
+@@ -2250,6 +2378,7 @@ static void postCompleteHandler(bool state)
+     {
+         sendPowerControlEvent(Event::postCompleteAssert);
+         setOperatingSystemState(OperatingSystemStateStage::Standby);
++        setDimmStatus(1);
+     }
+     else
+     {
+@@ -2811,7 +2940,8 @@ int main(int argc, char* argv[])
+                 // if power button is masked, ignore this
+                 if (!powerButtonMask)
+                 {
+-                    sendPowerControlEvent(Event::gracefulPowerOffRequest);
++                    //sendPowerControlEvent(Event::gracefulPowerOffRequest);
++                    sendPowerControlEvent(Event::powerOffRequest);
+                     addRestartCause(RestartCause::command);
+                 }
+                 else
+@@ -2821,6 +2951,11 @@ int main(int argc, char* argv[])
+                     return 0;
+                 }
+             }
++            else if (requested == "xyz.openbmc_project.State.Host.Transition.gracefulOff")
++            {
++                sendPowerControlEvent(power_control::Event::gracefulPowerOffRequest);
++                addRestartCause(RestartCause::command);
++            }
+             else if (requested ==
+                      "xyz.openbmc_project.State.Host.Transition.On")
+             {
+-- 
+2.7.4
+

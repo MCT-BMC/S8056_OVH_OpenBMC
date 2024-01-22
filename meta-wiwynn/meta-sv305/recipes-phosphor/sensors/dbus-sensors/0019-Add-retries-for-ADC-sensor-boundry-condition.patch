@@ -1,0 +1,64 @@
+From 857a8678700da2e795414fcdac09510b8baaadea Mon Sep 17 00:00:00 2001
+From: Eli Huang <Eli_Huang@wiwynn.com>
+Date: Tue, 29 Dec 2020 09:51:14 +0800
+Subject: [PATCH] Add retries for ADC sensor boundry condition
+
+---
+ include/ADCSensor.hpp |  1 +
+ src/ADCSensor.cpp     | 19 +++++++++++++++++--
+ 2 files changed, 18 insertions(+), 2 deletions(-)
+
+diff --git a/include/ADCSensor.hpp b/include/ADCSensor.hpp
+index c632e05..373ffde 100644
+--- a/include/ADCSensor.hpp
++++ b/include/ADCSensor.hpp
+@@ -86,6 +86,7 @@ class ADCSensor : public Sensor, public std::enable_shared_from_this<ADCSensor>
+     unsigned int sensorPollMs;
+     std::optional<BridgeGpio> bridgeGpio;
+     thresholds::ThresholdTimer thresholdTimer;
++    int retry;
+     void handleResponse(const boost::system::error_code& err);
+     void checkThresholds(void) override;
+ };
+diff --git a/src/ADCSensor.cpp b/src/ADCSensor.cpp
+index 6766228..fa81950 100644
+--- a/src/ADCSensor.cpp
++++ b/src/ADCSensor.cpp
+@@ -59,7 +59,7 @@ ADCSensor::ADCSensor(const std::string& path, const std::string& objectType,
+     inputDev(io, open(path.c_str(), O_RDONLY)), waitTimer(io), path(path),
+     scaleFactor(scaleFactor),
+     sensorPollMs(static_cast<unsigned int>(pollRate * 1000)),
+-    bridgeGpio(std::move(bridgeGpio)), thresholdTimer(io, this)
++    bridgeGpio(std::move(bridgeGpio)), thresholdTimer(io, this), retry(0)
+ {
+     sensorInterface = objectServer.add_interface(
+         dbusPath, "xyz.openbmc_project.Sensor.Value");
+@@ -163,9 +163,24 @@ void ADCSensor::handleResponse(const boost::system::error_code& err)
+         try
+         {
+             rawValue = std::stod(response);
++
++            if (rawValue >= 1790)
++            {
++                std::cerr << "rawValue: " << rawValue << "\n";
++                retry++;
++            }
++            else
++            {
++                retry = 0;
++            }
++
+             double nvalue = (rawValue / sensorScaleFactor) / scaleFactor;
+             nvalue = std::round(nvalue * roundFactor) / roundFactor;
+-            updateValue(nvalue);
++
++            if ((nvalue != value) && ((rawValue < 1790) || (retry >= 3)))
++            {
++                updateValue(nvalue);
++            }
+         }
+         catch (std::invalid_argument&)
+         {
+-- 
+2.28.0
+

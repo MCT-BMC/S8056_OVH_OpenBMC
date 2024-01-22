@@ -1,0 +1,128 @@
+From 0a3522128433489d6c19deacc30a0f7a99cdcfc6 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Mon, 26 Oct 2020 12:28:43 +0800
+Subject: [PATCH] Disable unfinished feature temporarily
+
+---
+ app/common/directives/app-navigation.html                       | 4 ++--
+ app/configuration/controllers/firmware-controller.html          | 6 +++---
+ app/overview/controllers/system-overview-controller.html        | 4 ++--
+ app/server-control/controllers/power-operations-controller.html | 8 ++++----
+ 4 files changed, 11 insertions(+), 11 deletions(-)
+ mode change 100644 => 100755 app/common/directives/app-navigation.html
+ mode change 100644 => 100755 app/configuration/controllers/firmware-controller.html
+ mode change 100644 => 100755 app/overview/controllers/system-overview-controller.html
+ mode change 100644 => 100755 app/server-control/controllers/power-operations-controller.html
+
+diff --git a/app/common/directives/app-navigation.html b/app/common/directives/app-navigation.html
+old mode 100644
+new mode 100755
+index 41441e2..a77cab6
+--- a/app/common/directives/app-navigation.html
++++ b/app/common/directives/app-navigation.html
+@@ -89,11 +89,11 @@
+         <li ng-class="{'active': (path == '/configuration' || path == '/configuration/firmware')}">
+           <a href="#/configuration/firmware" tabindex="{{(showConfigMenu) ? 0 : -1}}"><span>Firmware</span></a>
+         </li>
+-        <li ng-class="{'active': (path == '/configuration' || path == '/configuration/date-time')}">
++        <!-- <li ng-class="{'active': (path == '/configuration' || path == '/configuration/date-time')}">
+           <a href="#/configuration/date-time" tabindex="{{(showConfigMenu) ? 0 : -1}}"><span>Date and
+               time
+               settings</span></a>
+-        </li>
++        </li> -->
+       </ul>
+     </li>
+     <li ng-class="{opened: showAccessMenu}">
+diff --git a/app/configuration/controllers/firmware-controller.html b/app/configuration/controllers/firmware-controller.html
+old mode 100644
+new mode 100755
+index d2ff89d..7148f5c
+--- a/app/configuration/controllers/firmware-controller.html
++++ b/app/configuration/controllers/firmware-controller.html
+@@ -16,7 +16,7 @@
+     <h2 class="inline bold">Specify image file location</h2>
+   </div>
+   <form id="firmware__upload-form" role="form" class="firmware__upload-form">
+-    <p>Specify an image file located on your workstation or a TFTP server. An image file may contain firmware images for the server, BMC, or other hardware devices. Each image that you upload will be unpacked from the image file and added to the appropriate list above.</p>
++    <p>Specify an image file located on your workstation. An image file may contain firmware images for the server, BMC, or other hardware devices. Each image that you upload will be unpacked from the image file and added to the appropriate list above.</p>
+     <div class=" column firmware__upload-station">
+       <h3>Upload image file from workstation</h3>
+       <p>Select the image file saved on the workstation storage medium to upload to the server BMC.</p>
+@@ -28,7 +28,7 @@
+       <input type="button" value="Upload firmware" class="btn btn-primary float-right" ng-click="upload()"/>
+       <div class="inline uploading" ng-show="uploading">Upload in progress...</div>
+     </div>
+-    <div class="column firmware__upload-tftp">
++    <!-- <div class="column firmware__upload-tftp">
+       <h3>Download image file from TFTP server</h3>
+       <p>Specify both the TFTP server IP address and the image file name stored on it to download to the server BMC.</p>
+       <fieldset>
+@@ -47,7 +47,7 @@
+         </div>
+         <div class="inline uploading" ng-show="downloading">Downloading in progress...</div>
+       </fieldset>
+-    </div>
++    </div> -->
+   </form>
+ </div>
+ 
+diff --git a/app/overview/controllers/system-overview-controller.html b/app/overview/controllers/system-overview-controller.html
+old mode 100644
+new mode 100755
+index b60d510..a745f19
+--- a/app/overview/controllers/system-overview-controller.html
++++ b/app/overview/controllers/system-overview-controller.html
+@@ -6,7 +6,7 @@
+   </button>
+   <div class="row">
+     <div class="small-12 large-8">
+-      <section class="section">
++      <!-- <section class="section">
+         <div class="section-header">
+           <h2 class="section-title h3">Server information</h2>
+         </div>
+@@ -32,7 +32,7 @@
+             </dl>
+           </div>
+         </div>
+-      </section>
++      </section> -->
+ 
+       <section class="section">
+         <div class="section-header">
+diff --git a/app/server-control/controllers/power-operations-controller.html b/app/server-control/controllers/power-operations-controller.html
+old mode 100644
+new mode 100755
+index 222ffb7..70ed575
+--- a/app/server-control/controllers/power-operations-controller.html
++++ b/app/server-control/controllers/power-operations-controller.html
+@@ -64,13 +64,13 @@
+           </div>
+         </div>
+           <!-- TPM Required -->
+-          <div class="boot-options one-time-boot-setting">
++          <!-- <div class="boot-options one-time-boot-setting">
+             <div class="boot-options">
+               <h3 class="content-label">
+                 TPM required policy</h3>
+-              <p> Enable to ensure the system only boots when the TPM is functional. </p>
++              <p> Enable to ensure the system only boots when the TPM is functional. </p> -->
+               <!-- Toggle component -->
+-              <div class="toggle-container">
++              <!-- <div class="toggle-container">
+                   <div class="toggle">
+                     <input
+                       id="toggle__switch-round"
+@@ -90,7 +90,7 @@
+                   </span>
+                 </div>
+             </div>
+-          </div>
++          </div> -->
+           <!-- form actions -->
+           <div class="boot-form-actions">
+             <button type="submit" class="btn btn-primary" ng-click="saveBootSettings();saveTPMPolicy();hostBootSettings.$setPristine()" ng-disabled="dataService.server_unreachable || hostBootSettings.$pristine;">
+-- 
+2.7.4
+

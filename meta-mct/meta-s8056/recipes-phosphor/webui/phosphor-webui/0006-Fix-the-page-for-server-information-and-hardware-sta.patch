@@ -1,0 +1,116 @@
+From 76d911d4517b45fe8213c4c4c178e78b8fe85983 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Mon, 12 Oct 2020 15:54:04 +0800
+Subject: [PATCH] Fix the page for server information and hardware status
+ feature
+
+---
+ app/common/services/api-utils.js                         |  7 ++++++-
+ app/common/services/dataService.js                       | 10 ++++++++++
+ app/overview/controllers/system-overview-controller.html | 14 +++++++-------
+ 3 files changed, 23 insertions(+), 8 deletions(-)
+ mode change 100644 => 100755 app/common/services/dataService.js
+
+diff --git a/app/common/services/api-utils.js b/app/common/services/api-utils.js
+index e7c7bf6..5f10d1d 100755
+--- a/app/common/services/api-utils.js
++++ b/app/common/services/api-utils.js
+@@ -1278,7 +1278,8 @@ window.angular && (function(angular) {
+           return $http({
+                    method: 'GET',
+                    url: DataService.getHost() +
+-                       '/xyz/openbmc_project/inventory/system',
++                       '/xyz/openbmc_project/inventory/system' +
++                       DataService.getSystemInformation(),
+                    withCredentials: true
+                  })
+               .then(function(response) {
+@@ -1559,6 +1560,10 @@ window.angular && (function(angular) {
+                 searchText = getSearchText(data);
+                 title = key.split('/').pop();
+                 title = titlelize(title);
++
++                if(title == 'system'){
++                  continue;
++                }
+                 // e.g. /xyz/openbmc_project/inventory/system and
+                 // /xyz/openbmc_project/inventory/system/chassis are depths of 5
+                 // and 6.
+diff --git a/app/common/services/dataService.js b/app/common/services/dataService.js
+old mode 100644
+new mode 100755
+index 87fddba..4ae93a2
+--- a/app/common/services/dataService.js
++++ b/app/common/services/dataService.js
+@@ -32,6 +32,7 @@ window.angular && (function(angular) {
+       this.systemName = '';
+ 
+       this.configJson = require('../../../config.json');
++      this.platformConfigJSON = require('../../../platform-config.json');
+ 
+       this.getServerId = function() {
+         return this.host.replace(/^https?\:\/\//ig, '');
+@@ -110,6 +111,15 @@ window.angular && (function(angular) {
+       this.setSystemName = function(sysName) {
+         this.systemName = sysName;
+       };
++
++      this.getSystemInformation= function() {
++        if(this.platformConfigJSON.systemName && this.platformConfigJSON.systemType){
++          return '/' + this.platformConfigJSON.systemType + '/' + this.platformConfigJSON.systemName;
++        } else {
++          return '';
++        }
++      }
++
+     }
+   ]);
+ })(window.angular);
+diff --git a/app/overview/controllers/system-overview-controller.html b/app/overview/controllers/system-overview-controller.html
+index a745f19..e880c1b 100755
+--- a/app/overview/controllers/system-overview-controller.html
++++ b/app/overview/controllers/system-overview-controller.html
+@@ -6,7 +6,7 @@
+   </button>
+   <div class="row">
+     <div class="small-12 large-8">
+-      <!-- <section class="section">
++      <section class="section">
+         <div class="section-header">
+           <h2 class="section-title h3">Server information</h2>
+         </div>
+@@ -14,25 +14,25 @@
+           <div class="column large-6">
+             <dl class="list-pair">
+               <dt>Model</dt>
+-              <dd>{{ server_info.Model  || "N/A"  }}</dd>
++              <dd>{{ server_info.BoardProduct  || "N/A"  }}</dd>
+             </dl>
+             <dl class="list-pair">
+               <dt>Serial number</dt>
+-              <dd>{{ server_info.SerialNumber || "N/A"  }}</dd>
++              <dd>{{ server_info.BoardSerial || "N/A"  }}</dd>
+             </dl>
+           </div>
+           <div class="column large-6">
+             <dl class="list-pair">
+               <dt>Manufacturer</dt>
+-              <dd>{{ server_info.Manufacturer || "N/A" }}</dd>
++              <dd>{{ server_info.BoardMfg || "N/A" }}</dd>
+             </dl>
+-            <dl class="list-pair">
++            <!-- <dl class="list-pair">
+               <dt>Firmware version</dt>
+               <dd>{{ server_firmware }}</dd>
+-            </dl>
++            </dl> -->
+           </div>
+         </div>
+-      </section> -->
++      </section>
+ 
+       <section class="section">
+         <div class="section-header">
+-- 
+2.7.4
+

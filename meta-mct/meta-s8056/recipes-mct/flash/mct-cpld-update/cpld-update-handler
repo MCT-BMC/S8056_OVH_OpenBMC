@@ -1,0 +1,59 @@
+#! /bin/sh
+IMAGE_FILE=$1
+
+CPLD_UPDATER_CMD="/usr/bin/env cpld-update"
+CPLD_PROGRESS_CMD="/usr/bin/env flash-progress-update"
+
+PROGREE_ENABLE=$2
+
+CPLD_VERSION_ID=$(echo $IMAGE_FILE |cut -d / -f 4)
+
+USER_CODE=0
+I2C_BUS=0
+I2C_ADDRESS=0
+
+set_progress()
+{
+    #Update progress with version ID
+    if [  -n "$PROGREE_ENABLE"  ]; then
+        $CPLD_PROGRESS_CMD $CPLD_VERSION_ID $1 "$2"
+    fi
+}
+
+echo "MCT CPLD update handler"
+
+echo "Check JED file format and target CPLD device"
+
+RESULT=$($CPLD_UPDATER_CMD -i -p $IMAGE_FILE)
+
+if [[ $RESULT == *"user code"* ]]; then
+    USER_CODE=$(echo ${RESULT#*0x})
+    USER_CODE=$(($USER_CODE & 0x00000007))
+    echo "JED file user code : $USER_CODE"
+fi
+
+if [[ "$USER_CODE" == "3" ]]; then
+    echo "Target CPLD  device: S8056 DC-SCM CPLD firmware"
+    set_progress 5 "Target CPLD device: S8056 DC-SCM CPLD firmware"
+    I2C_BUS=4
+    I2C_ADDRESS=64
+elif [[ "$USER_CODE" == "4" ]]; then
+    echo "Target CPLD device: S8056 MB CPLD firmware"
+    set_progress 5 "Target CPLD device: S8056 MB CPLD firmware"
+    I2C_BUS=6
+    I2C_ADDRESS=76
+else
+    echo "Could not find any supported target CPLD device"
+    exit -1
+fi
+
+echo "Flashing cpld image $IMAGE_FILE..."
+if [  -n "$PROGREE_ENABLE"  ]; then
+    # Waiting remote tool reading
+    sleep 3
+    $CPLD_UPDATER_CMD -P $CPLD_VERSION_ID -p $IMAGE_FILE -b $I2C_BUS -a $I2C_ADDRESS
+else
+    $CPLD_UPDATER_CMD -p $IMAGE_FILE -b $I2C_BUS -a $I2C_ADDRESS
+fi
+
+exit 0

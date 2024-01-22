@@ -1,0 +1,68 @@
+From 2422d3c820705b3f2edb9b1f1e450d6c76ae82b3 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Wed, 19 Jan 2022 14:06:39 +0800
+Subject: [PATCH 24/24] Update ipmi restart cause.
+
+---
+ chassishandler.cpp | 30 ++++++++++++++++++++----------
+ 1 file changed, 20 insertions(+), 10 deletions(-)
+
+diff --git a/chassishandler.cpp b/chassishandler.cpp
+index f364cd7..4a64a17 100755
+--- a/chassishandler.cpp
++++ b/chassishandler.cpp
+@@ -1237,14 +1237,16 @@ ipmi::RspType<bool,    // Power is on
+ 
+ enum class IpmiRestartCause
+ {
+-    Unknown = 0x0,
+-    RemoteCommand = 0x1,
+-    ResetButton = 0x2,
+-    PowerButton = 0x3,
+-    WatchdogTimer = 0x4,
+-    PowerPolicyAlwaysOn = 0x6,
+-    PowerPolicyPreviousState = 0x7,
+-    SoftReset = 0xa,
++    Unknown = 0x00,
++    ChassisCommandPowerOn = 0x01,
++    ResetButton = 0x02,
++    PowerButton = 0x03,
++    WatchdogTimer = 0x04,
++    PowerPolicyAlwaysOn = 0x06,
++    PowerPolicyPreviousState = 0x07,
++    SoftReset = 0x0a,
++    ChassisCommandPowerCycle = 0x0c,
++    ChassisCommandPowerReset = 0x0d,
+ };
+ 
+ static IpmiRestartCause
+@@ -1256,9 +1258,9 @@ static IpmiRestartCause
+         {
+             return IpmiRestartCause::Unknown;
+         }
+-        case State::Host::RestartCause::RemoteCommand:
++        case State::Host::RestartCause::ChassisCommandPowerOn:
+         {
+-            return IpmiRestartCause::RemoteCommand;
++            return IpmiRestartCause::ChassisCommandPowerOn;
+         }
+         case State::Host::RestartCause::ResetButton:
+         {
+@@ -1284,6 +1286,14 @@ static IpmiRestartCause
+         {
+             return IpmiRestartCause::SoftReset;
+         }
++        case State::Host::RestartCause::ChassisCommandPowerCycle:
++        {
++            return IpmiRestartCause::ChassisCommandPowerCycle;
++        }
++        case State::Host::RestartCause::ChassisCommandPowerReset:
++        {
++            return IpmiRestartCause::ChassisCommandPowerReset;
++        }
+         default:
+         {
+             return IpmiRestartCause::Unknown;
+-- 
+2.7.4
+

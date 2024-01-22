@@ -1,0 +1,12 @@
+[
+    {
+        "Name": "POWER_BUTTON",
+        "GpioNum": 34,
+        "EventMon": "BOTH"
+    },
+    {
+        "Name": "RESET_BUTTON",
+        "GpioNum": 32,
+        "EventMon": "FALLING"
+    }
+]

@@ -1,0 +1,120 @@
+From 7cf9800df0f929e9044b12ecbd1e62ea941a12c7 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Wed, 4 Nov 2020 11:01:59 +0800
+Subject: [PATCH] Fix the page for firmware feature
+
+---
+ app/common/directives/firmware-list.html              |  0
+ .../controllers/firmware-controller.html              |  6 +++---
+ app/configuration/controllers/firmware-controller.js  | 19 ++++++++++++++++---
+ 3 files changed, 19 insertions(+), 6 deletions(-)
+ mode change 100644 => 100755 app/common/directives/firmware-list.html
+ mode change 100644 => 100755 app/configuration/controllers/firmware-controller.js
+
+diff --git a/app/common/directives/firmware-list.html b/app/common/directives/firmware-list.html
+old mode 100644
+new mode 100755
+diff --git a/app/configuration/controllers/firmware-controller.html b/app/configuration/controllers/firmware-controller.html
+index 7148f5c..47c2c75 100755
+--- a/app/configuration/controllers/firmware-controller.html
++++ b/app/configuration/controllers/firmware-controller.html
+@@ -121,17 +121,17 @@
+       <form ng-if="activate_image_type == 'Host'">
+         <fieldset>
+           <div class="row column">
+-            <label class="control-radio bold" for="activate-host-without-reboot">Activate firmware file without {{isServerOff() ? "booting" : "rebooting"}} server
++            <label class="control-radio bold" for="activate-host-without-reboot">Activate firmware file without {{isServerOff() ? "booting" : "rebooting"}} server via web
+               <input type="radio" name="activate-host-without-reboot" id="activate-host-without-reboot" ng-model="activate.reboot" ng-value="false"/>
+               <span class="control__indicator control__indicator-on"></span>
+             </label>
+           </div>
+-          <div class="row column">
++          <!-- <div class="row column">
+             <label class="control-radio bold" for="activate-host-with-reboot">Activate firmware file and automatically {{isServerOff() ? "boot" : "reboot"}} server
+               <input type="radio" name="activate-host-with-reboot" id="activate-host-with-reboot" ng-model="activate.reboot" ng-value="true"/>
+               <span class="control__indicator control__indicator-on"></span>
+             </label>
+-          </div>
++          </div> -->
+         </fieldset>
+       </form>
+     </div>
+diff --git a/app/configuration/controllers/firmware-controller.js b/app/configuration/controllers/firmware-controller.js
+old mode 100644
+new mode 100755
+index 451c16c..72cdcf8
+--- a/app/configuration/controllers/firmware-controller.js
++++ b/app/configuration/controllers/firmware-controller.js
+@@ -10,10 +10,10 @@ window.angular && (function(angular) {
+   'use strict';
+ 
+   angular.module('app.configuration').controller('firmwareController', [
+-    '$scope', '$window', 'APIUtils', 'dataService', '$location',
++    '$scope', '$window', 'APIUtils', '$route', 'dataService', '$location',
+     '$anchorScroll', 'Constants', '$interval', '$q', '$timeout', 'toastService',
+     function(
+-        $scope, $window, APIUtils, dataService, $location, $anchorScroll,
++        $scope, $window, APIUtils, $route, dataService, $location, $anchorScroll,
+         Constants, $interval, $q, $timeout, toastService) {
+       $scope.dataService = dataService;
+ 
+@@ -27,6 +27,7 @@ window.angular && (function(angular) {
+       $scope.bmcActiveVersion = '';
+       $scope.hostActiveVersion = '';
+       $scope.activate_confirm = false;
++      $scope.activate_finish = true;
+       $scope.delete_image_id = '';
+       $scope.delete_image_version = '';
+       $scope.activate_image_id = '';
+@@ -60,6 +61,7 @@ window.angular && (function(angular) {
+           APIUtils.getActivation(imageId).then(
+               function(state) {
+                 let imageStateActive = (/\.Active$/).test(state.data);
++                let imageStateReady = (/\.Ready$/).test(state.data);
+                 let imageStateFailed = (/\.Failed$/).test(state.data);
+                 if (imageStateActive || imageStateFailed) {
+                   $interval.cancel(pollActivationTimer);
+@@ -67,6 +69,16 @@ window.angular && (function(angular) {
+                 }
+                 if (imageStateActive) {
+                   deferred.resolve(state);
++                  if(!$scope.activate_finish){
++                    toastService.success('Image success to activate.');
++                    $scope.activate_finish = true;
++                  }
++                } else if (imageStateReady) {
++                  deferred.resolve(state);
++                  if(!$scope.activate_finish){
++                    toastService.success('Image success to activate.');
++                    $scope.activate_finish = true;
++                  }
+                 } else if (imageStateFailed) {
+                   console.log('Image failed to activate: ', imageStateFailed);
+                   toastService.error('Image failed to activate.');
+@@ -139,6 +151,7 @@ window.angular && (function(angular) {
+                   });
+             });
+         $scope.activate_confirm = false;
++        $scope.activate_finish = false;
+       };
+       function powerOn() {
+         dataService.setUnreachableState();
+@@ -155,7 +168,6 @@ window.angular && (function(angular) {
+             });
+       };
+       function warmReboot() {
+-        $scope.uploading = true;
+         dataService.setUnreachableState();
+         APIUtils.hostReboot()
+             .then(function(response) {
+@@ -186,6 +198,7 @@ window.angular && (function(angular) {
+                         '" has been uploaded');
+                     $scope.file = '';
+                     $scope.loadFirmwares();
++                    $route.reload();
+                   },
+                   function(error) {
+                     $scope.uploading = false;
+-- 
+2.7.4
+

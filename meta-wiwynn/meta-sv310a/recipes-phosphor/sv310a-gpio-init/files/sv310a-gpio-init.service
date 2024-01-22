@@ -1,0 +1,10 @@
+[Unit]
+Description=SV310A GPIO Initialization
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/sv310a-gpio-init.sh
+SyslogIdentifier=sv310a-gpio-init
+
+[Install]
+WantedBy=sysinit.target

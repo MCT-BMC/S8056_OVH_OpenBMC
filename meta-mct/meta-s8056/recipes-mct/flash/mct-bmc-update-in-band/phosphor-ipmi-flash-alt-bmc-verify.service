@@ -1,0 +1,9 @@
+[Unit]
+Description=Phosphor-ipmi-flash bmc verify service
+
+[Service]
+ExecStart=/usr/bin/image-verify.sh "/run/initramfs/bmc-backup"
+Type=oneshot
+
+[Install]
+WantedBy=phosphor-ipmi-flash-bmc-verify.target

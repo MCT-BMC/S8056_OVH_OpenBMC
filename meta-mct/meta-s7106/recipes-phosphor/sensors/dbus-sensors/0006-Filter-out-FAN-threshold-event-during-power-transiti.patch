@@ -1,0 +1,58 @@
+From fc0a71288ce029ec475bd552fe7c4e8959fd1811 Mon Sep 17 00:00:00 2001
+From: Ray Lue <ray.lue@mic.com.tw>
+Date: Thu, 26 Sep 2019 19:32:57 +0800
+Subject: [PATCH] Filter out FAN threshold event during power transition
+
+---
+ include/TachSensor.hpp | 1 +
+ src/TachSensor.cpp     | 5 ++++-
+ 2 files changed, 5 insertions(+), 1 deletion(-)
+ mode change 100644 => 100755 include/TachSensor.hpp
+ mode change 100644 => 100755 src/TachSensor.cpp
+
+diff --git a/include/TachSensor.hpp b/include/TachSensor.hpp
+old mode 100644
+new mode 100755
+index f79fb4d..dde0eb9
+--- a/include/TachSensor.hpp
++++ b/include/TachSensor.hpp
+@@ -82,6 +82,7 @@ class TachSensor : public Sensor
+     void setupRead(void);
+     void handleResponse(const boost::system::error_code& err);
+     void checkThresholds(void) override;
++    thresholds::ThresholdTimer thresholdTimer;
+ };
+ 
+ inline void logFanInserted(const std::string& device)
+diff --git a/src/TachSensor.cpp b/src/TachSensor.cpp
+old mode 100644
+new mode 100755
+index 23ae477..f645c25
+--- a/src/TachSensor.cpp
++++ b/src/TachSensor.cpp
+@@ -46,7 +46,7 @@ TachSensor::TachSensor(const std::string& path, const std::string& objectType,
+            sensorConfiguration, objectType, limits.second, limits.first),
+     path(path), objServer(objectServer), presence(std::move(presenceSensor)),
+     redundancy(redundancy), inputDev(io, open(path.c_str(), O_RDONLY)),
+-    waitTimer(io), errCount(0)
++    waitTimer(io), thresholdTimer(io, this), errCount(0)
+ {
+     sensorInterface = objectServer.add_interface(
+         "/xyz/openbmc_project/sensors/fan_tach/" + name,
+@@ -202,6 +202,8 @@ void TachSensor::checkThresholds(void)
+         return;
+     }
+ 
++    thresholds::checkThresholdsPowerDelay(this, thresholdTimer);
++# if 0    
+     bool status = thresholds::checkThresholds(this);
+ 
+     if (redundancy && *redundancy)
+@@ -209,6 +211,7 @@ void TachSensor::checkThresholds(void)
+         (*redundancy)
+             ->update("/xyz/openbmc_project/sensors/fan_tach/" + name, !status);
+     }
++#endif    
+ }
+ 
+ PresenceSensor::PresenceSensor(const size_t index, bool inverted,

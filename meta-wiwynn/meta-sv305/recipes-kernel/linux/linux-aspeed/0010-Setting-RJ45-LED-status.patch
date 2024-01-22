@@ -1,0 +1,45 @@
+From 50e5358f2cb9f2acc09152b27fd810df0df2eda1 Mon Sep 17 00:00:00 2001
+From: Eli Huang <Eli_Huang@wiwynn.com>
+Date: Thu, 4 Mar 2021 11:22:03 +0800
+Subject: [PATCH] Setting RJ45 LED status
+
+Description:
+- Modify PHY driver's LED mode to enable PHY LED feature.
+- RJ45 Link LED behavior:
+  - 10M: OFF
+  - 100M: Amber
+  - 1000M: Green
+
+Design:
+- Set LED1 and LED 2 to LINKSPD[1] and LINKSPD[2]
+  - Shadow register selector (bit 14:10) set 01101 (LED Selector 1)
+  - LED2 selector (bit 7:4) set to LINKSPD[2] (0001)
+  - LED1 selector (bit 3:0) set to LINKSPD[1] (0000)
+
+- Set Linkspeed LED1 and LED2 Status to LOM-LED Mode
+  - Shadow register selector (bit 14:10) set 00010 (Spare Control 1)
+  - Linkspeed (bit 2) set to LOM-LED mode
+---
+ drivers/net/ethernet/faraday/ftgmac100.c | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/drivers/net/ethernet/faraday/ftgmac100.c b/drivers/net/ethernet/faraday/ftgmac100.c
+index 810777769bf1..06205b8c10c7 100644
+--- a/drivers/net/ethernet/faraday/ftgmac100.c
++++ b/drivers/net/ethernet/faraday/ftgmac100.c
+@@ -1961,6 +1961,12 @@ static int ftgmac100_probe(struct platform_device *pdev)
+ 
+ 	netdev_info(netdev, "irq %d, mapped at %p\n", netdev->irq, priv->base);
+ 
++	/* Set LED1 and LED 2 to LINKSPD[1] and LINKSPD[2] */
++	ftgmac100_mdiobus_write(priv->mii_bus, 0x01, 0x1c, 0xb410);
++
++	/* Set Linkspeed LED1 and LED2 Status to LOM-LED Mode */
++	ftgmac100_mdiobus_write(priv->mii_bus, 0x01, 0x1c, 0x8806);
++
+ 	return 0;
+ 
+ err_register_netdev:
+-- 
+2.28.0
+

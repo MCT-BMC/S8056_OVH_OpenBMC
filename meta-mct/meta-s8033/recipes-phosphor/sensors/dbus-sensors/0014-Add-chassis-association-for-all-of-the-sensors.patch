@@ -1,0 +1,47 @@
+From 562b90331d734004a25049384f5576ab74b69156 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Fri, 25 Mar 2022 15:40:04 +0800
+Subject: [PATCH] Add chassis association for all of the sensors
+
+---
+ include/Utils.hpp | 2 ++
+ src/Utils.cpp     | 3 +++
+ 2 files changed, 5 insertions(+)
+
+diff --git a/include/Utils.hpp b/include/Utils.hpp
+index 5adf785..d0f049f 100755
+--- a/include/Utils.hpp
++++ b/include/Utils.hpp
+@@ -26,6 +26,8 @@ const constexpr char* entityManagerName = "xyz.openbmc_project.EntityManager";
+ 
+ constexpr const char* cpuInventoryPath =
+     "/xyz/openbmc_project/inventory/system/chassis/motherboard";
++constexpr const char* chassisInventoryPath =
++    "/xyz/openbmc_project/inventory/system/chassis";
+ const std::regex illegalDbusRegex("[^A-Za-z0-9_]");
+ 
+ using BasicVariantType =
+diff --git a/src/Utils.cpp b/src/Utils.cpp
+index 74d99ca..8c6c7c2 100755
+--- a/src/Utils.cpp
++++ b/src/Utils.cpp
+@@ -575,6 +575,8 @@ void createAssociation(
+         std::vector<Association> associations;
+         associations.emplace_back("chassis", "all_sensors",
+                                   p.parent_path().string());
++        associations.emplace_back("chassis", "all_sensors",
++                                  chassisInventoryPath);
+         association->register_property("Associations", associations);
+         association->initialize();
+     }
+@@ -593,6 +595,7 @@ void setInventoryAssociation(
+ 
+         associations.emplace_back("inventory", "sensors", objPath);
+         associations.emplace_back("chassis", "all_sensors", objPath);
++        associations.emplace_back("chassis", "all_sensors", chassisInventoryPath);
+ 
+         for (const std::string& chassisPath : chassisPaths)
+         {
+-- 
+2.7.4
+

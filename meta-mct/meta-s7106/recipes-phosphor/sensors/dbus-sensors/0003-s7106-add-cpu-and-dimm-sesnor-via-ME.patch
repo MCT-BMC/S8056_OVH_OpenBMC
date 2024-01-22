@@ -1,0 +1,176 @@
+From 1a86e3460713bc76b92a1f6853eeee91f08108e2 Mon Sep 17 00:00:00 2001
+From: Ray Lue <ray.lue@mic.com.tw>
+Date: Mon, 5 Aug 2019 14:24:14 +0800
+Subject: [PATCH] CPU/DIMM sensors over ME
+
+---
+ include/IpmbSensor.hpp |   2 +
+ src/IpmbSensor.cpp     | 100 ++++++++++++++++++++++++++++++++++++++++-
+ 2 files changed, 101 insertions(+), 1 deletion(-)
+
+diff --git a/include/IpmbSensor.hpp b/include/IpmbSensor.hpp
+index e7a9540..5b68b6b 100644
+--- a/include/IpmbSensor.hpp
++++ b/include/IpmbSensor.hpp
+@@ -10,6 +10,7 @@
+ enum class IpmbType
+ {
+     meSensor,
++    peciSensor,
+     PXE1410CVR,
+     IR38363VR,
+     ADM1278HSC,
+@@ -54,6 +55,7 @@ struct IpmbSensor : public Sensor
+ 
+     // to date all ipmb sensors are power on only
+     PowerState readState;
++    bool cpuDimmTempScaner = false;
+ 
+   private:
+     sdbusplus::asio::object_server& objectServer;
+diff --git a/src/IpmbSensor.cpp b/src/IpmbSensor.cpp
+index 946c060..9b1746f 100644
+--- a/src/IpmbSensor.cpp
++++ b/src/IpmbSensor.cpp
+@@ -42,6 +42,11 @@ static constexpr double ipmbMinReading = 0;
+ static constexpr uint8_t meAddress = 1;
+ static constexpr uint8_t lun = 0;
+ 
++//MiTAC__ for cpudimm
++static uint8_t cpuDimmTempMutex = 1;
++static std::vector<uint8_t> data_buffer(100);
++static uint8_t tjmax = 0;
++
+ static constexpr const char* sensorPathPrefix = "/xyz/openbmc_project/sensors/";
+ 
+ using IpmbMethodType =
+@@ -193,6 +198,14 @@ void IpmbSensor::loadDefaults()
+         initData = {0x57, 0x01, 0x00, 0x14, 0x03, deviceAddress, 0x00,
+                     0x00, 0x00, 0x00, 0x02, 0x00, 0x00,          0x00};
+     }
++    else if (type == IpmbType::peciSensor)
++    {
++        commandAddress = meAddress;
++        netfn = 0x2e;       // me bridge
++        command = 0x4b;     // Get CPU and Memory Temperature
++        commandData = {0x57, 0x01, 0x00, 0x3, 0xff,  0xff, 0xff,
++                       0xff, 0x00, 0x00, 0x00, 0x00};
++    }
+     else
+     {
+         throw std::runtime_error("Invalid sensor type");
+@@ -228,6 +241,64 @@ void IpmbSensor::read(void)
+             read();
+             return;
+         }
++
++        if (type == IpmbType::peciSensor && cpuDimmTempScaner == false)
++        {
++            //chekc if Tjmax inited
++            if(tjmax == 0)
++            {
++                std::vector<uint8_t> TjmaxSensorNo = {0x30};
++                uint8_t command = 0x2d;
++                dbusConnection->async_method_call(
++                   [this](boost::system::error_code ec,
++                   const IpmbMethodType& response)
++                    {
++                        const int& status = std::get<0>(response);
++                        if (ec || status)
++                        {
++                            std::cerr << "Error reading from device: " << name << "\n";
++                            read();
++                            return;
++                        }
++                        const std::vector<uint8_t>& data = std::get<5>(response);
++                        if constexpr (debug)
++                        {
++                            for (size_t d : data)
++                            {
++                                std::cout << std::hex << d << " ";
++                            }
++                            std::cout << "\n";
++                            std::cout << "data size "<< data.size() <<"\n";
++                        }
++                        if( 3 == data.size()){
++                            if(0x40 == data[1]){
++                                tjmax = data[0];
++                            }
++                        }
++                          
++                        read();
++                    },
++                    "xyz.openbmc_project.Ipmi.Channel.Ipmb",
++                    "/xyz/openbmc_project/Ipmi/Channel/Ipmb", "org.openbmc.Ipmb",
++                    "sendRequest", meAddress,(uint8_t)0x04, lun, (uint8_t)0x2d, TjmaxSensorNo);
++                 return;
++             }
++            //the first cpudimm sensor take the mutex, the others update the sensor by buffered data; 
++            if(cpuDimmTempMutex){
++                cpuDimmTempMutex = 0 ;
++                cpuDimmTempScaner = true;
++            }else{
++                uint16_t value = 0;
++                if(0xff == data_buffer[deviceAddress]) value = -1;
++                else{
++                     value = deviceAddress > 1 ? data_buffer[deviceAddress]:tjmax - data_buffer[deviceAddress];
++                }
++                updateValue(value);
++                read();
++                return;
++            }
++        }
++        
+         dbusConnection->async_method_call(
+             [this](boost::system::error_code ec,
+                    const IpmbMethodType& response) {
+@@ -257,7 +328,7 @@ void IpmbSensor::read(void)
+                     std::cout << name << ": ";
+                     for (size_t d : data)
+                     {
+-                        std::cout << d << " ";
++                        std::cout << std::hex << d << " ";
+                     }
+                     std::cout << "\n";
+                 }
+@@ -277,6 +348,29 @@ void IpmbSensor::read(void)
+                     }
+                     value = data[0];
+                 }
++
++                else if (type == IpmbType::peciSensor)
++                {
++                    if (data.empty())
++                    {
++                        if (firstError)
++                        {
++                            std::cerr << " Invalid data from device: " << name                                   << "\n";
++                            firstError = false;
++                        }
++                        read();
++                        return;
++                    }
++                    //copy data to buffer 
++                    data_buffer.assign(data.begin()+3, data.end());
++                    //TODO: use json config to indicate temp type
++                    if(0xff == data_buffer[deviceAddress]) value = -1;
++                    else 
++                        value = deviceAddress > 1 ? data_buffer[deviceAddress]:tjmax - data_buffer[deviceAddress];
++
++                }
++
++                
+                 else if (type == IpmbType::PXE1410CVR ||
+                          type == IpmbType::IR38363VR)
+                 {
+@@ -456,6 +550,10 @@ void createSensors(
+                     {
+                         sensor->type = IpmbType::meSensor;
+                     }
++                    else if (sensorClass == "PeciBridgeTemp")
++                    {
++                        sensor->type = IpmbType::peciSensor;
++                    }
+                     else
+                     {
+                         std::cerr << "Invalid class " << sensorClass << "\n";

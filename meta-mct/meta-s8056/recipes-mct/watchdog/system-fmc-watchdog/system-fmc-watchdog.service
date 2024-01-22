@@ -1,0 +1,13 @@
+[Unit]
+Description=BMC FMC WDT2 Watchdog Daemon
+
+[Service]
+EnvironmentFile=/etc/default/conf/system-fmc-watchdog.conf
+ExecStartPre=/bin/bash -c '/usr/bin/env devmem ${{FMC_DISABLE_ADDRESS}} 32 ${{DISABLE_REGISTER}} &&  if [ -f "/run/sysFmcWDTEnd" ]; then /usr/bin/env rm /run/sysFmcWDTEnd; fi'
+ExecStart=/usr/bin/env system-fmc-watchdog ${{TIMEOUT}} ${{INTERVAL}}
+ExecStop=/bin/bash -c '/usr/bin/env devmem ${{FMC_DISABLE_ADDRESS}} 32 ${{DISABLE_REGISTER}} && /usr/bin/env touch /run/sysFmcWDTEnd'
+KillSignal=SIGKILL
+Nice=-20
+
+[Install]
+WantedBy=basic.target

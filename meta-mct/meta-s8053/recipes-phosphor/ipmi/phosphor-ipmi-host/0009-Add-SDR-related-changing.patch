@@ -1,0 +1,416 @@
+From 356b45d756dfe691513382bd4b24a25fe0032555 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Fri, 18 Mar 2022 16:57:23 +0800
+Subject: [PATCH] Add SDR related changing
+
+PATCH: Add SDR type 3 supported
+PATCH: Implement defined sdr table
+PATCH: Fix sensor reading value negative issue
+PATCH: Add spcific sensor event type 0x00 to 0x04  supported
+PATCH: Supoort BMC health to be threshold sensor
+PATCH: Add system firmware supported in sensor type list
+PATCH: Update entity instance for FRU sensor to avoiding ipmitool issue
+
+IPMITOOL issue.
+It could not handler fru sensor with same entity instance and id when getting sel entry.
+Modify entity instance and id for fixing this issue.
+
+PATCH: dbus-sdr: Add hybrid sensors stack option
+
+PATCH: Supprot percentage reading type for sensor list
+
+Add button discrete sensor type supported.
+---
+ dbus-sdr/sdrutils.cpp                |   0
+ dbus-sdr/sensorcommands.cpp          | 121 +++++++++++++++++++++++----
+ dbus-sdr/storagecommands.cpp         |   2 +-
+ include/dbus-sdr/sdrutils.hpp        |  49 ++++++++++-
+ include/dbus-sdr/storagecommands.hpp |   3 +-
+ 5 files changed, 157 insertions(+), 18 deletions(-)
+ mode change 100644 => 100755 dbus-sdr/sdrutils.cpp
+ mode change 100644 => 100755 dbus-sdr/sensorcommands.cpp
+ mode change 100644 => 100755 include/dbus-sdr/sdrutils.hpp
+ mode change 100644 => 100755 include/dbus-sdr/storagecommands.hpp
+
+diff --git a/dbus-sdr/sdrutils.cpp b/dbus-sdr/sdrutils.cpp
+old mode 100644
+new mode 100755
+diff --git a/dbus-sdr/sensorcommands.cpp b/dbus-sdr/sensorcommands.cpp
+old mode 100644
+new mode 100755
+index 81bdf23..b0a0d1d
+--- a/dbus-sdr/sensorcommands.cpp
++++ b/dbus-sdr/sensorcommands.cpp
+@@ -42,6 +42,8 @@
+ #include <user_channel/channel_layer.hpp>
+ #include <utility>
+ #include <variant>
++#include <fstream>
++#include <nlohmann/json.hpp>
+ 
+ #ifdef FEATURE_HYBRID_SENSORS
+ 
+@@ -107,7 +109,12 @@ const static boost::container::flat_map<const char*, SensorUnits, CmpStr>
+                  {"voltage", SensorUnits::volts},
+                  {"current", SensorUnits::amps},
+                  {"fan_tach", SensorUnits::rpm},
++                 {"pattern", SensorUnits::hit},
++                 {"fan_pwm", SensorUnits::unspecified},
++                 {"utilization", SensorUnits::unspecified},
+                  {"power", SensorUnits::watts}}};
++const static std::vector<std::string> percentageType = { "fan_pwm",
++                                                         "utilization"};
+ 
+ void registerSensorFunctions() __attribute__((constructor));
+ 
+@@ -534,6 +541,66 @@ bool getVrEventStatus(ipmi::Context::ptr ctx, const std::string& connection,
+ }
+ } // namespace sensor
+ 
++static constexpr const char* sdrEventOnlyFile = "/usr/share/ipmi-providers/sdr_event_only.json";
++static std::vector<get_sdr::SensorDataEventRecord> definedSdrlist;
++
++static void loadSdr(uint16_t baseID)
++{
++    static bool loaded = false;
++    static uint16_t perviosBase  = baseID;
++
++    if(loaded && (perviosBase == baseID))
++    {
++        return;
++    }
++    loaded = true;
++    perviosBase = baseID;
++    definedSdrlist.clear();
++    get_sdr::SensorDataEventRecord record = {0};
++    record.header.sdr_version = ipmiSdrVersion;
++    record.header.record_type = 0x03;
++    record.header.record_length = sizeof(get_sdr::SensorDataEventRecord) -
++                                      sizeof(get_sdr::SensorDataRecordHeader);
++    record.key.owner_lun = 0x0;
++    record.body.entity_id = 0x07;
++    record.body.entity_instance = 0x01;
++    record.body.event_reading_type = 0x6f;
++
++    std::ifstream sdrStream(sdrEventOnlyFile);
++    if(!sdrStream.is_open())
++    {
++        std::cerr << "NO defined SDR found\n";
++    }
++    else
++    {
++        auto data = nlohmann::json::parse(sdrStream, nullptr, false);
++        if (data.is_discarded())
++        {
++            std::cerr << "syntax error in " << sdrEventOnlyFile << "\n";
++        }
++        else
++        {
++            int idx = 0;
++            while (!data[idx].is_null())
++            {
++                record.header.record_id_msb = (baseID+idx) << 8;
++                record.header.record_id_lsb = (baseID+idx) & 0xFF;
++                record.key.owner_id = std::stoul((std::string)data[idx]["ownerId"], nullptr, 16);
++                record.key.sensor_number = std::stoul((std::string)data[idx]["sensorNumber"], nullptr, 16);
++                record.body.sensor_type = std::stoul((std::string)data[idx]["sensorType"], nullptr, 16);
++                std::string sensor_name = data[idx]["sensorName"];
++                record.body.id_string_info = sensor_name.size();
++                std::strncpy(record.body.id_string, sensor_name.c_str(),
++                sizeof(record.body.id_string));
++                definedSdrlist.push_back(record);
++                idx++;
++            }
++        }
++        sdrStream.close();
++    }
++    std::cerr << "sdr size:" << definedSdrlist.size() << '\n';
++}
++
+ ipmi::RspType<> ipmiSenPlatformEvent(ipmi::Context::ptr ctx,
+                                      ipmi::message::Payload& p)
+ {
+@@ -920,7 +987,14 @@ ipmi::RspType<uint8_t, uint8_t, uint8_t, std::optional<uint8_t>>
+     }
+ 
+     // no discrete as of today so optional byte is never returned
+-    return ipmi::responseSuccess(value, operation, thresholds, std::nullopt);
++    if (reading < 0)
++    {
++        return ipmi::responseSuccess(static_cast<int>(reading), operation, thresholds, std::nullopt);
++    }
++    else
++    {
++        return ipmi::responseSuccess(value, operation, thresholds, std::nullopt);
++    }
+ }
+ 
+ /** @brief implements the Set Sensor threshold command
+@@ -1616,10 +1690,15 @@ bool constructSensorSdr(ipmi::Context::ptr ctx, uint16_t sensorNum,
+     std::string type = getSensorTypeStringFromPath(path);
+     auto typeCstr = type.c_str();
+     auto findUnits = sensorUnits.find(typeCstr);
++    bool percentage = false;
+     if (findUnits != sensorUnits.end())
+     {
+         record.body.sensor_units_2_base =
+             static_cast<uint8_t>(findUnits->second);
++        if(std::find(percentageType.begin(), percentageType.end(), type) != percentageType.end())
++        {
++            percentage = true;
++        }
+     } // else default 0x0 unspecified
+ 
+     record.body.event_reading_type = getSensorEventTypeFromPath(path);
+@@ -1703,7 +1782,7 @@ bool constructSensorSdr(ipmi::Context::ptr ctx, uint16_t sensorNum,
+         (rExpSign << 7) | (rExpBits << 4) | (bExpSign << 3) | bExpBits;
+ 
+     // Set the analog reading byte interpretation accordingly
+-    record.body.sensor_units_1 = (bSigned ? 1 : 0) << 7;
++    record.body.sensor_units_1 = (bSigned ? 1 : 0) << 7 | percentage;
+ 
+     // TODO(): Perhaps care about Tolerance, Accuracy, and so on
+     // These seem redundant, but derivable from the above 5 attributes
+@@ -1848,6 +1927,8 @@ void constructEventSdrHeaderKey(uint16_t sensorNum, uint16_t recordID,
+     get_sdr::header::set_record_id(
+         recordID, reinterpret_cast<get_sdr::SensorDataRecordHeader*>(&record));
+ 
++    record.header.record_id_msb = recordID << 8;
++    record.header.record_id_lsb = recordID & 0xFF;
+     record.header.sdr_version = ipmiSdrVersion;
+     record.header.record_type = get_sdr::SENSOR_DATA_EVENT_RECORD;
+     record.header.record_length = sizeof(get_sdr::SensorDataEventRecord) -
+@@ -1856,11 +1937,11 @@ void constructEventSdrHeaderKey(uint16_t sensorNum, uint16_t recordID,
+     record.key.owner_lun = lun;
+     record.key.sensor_number = sensornumber;
+ 
+-    record.body.entity_id = 0x00;
++    record.body.entity_id = 0x07;
+     record.body.entity_instance = 0x01;
+ }
+ 
+-// Construct a type 3 SDR for VR typed sensor(daemon).
++// Construct a type 3 SDR for type 3 sensor (daemon).
+ bool constructVrSdr(ipmi::Context::ptr ctx, uint16_t sensorNum,
+                     uint16_t recordID, const std::string& service,
+                     const std::string& path,
+@@ -1873,7 +1954,7 @@ bool constructVrSdr(ipmi::Context::ptr ctx, uint16_t sensorNum,
+     if (!getSensorMap(ctx, service, path, sensorMap, sensorMapSdrUpdatePeriod))
+     {
+         phosphor::logging::log<phosphor::logging::level::ERR>(
+-            "Failed to update sensor map for VR sensor",
++            "Failed to update sensor map for type 3 sensor",
+             phosphor::logging::entry("SERVICE=%s", service.c_str()),
+             phosphor::logging::entry("PATH=%s", path.c_str()));
+         return false;
+@@ -1887,9 +1968,8 @@ bool constructVrSdr(ipmi::Context::ptr ctx, uint16_t sensorNum,
+     // sensor path. This is because VR control is allocated in an independent
+     // path(/xyz/openbmc_project/vr/profile/...) which is not categorized by
+     // types.
+-    static constexpr const uint8_t module_board_type = 0x15;
+-    record.body.sensor_type = module_board_type;
+-    record.body.event_reading_type = 0x00;
++    record.body.sensor_type = getSensorTypeFromPath(path);
++    record.body.event_reading_type = 0x6f;
+ 
+     record.body.sensor_record_sharing_1 = 0x00;
+     record.body.sensor_record_sharing_2 = 0x00;
+@@ -1926,12 +2006,15 @@ static int
+         return GENERAL_ERROR;
+     }
+ 
++    //MCT add pre-defined SDR
++    loadSdr(getNumberOfSensors());
++
+     const auto& entityRecords =
+         ipmi::sensor::EntityInfoMapContainer::getContainer()
+             ->getIpmiEntityRecords();
+     size_t entityCount = entityRecords.size();
+ 
+-    size_t lastRecord = getNumberOfSensors() + fruCount +
++    size_t lastRecord = getNumberOfSensors() + fruCount + definedSdrlist.size() +
+                         ipmi::storage::type12Count + entityCount - 1;
+     if (recordID == lastRecordIndex)
+     {
+@@ -1946,7 +2029,7 @@ static int
+ 
+     if (recordID >= getNumberOfSensors())
+     {
+-        size_t sdrIndex = recordID - getNumberOfSensors();
++        size_t sdrIndex = recordID - getNumberOfSensors() - definedSdrlist.size();
+ 
+         if (sdrIndex >= fruCount + ipmi::storage::type12Count)
+         {
+@@ -2095,9 +2178,8 @@ static int
+     }
+ #endif
+ 
+-    // Contruct SDR type 3 record for VR sensor (daemon)
+-    if (std::find(interfaces.begin(), interfaces.end(), sensor::vrInterface) !=
+-        interfaces.end())
++    // Contruct SDR type 3 record for type 3 sensor
++    if (getSensorEventTypeFromPath(path) == 0x6f)
+     {
+         get_sdr::SensorDataEventRecord record = {0};
+ 
+@@ -2116,6 +2198,12 @@ static int
+                           ((uint8_t*)&record) + sizeof(record));
+     }
+ 
++    for (auto & record : definedSdrlist) {
++        // insert the record into the map
++        recordData.insert(recordData.end(), (uint8_t*)&record,
++                          ((uint8_t*)&record) + sizeof(record));
++    }
++
+     return 0;
+ }
+ 
+@@ -2244,6 +2332,9 @@ ipmi::RspType<uint8_t,  // sdr version
+         return ipmi::responseResponseError();
+     }
+ 
++    //MCT add pre-defined SDR
++    loadSdr(sensorTree.size());
++
+     size_t fruCount = 0;
+     ipmi::Cc ret = ipmi::storage::getFruSdrCount(ctx, fruCount);
+     if (ret != ipmi::ccSuccess)
+@@ -2252,7 +2343,7 @@ ipmi::RspType<uint8_t,  // sdr version
+     }
+ 
+     uint16_t recordCount =
+-        getNumberOfSensors() + fruCount + ipmi::storage::type12Count;
++        getNumberOfSensors() + definedSdrlist.size() + fruCount + ipmi::storage::type12Count;
+ 
+     uint8_t operationSupport = static_cast<uint8_t>(
+         SdrRepositoryInfoOps::overflow); // write not supported
+@@ -2339,7 +2430,7 @@ ipmi::RspType<uint16_t,            // next record ID
+     int entityCount = entityRecords.size();
+ 
+     auto& sensorTree = getSensorTree();
+-    size_t lastRecord = getNumberOfSensors() + fruCount +
++    size_t lastRecord = getNumberOfSensors() + definedSdrlist.size() + fruCount +
+                         ipmi::storage::type12Count + entityCount - 1;
+     uint16_t nextRecordId = lastRecord > recordID ? recordID + 1 : 0XFFFF;
+ 
+diff --git a/dbus-sdr/storagecommands.cpp b/dbus-sdr/storagecommands.cpp
+index 5de08af..8087224 100755
+--- a/dbus-sdr/storagecommands.cpp
++++ b/dbus-sdr/storagecommands.cpp
+@@ -703,7 +703,7 @@ ipmi_ret_t getFruSdrs(ipmi::Context::ptr ctx, size_t index,
+     resp.body.deviceTypeModifier = 0x0;
+ 
+     uint8_t entityID = 0;
+-    uint8_t entityInstance = 0x1;
++    uint8_t entityInstance = 0x0;
+ 
+ #ifdef USING_ENTITY_MANAGER_DECORATORS
+     if (entityData)
+diff --git a/include/dbus-sdr/sdrutils.hpp b/include/dbus-sdr/sdrutils.hpp
+old mode 100644
+new mode 100755
+index 1af65bc..7971b9c
+--- a/include/dbus-sdr/sdrutils.hpp
++++ b/include/dbus-sdr/sdrutils.hpp
+@@ -308,17 +308,30 @@ enum class SensorTypeCodes : uint8_t
+     fan = 0x04,
+     physical_security = 0x5,
+     processor = 0x07,
++    power_supply = 0x8,
+     power_unit = 0x09,
+     other = 0x0b,
+     memory = 0x0c,
++    system_firmware = 0x0f,
++    event_disabled = 0x10,
++    system_event = 0x12,
++    restart = 0x1d,
+     buttons = 0x14,
++    board = 0x15,
++    chassis = 0x18,
++    acpi = 0x22,
+     watchdog2 = 0x23,
++    mgtsubsyshealth = 0x28,
++    versionchange = 0x2b,
++    fru_state = 0x2c,
+ };
+ 
+ enum class SensorEventTypeCodes : uint8_t
+ {
+     unspecified = 0x00,
+     threshold = 0x01,
++    assert = 0x03,
++    devicePresent = 0x8,
+     sensorSpecified = 0x6f
+ };
+ 
+@@ -347,8 +360,42 @@ const static boost::container::flat_map<
+                                   SensorEventTypeCodes::sensorSpecified)},
+          {"buttons", std::make_pair(SensorTypeCodes::buttons,
+                                     SensorEventTypeCodes::sensorSpecified)},
++         {"buttons_evnet", std::make_pair(SensorTypeCodes::buttons,
++                                    SensorEventTypeCodes::assert)},
+          {"watchdog", std::make_pair(SensorTypeCodes::watchdog2,
+-                                     SensorEventTypeCodes::sensorSpecified)}}};
++                                     SensorEventTypeCodes::sensorSpecified)},
++         {"power_supply", std::make_pair(SensorTypeCodes::power_supply,
++                                     SensorEventTypeCodes::sensorSpecified)},
++         {"power_unit", std::make_pair(SensorTypeCodes::power_unit,
++                                     SensorEventTypeCodes::sensorSpecified)},
++         {"power_event", std::make_pair(SensorTypeCodes::other,
++                                     SensorEventTypeCodes::sensorSpecified)},
++         {"pattern", std::make_pair(SensorTypeCodes::other,
++                                     SensorEventTypeCodes::threshold)},
++         {"event_disabled", std::make_pair(SensorTypeCodes::event_disabled,
++                                     SensorEventTypeCodes::sensorSpecified)},
++         {"system_event", std::make_pair(SensorTypeCodes::system_event,
++                                     SensorEventTypeCodes::sensorSpecified)},
++         {"restart", std::make_pair(SensorTypeCodes::restart,
++                                     SensorEventTypeCodes::sensorSpecified)},
++         {"acpi", std::make_pair(SensorTypeCodes::acpi,
++                                     SensorEventTypeCodes::sensorSpecified)},
++         {"mgtsubsyshealth", std::make_pair(SensorTypeCodes::mgtsubsyshealth,
++                                     SensorEventTypeCodes::sensorSpecified)},
++         {"versionchange", std::make_pair(SensorTypeCodes::versionchange,
++                                     SensorEventTypeCodes::sensorSpecified)},
++         {"fru_state", std::make_pair(SensorTypeCodes::fru_state,
++                                     SensorEventTypeCodes::sensorSpecified)},
++         {"system_firmware", std::make_pair(SensorTypeCodes::system_firmware,
++                                     SensorEventTypeCodes::sensorSpecified)},
++         {"chassis", std::make_pair(SensorTypeCodes::chassis,
++                                     SensorEventTypeCodes::sensorSpecified)},
++         {"fan_present", std::make_pair(SensorTypeCodes::fan,
++                                     SensorEventTypeCodes::devicePresent)},
++         {"utilization", std::make_pair(SensorTypeCodes::mgtsubsyshealth,
++                                     SensorEventTypeCodes::threshold)},
++         {"board", std::make_pair(SensorTypeCodes::board,
++                                     SensorEventTypeCodes::devicePresent)}}};
+ 
+ std::string getSensorTypeStringFromPath(const std::string& path);
+ 
+diff --git a/include/dbus-sdr/storagecommands.hpp b/include/dbus-sdr/storagecommands.hpp
+old mode 100644
+new mode 100755
+index 79feb56..03a6a58
+--- a/include/dbus-sdr/storagecommands.hpp
++++ b/include/dbus-sdr/storagecommands.hpp
+@@ -63,6 +63,7 @@ enum class SensorUnits : uint8_t
+     amps = 0x5,
+     watts = 0x6,
+     rpm = 0x12,
++    hit = 0x4e,
+ };
+ 
+ #pragma pack(push, 1)
+@@ -101,7 +102,7 @@ namespace ipmi
+ namespace storage
+ {
+ 
+-constexpr const size_t type12Count = 2;
++constexpr const size_t type12Count = 0;
+ ipmi_ret_t getFruSdrs(ipmi::Context::ptr ctx, size_t index,
+                       get_sdr::SensorDataFruRecord& resp);
+ 
+-- 
+2.25.1
+

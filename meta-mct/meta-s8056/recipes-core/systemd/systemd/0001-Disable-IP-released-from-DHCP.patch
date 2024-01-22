@@ -1,0 +1,28 @@
+From 19be9bb15a13926bf3d15cd132fa0f17f94d269e Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Tue, 26 Oct 2021 16:17:55 +0800
+Subject: [PATCH 1/2] Disable IP released from DHCP
+
+---
+ src/network/networkd-network.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+ mode change 100644 => 100755 src/network/networkd-network.c
+
+diff --git a/src/network/networkd-network.c b/src/network/networkd-network.c
+old mode 100644
+new mode 100755
+index 850b4f4..475fc10
+--- a/src/network/networkd-network.c
++++ b/src/network/networkd-network.c
+@@ -340,7 +340,7 @@ int network_load_one(Manager *manager, OrderedHashmap **networks, const char *fi
+                 .dhcp_use_routes = true,
+                 .dhcp_use_gateway = -1,
+                 .dhcp_send_hostname = true,
+-                .dhcp_send_release = true,
++                .dhcp_send_release = false,
+                 .dhcp_route_metric = DHCP_ROUTE_METRIC,
+                 .dhcp_client_identifier = _DHCP_CLIENT_ID_INVALID,
+                 .dhcp_route_table = RT_TABLE_MAIN,
+-- 
+2.7.4
+

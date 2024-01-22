@@ -1,0 +1,10 @@
+[Unit]
+Description=SV305 GPIO Initialization
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/sv305-gpio-init.sh
+SyslogIdentifier=sv305-gpio-init
+
+[Install]
+WantedBy=sysinit.target

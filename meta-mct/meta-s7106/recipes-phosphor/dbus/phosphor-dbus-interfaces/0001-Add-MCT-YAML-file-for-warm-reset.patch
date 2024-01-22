@@ -1,0 +1,24 @@
+From 00b2d30ded56bad3bbf9d5f56a9e753302df98d4 Mon Sep 17 00:00:00 2001
+From: "terry.chang" <terry.chang@mic.com.tw>
+Date: Wed, 12 Sep 2018 15:58:05 +0800
+Subject: [PATCH] Add MCT YAML file for warm reset
+
+---
+ xyz/openbmc_project/State/Host.interface.yaml | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/xyz/openbmc_project/State/Host.interface.yaml b/xyz/openbmc_project/State/Host.interface.yaml
+index 8f481b8..0127dc0 100644
+--- a/xyz/openbmc_project/State/Host.interface.yaml
++++ b/xyz/openbmc_project/State/Host.interface.yaml
+@@ -31,6 +31,10 @@ enumerations:
+         - name: 'Reboot'
+           description: >
+             Host firmware should be rebooted
++        - name: 'Reset'
++          description: >
++            Host firmware should be warm reset
++
+ 
+     - name: HostState
+       description: >

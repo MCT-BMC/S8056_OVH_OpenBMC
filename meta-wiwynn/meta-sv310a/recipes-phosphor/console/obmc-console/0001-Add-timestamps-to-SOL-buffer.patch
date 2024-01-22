@@ -1,0 +1,138 @@
+From a7b4538d1aedc6e9b5a43d3cebcab6665f4b7258 Mon Sep 17 00:00:00 2001
+From: Ren_Chen <Ren_Chen@wiwynn.com>
+Date: Wed, 30 Dec 2020 08:31:13 +0800
+Subject: [PATCH] Add timestamps to SOL buffer
+
+%% original patch: 0001-Add-timestamps-to-SOL-buffer.patch
+---
+ console-server.h |  1 +
+ log-handler.c    |  2 +-
+ util.c           | 83 ++++++++++++++++++++++++++++++++++++++++++++++++
+ 3 files changed, 85 insertions(+), 1 deletion(-)
+
+diff --git a/console-server.h b/console-server.h
+index b6ab1b8..926bd4c 100644
+--- a/console-server.h
++++ b/console-server.h
+@@ -147,6 +147,7 @@ ssize_t console_socket_path_readable(const struct sockaddr_un *addr,
+ 
+ /* utils */
+ int write_buf_to_fd(int fd, const uint8_t *buf, size_t len);
++int write_buf_to_log(int fd, const uint8_t *buf, size_t len);
+ 
+ #define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
+ 
+diff --git a/log-handler.c b/log-handler.c
+index 275cc81..49bd0f8 100644
+--- a/log-handler.c
++++ b/log-handler.c
+@@ -93,7 +93,7 @@ static int log_data(struct log_handler *lh, uint8_t *buf, size_t len)
+ 			return rc;
+ 	}
+ 
+-	rc = write_buf_to_fd(lh->fd, buf, len);
++	rc = write_buf_to_log(lh->fd, buf, len);
+ 	if (rc)
+ 		return rc;
+ 
+diff --git a/util.c b/util.c
+index d6e037a..4e02da1 100644
+--- a/util.c
++++ b/util.c
+@@ -16,6 +16,8 @@
+ 
+ #include <err.h>
+ #include <unistd.h>
++#include <time.h>
++#include <unistd.h>
+ 
+ #include "console-server.h"
+ 
+@@ -35,3 +37,84 @@ int write_buf_to_fd(int fd, const uint8_t *buf, size_t len)
+ 	return 0;
+ }
+ 
++int write_buf_to_log(int fd, const uint8_t *buf, size_t len)
++{
++        static int maxWriteRetryTime = 3;
++        size_t pos;
++        size_t count;
++        ssize_t rc, rc2;
++        time_t curr_time;
++        struct tm * timestruct;
++        bool isNewlineFound;
++        char timestring[35] = {'\0'};
++        int retryTime;
++
++        pos = 0, count = 0, isNewlineFound = false, retryTime = 0;
++        while (pos < len) {
++                count = 0;
++                isNewlineFound = false;
++
++                while (( buf[pos+count] != '\n' ) && ((pos + count) < len))
++                {
++                        count++;
++                }
++
++                if ((buf[pos+count] == '\n') && ((pos + count) < len))
++                {
++                        isNewlineFound = true;
++                        //Increment count by 1 to include the newline in the fd write
++                        count++;
++                }
++
++                while (retryTime <= maxWriteRetryTime)
++                {
++                        rc = write(fd, buf + pos, count);
++                        if ( rc > 0)
++                        {
++                                retryTime = 0;
++                                break;
++                        }
++                        if (retryTime == maxWriteRetryTime)
++                        {
++                                warn("Write error");
++                                retryTime = 0;
++                                return -1;
++                        }
++                        ++retryTime;
++                        usleep(10000);
++                }
++
++                pos += rc;
++                time ( &curr_time );
++                timestruct = localtime ( &curr_time );
++
++                if (isNewlineFound)
++                {
++                        memset(timestring, '\0', sizeof(timestring));
++                        strcat(timestring, "[");
++                        // Decrease the time string by 1 below to ignore the newline at the end
++                        strncat(timestring, asctime(timestruct),strlen(asctime (timestruct))-1);
++                        strcat(timestring, "]: ");
++
++                        while (retryTime <= maxWriteRetryTime)
++                        {
++                                rc2 = write(fd, timestring, strlen(asctime (timestruct))+3);
++                                if ( rc2 > 0)
++                                {
++                                        retryTime = 0;
++                                        break;
++                                }
++                                if (retryTime == maxWriteRetryTime)
++                                {
++                                        warn("Write error");
++                                        retryTime = 0;
++                                        return -1;
++                                }
++                                ++retryTime;
++                                usleep(10000);
++                        }
++                }
++        }
++        return 0;
++}
++
+-- 
+2.28.0
+

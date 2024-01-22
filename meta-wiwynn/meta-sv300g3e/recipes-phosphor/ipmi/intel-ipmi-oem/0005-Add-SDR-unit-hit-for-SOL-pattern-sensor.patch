@@ -1,0 +1,52 @@
+From 0c50448e66e577931ef39217112fdc8033010695 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Wed, 30 Oct 2019 14:58:16 +0800
+Subject: [PATCH] Add SDR unit hit for SOL pattern sensor
+
+---
+ include/sdrutils.hpp        | 1 +
+ include/storagecommands.hpp | 1 +
+ src/sensorcommands.cpp      | 3 ++-
+ 3 files changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/include/sdrutils.hpp b/include/sdrutils.hpp
+index 5ff2d76..9df66df 100644
+--- a/include/sdrutils.hpp
++++ b/include/sdrutils.hpp
+@@ -178,6 +178,7 @@ const static boost::container::flat_map<const char*, SensorTypeCodes, CmpStr>
+                  {"fan_pwm", SensorTypeCodes::fan},
+                  {"processor", SensorTypeCodes::processor},
+                  {"power", SensorTypeCodes::other},
++                 {"pattern", SensorTypeCodes::other},
+                  {"acpi", SensorTypeCodes::acpi},
+                  {"button", SensorTypeCodes::button}}};
+ 
+diff --git a/include/storagecommands.hpp b/include/storagecommands.hpp
+index 1a2d281..3d28f48 100644
+--- a/include/storagecommands.hpp
++++ b/include/storagecommands.hpp
+@@ -97,6 +97,7 @@ enum class SensorUnits : uint8_t
+     amps = 0x5,
+     watts = 0x6,
+     rpm = 0x12,
++    hit = 0x4e,
+ };
+ 
+ enum class IPMINetfnStorageCmds : ipmi_cmd_t
+diff --git a/src/sensorcommands.cpp b/src/sensorcommands.cpp
+index 99d3910..b607cb5 100644
+--- a/src/sensorcommands.cpp
++++ b/src/sensorcommands.cpp
+@@ -66,7 +66,8 @@ const static boost::container::flat_map<const char *, SensorUnits, CmpStr>
+                  {"voltage", SensorUnits::volts},
+                  {"current", SensorUnits::amps},
+                  {"fan_tach", SensorUnits::rpm},
+-                 {"power", SensorUnits::watts}}};
++                 {"power", SensorUnits::watts},
++                 {"pattern", SensorUnits::hit}}};
+ 
+ void registerSensorFunctions() __attribute__((constructor));
+ 
+-- 
+2.22.0
+

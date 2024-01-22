@@ -1,0 +1,42 @@
+[
+    {
+        "Key": "pdb_bus",
+        "Value": "16",
+        "Service": ""
+    },
+    {
+        "Key": "hsc_bus",
+        "Value": "16",
+        "Service": ""
+    },
+    {
+        "Key": "hsc_address",
+        "Value": "NA",
+        "Service": "mct-node-manager.service"
+    },
+    {
+        "Key": "pdb_address",
+        "Value": "NA",
+        "Service": "mct-node-manager.service"
+    },
+    {
+        "Key": "hsc_address_node_1",
+        "Value": "16",
+        "Service": ""
+    },
+    {
+        "Key": "hsc_address_node_2",
+        "Value": "18",
+        "Service": ""
+    },
+    {
+        "Key": "pdb_address_node_1",
+        "Value": "96",
+        "Service": ""
+    },
+    {
+        "Key": "pdb_address_node_2",
+        "Value": "97",
+        "Service": ""
+    }
+]

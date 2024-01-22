@@ -1,0 +1,13 @@
+[Unit]
+Description=Leaky Bucket Service
+StopWhenUnneeded=false
+Before=xyz.openbmc_project.Logging.IPMI.service
+
+[Service]
+Restart=always
+RestartSec=5
+ExecStart=/usr/bin/leaky-bucket
+SyslogIdentifier=leaky-bucket
+
+[Install]
+WantedBy=multi-user.target

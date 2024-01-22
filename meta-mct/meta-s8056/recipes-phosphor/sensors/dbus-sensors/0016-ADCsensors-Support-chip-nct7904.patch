@@ -1,0 +1,25 @@
+From c4555bc1bc69df6d132b44ddae3e40f9f1d7bc9b Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Mon, 15 Aug 2022 14:04:39 +0800
+Subject: [PATCH] ADCsensors: Support chip nct7904
+
+---
+ src/ADCSensorMain.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/ADCSensorMain.cpp b/src/ADCSensorMain.cpp
+index 1560805..7ef2434 100755
+--- a/src/ADCSensorMain.cpp
++++ b/src/ADCSensorMain.cpp
+@@ -61,7 +61,7 @@ bool isAdc(const fs::path& parentPath)
+     std::string name;
+     std::getline(nameFile, name);
+ 
+-    return name == "iio_hwmon";
++    return ((name == "iio_hwmon") || (name == "nct7904"));
+ }
+ 
+ void createSensors(
+-- 
+2.7.4
+

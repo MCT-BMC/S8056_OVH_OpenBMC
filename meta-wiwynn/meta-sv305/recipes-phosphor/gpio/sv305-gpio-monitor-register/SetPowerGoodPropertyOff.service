@@ -1,0 +1,15 @@
+[Unit]
+Description=Set Power Good Property Off
+
+[Service]
+Type=oneshot
+
+ExecStart=/usr/bin/busctl set-property "org.openbmc.control.Power" "/org/openbmc/control/power0" "org.openbmc.control.Power" "pgood" i 0
+ExecStart=/bin/sh -c 'status=$(systemctl list-jobs|grep obmc-host-shutdown); if [ -z $status ]; then systemctl start obmc-host-shutdown@0.target; fi'
+ExecStart=/usr/bin/busctl set-property "xyz.openbmc_project.Watchdog" "/xyz/openbmc_project/watchdog/host0" xyz.openbmc_project.State.Watchdog "Enabled" b false
+ExecStart=/usr/bin/busctl call "xyz.openbmc_project.Logging.IPMI" "/xyz/openbmc_project/Logging/IPMI" "xyz.openbmc_project.Logging.IPMI" "IpmiSelAdd" ssaybq "ACPI_Power_State" "/xyz/openbmc_project/sensors/discrete/ACPI_Power_State" 0x03 0x05 0xff 0xff yes 0x20
+
+# Set fan control to manual mode and output pwm to 0%.
+ExecStart=/usr/bin/controlFan.sh power-off
+
+ExecStopPost=/usr/bin/busctl set-property xyz.openbmc_project.GpioMonitor /xyz/openbmc_project/gpio/event xyz.openbmc_project.GpioEvent PowerGood s "Idle"

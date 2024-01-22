@@ -1,0 +1,67 @@
+From 135d041915f39380ca6e5e4c9b8e52a2224a0ede Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Fri, 18 Oct 2019 09:30:58 +0800
+Subject: [PATCH] Add IPMI SDR Type 03h Event-Only sensor data record structure
+
+---
+ sensorhandler.hpp | 23 +++++++++++++++++++++++
+ 1 file changed, 23 insertions(+)
+
+diff --git a/sensorhandler.hpp b/sensorhandler.hpp
+index f5a8b41..103b04b 100644
+--- a/sensorhandler.hpp
++++ b/sensorhandler.hpp
+@@ -189,6 +189,7 @@ inline void set_record_id(int id, SensorDataRecordHeader* hdr)
+ enum SensorDataRecordType
+ {
+     SENSOR_DATA_FULL_RECORD = 0x1,
++    SENSOR_DATA_EVENT_ONLY_RECORD = 0x3,
+     SENSOR_DATA_FRU_RECORD = 0x11,
+     SENSOR_DATA_ENTITY_RECORD = 0x8,
+ };
+@@ -295,6 +296,7 @@ struct GetSensorThresholdsResponse
+ 
+ // Body - full record
+ #define FULL_RECORD_ID_STR_MAX_LENGTH 16
++#define EVENT_ONLY_RECORD_ID_STR_MAX_LENGTH 16
+ 
+ static const int FRU_RECORD_DEVICE_ID_MAX_LENGTH = 16;
+ 
+@@ -339,6 +341,19 @@ struct SensorDataFullRecordBody
+     char id_string[FULL_RECORD_ID_STR_MAX_LENGTH];
+ } __attribute__((packed));
+ 
++struct SensorDataEventOnlyRecordBody
++{
++    uint8_t entity_id;
++    uint8_t entity_instance;
++    uint8_t sensor_type;
++    uint8_t event_reading_type;
++    uint8_t sensor_direction[2];
++    uint8_t reserved;
++    uint8_t oem_reserved;
++    uint8_t id_string_info;
++    char id_string[EVENT_ONLY_RECORD_ID_STR_MAX_LENGTH];
++} __attribute__((packed));
++
+ /** @struct SensorDataFruRecordBody
+  *
+  *  FRU Device Locator Record(body) - SDR Type 11
+@@ -605,6 +620,14 @@ struct SensorDataFullRecord
+     SensorDataFullRecordBody body;
+ } __attribute__((packed));
+ 
++// Event-Only Sensor Record - SDR Type 03h
++struct SensorDataEventOnlyRecord
++{
++    SensorDataRecordHeader header;
++    SensorDataRecordKey key;
++    SensorDataEventOnlyRecordBody body;
++} __attribute__((packed));
++
+ /** @struct SensorDataFruRecord
+  *
+  *  FRU Device Locator Record - SDR Type 11
+-- 
+2.22.0
+

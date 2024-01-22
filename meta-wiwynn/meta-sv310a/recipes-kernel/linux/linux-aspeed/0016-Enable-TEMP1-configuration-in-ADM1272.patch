@@ -1,0 +1,48 @@
+From 4eb88f4e4b45d788d1e0363875cfc856d5ea2e3c Mon Sep 17 00:00:00 2001
+From: Eli Huang <Eli_Huang@wiwynn.com>
+Date: Fri, 13 Aug 2021 09:22:53 +0800
+Subject: [PATCH] Enable TEMP1 configuration in ADM1272
+
+---
+ drivers/hwmon/pmbus/adm1275.c | 18 ++++++++++++++----
+ 1 file changed, 14 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/hwmon/pmbus/adm1275.c b/drivers/hwmon/pmbus/adm1275.c
+index 38a6515b0763..abbf9949fa23 100644
+--- a/drivers/hwmon/pmbus/adm1275.c
++++ b/drivers/hwmon/pmbus/adm1275.c
+@@ -611,7 +611,8 @@ static int adm1275_probe(struct i2c_client *client)
+ 		tindex = 8;
+ 
+ 		info->func[0] |= PMBUS_HAVE_PIN | PMBUS_HAVE_STATUS_INPUT |
+-			PMBUS_HAVE_VOUT | PMBUS_HAVE_STATUS_VOUT;
++			PMBUS_HAVE_VOUT | PMBUS_HAVE_STATUS_VOUT |
++			PMBUS_HAVE_TEMP | PMBUS_HAVE_STATUS_TEMP;
+ 
+ 		/* Enable VOUT if not enabled (it is disabled by default) */
+ 		if (!(config & ADM1278_VOUT_EN)) {
+@@ -626,9 +627,18 @@ static int adm1275_probe(struct i2c_client *client)
+ 			}
+ 		}
+ 
+-		if (config & ADM1278_TEMP1_EN)
+-			info->func[0] |=
+-				PMBUS_HAVE_TEMP | PMBUS_HAVE_STATUS_TEMP;
++		/* Enable TEMP1 if not enabled (it is disabled by default) */
++		if (!(config & ADM1278_TEMP1_EN)) {
++			config |= ADM1278_TEMP1_EN;
++			ret = i2c_smbus_write_byte_data(client,
++							ADM1275_PMON_CONFIG,
++							config);
++			if (ret < 0) {
++				dev_err(&client->dev,
++					"Failed to enable TEMP1 monitoring\n");
++				return -ENODEV;
++			}
++                }
+ 		if (config & ADM1278_VIN_EN)
+ 			info->func[0] |= PMBUS_HAVE_VIN;
+ 		break;
+-- 
+2.32.0
+

@@ -1,0 +1,15 @@
+---
+/xyz/openbmc_project/oem/ServiceStatus:
+    - Interface: xyz.openbmc_project.OEM.ServiceStatus
+      Properties:
+          WebService:
+              Default: 0
+          KvmService:
+              Default: 0
+          VmService:
+              Default: 0
+          RemoteDebugService:
+              Default: 0
+          P2aService:
+              Default: 1
+

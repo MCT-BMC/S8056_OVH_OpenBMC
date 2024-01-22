@@ -1,0 +1,22 @@
+---
+/xyz/openbmc_project/ipmi/sol/eth0:
+    - Interface: xyz.openbmc_project.Ipmi.SOL
+      Properties:
+          Enable:
+              Default: 'true'
+          ForceAuthentication:
+              Default: 'true'
+          ForceEncryption:
+              Default: 'true'
+          Privilege:
+              Default: 2
+          Progress:
+              Default: 0
+          AccumulateIntervalMS:
+              Default: 12
+          Threshold:
+              Default: 1
+          RetryIntervalMS:
+              Default: 100
+          RetryCount:
+              Default: 7

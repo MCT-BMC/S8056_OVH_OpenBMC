@@ -1,0 +1,64 @@
+From 299374a92a73c24985b1cdf77fb3f62452959c48 Mon Sep 17 00:00:00 2001
+From: JPChang <JP_Chang@wiwynn.com>
+Date: Tue, 18 Feb 2020 10:38:42 +0800
+Subject: [PATCH] Support to set system boot option UEFI boot type
+
+---
+ chassishandler.cpp | 20 ++++++++++++++++++++
+ 1 file changed, 20 insertions(+)
+
+diff --git a/chassishandler.cpp b/chassishandler.cpp
+index e19e8c2..0eaa191 100644
+--- a/chassishandler.cpp
++++ b/chassishandler.cpp
+@@ -39,6 +39,7 @@
+ #define SET_PARM_BOOT_FLAGS_PERMANENT 0x40
+ #define SET_PARM_BOOT_FLAGS_VALID_ONE_TIME 0x80
+ #define SET_PARM_BOOT_FLAGS_VALID_PERMANENT 0xC0
++#define SET_PARM_BOOT_FLAGS_BOOT_TYPE_UEFI 0x20
+ 
+ std::unique_ptr<phosphor::Timer> identifyTimer
+     __attribute__((init_priority(101)));
+@@ -71,6 +72,8 @@ static constexpr size_t chassisIdentifyReqLength = 2;
+ static constexpr size_t identifyIntervalPos = 0;
+ static constexpr size_t forceIdentifyPos = 1;
+ 
++static bool biosUefiBoot = true; // default UEFI boot
++
+ void register_netfn_chassis_functions() __attribute__((constructor));
+ 
+ // Host settings in dbus
+@@ -1541,6 +1544,11 @@ ipmi_ret_t ipmi_chassis_get_sys_boot_options(ipmi_netfn_t netfn, ipmi_cmd_t cmd,
+                                 ? SET_PARM_BOOT_FLAGS_VALID_ONE_TIME
+                                 : SET_PARM_BOOT_FLAGS_VALID_PERMANENT;
+ 
++            if (biosUefiBoot)
++            {
++                resp->data[0] |= SET_PARM_BOOT_FLAGS_BOOT_TYPE_UEFI;
++            }
++
+             rc = IPMI_CC_OK;
+         }
+         catch (InternalFailure& e)
+@@ -1628,6 +1636,18 @@ ipmi_ret_t ipmi_chassis_set_sys_boot_options(ipmi_netfn_t netfn, ipmi_cmd_t cmd,
+                 (reqptr->data[0] & SET_PARM_BOOT_FLAGS_PERMANENT) ==
+                 SET_PARM_BOOT_FLAGS_PERMANENT;
+ 
++            /* make sure paremeter is valid */
++            if (reqptr->data[0] & SET_PARM_BOOT_FLAGS_VALID_ONE_TIME)
++            {
++                biosUefiBoot =
++                    (reqptr->data[0] & SET_PARM_BOOT_FLAGS_BOOT_TYPE_UEFI) ==
++                    SET_PARM_BOOT_FLAGS_BOOT_TYPE_UEFI;
++            }
++            else
++            {
++                biosUefiBoot = true; // Set default boot type UEFI
++            }
++
+             settings::Objects& objects = getObjects();
+ 
+             auto bootSetting = settings::boot::setting(objects, bootSourceIntf);
+-- 
+2.24.1
+

@@ -1,0 +1,7 @@
+/xyz/openbmc_project/control/host0/boot_option:
+    - Interface: xyz.openbmc_project.Control.Boot.Option
+      Properties:
+          ClearBootFlagValid:
+              Default: 0
+          BootFlagValidClearing:
+              Default: 0

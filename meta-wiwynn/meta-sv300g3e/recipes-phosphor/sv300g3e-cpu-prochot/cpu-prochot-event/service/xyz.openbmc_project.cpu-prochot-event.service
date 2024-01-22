@@ -1,0 +1,13 @@
+[Unit]
+Description=CPU Prochot Event Service
+StopWhenUnneeded=false
+After=interrupt-dbus-register.service
+
+[Service]
+Restart=always
+RestartSec=5
+ExecStart=/usr/bin/cpu-prochot-event
+SyslogIdentifier=cpu-prochot-event
+
+[Install]
+WantedBy=multi-user.target

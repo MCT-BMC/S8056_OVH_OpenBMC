@@ -1,0 +1,75 @@
+[
+    {
+       "Exposes": [
+           {
+               "Address": "$address + 8",
+               "Bus": "$bus",
+               "Name": "PSU$address % 2",
+               "Labels": ["pin", "pout1", "vin", "vout1", "iin", "iout1", "temp1", "fan1"],
+               "pin_Name": "PSU$address % 2 Input Power",
+               "pout1_Name": "PSU$address % 2 Out Power",
+               "vin_Name": "PSU$address % 2 In Voltage",
+               "vout1_Name": "PSU$address % 2 Out Voltage",
+               "iin_Name": "PSU$address % 2 In Current",
+               "iout1_Name": "PSU$address % 2 Out Current",
+               "temp1_Name": "PSU$address % 2 Temperature",
+               "fan1_Name": "PSU$address % 2 Fan Speed 1",
+               "PowerStates": [
+                   {
+                       "Label": "pin",
+                       "PowerState": "On"
+                   },
+                   {
+                       "Label": "pout1",
+                       "PowerState": "On"
+                   },
+                   {
+                       "Label": "vin",
+                       "PowerState": "Always"
+                   },
+                   {
+                       "Label": "vout1",
+                       "PowerState": "On"
+                   },
+                   {
+                       "Label": "iin",
+                       "PowerState": "On"
+                   },
+                   {
+                       "Label": "iout1",
+                       "PowerState": "On"
+                   },
+                   {
+                       "Label": "temp1",
+                       "PowerState": "Always"
+                   },
+                   {
+                       "Label": "fan1",
+                       "PowerState": "Always"
+                   }
+               ],
+               "Type": "pmbus"
+           },
+           {
+               "Address": "$address",
+               "Bus": "$bus",
+               "Name": "Common PSU-$address % 2 FRU",
+               "Type": "EEPROM"
+           }
+       ],
+       "Name": "Common PSU $address % 2",
+        "Probe": [
+            "xyz.openbmc_project.FruDevice({'BUS' : 3})",
+            "AND",
+            "xyz.openbmc_project.FruDevice({'ADDRESS': 81})",
+            "MATCH_ONE"
+        ],
+       "Type": "PowerSupply",
+       "xyz.openbmc_project.Inventory.Decorator.Asset": {
+           "Manufacturer": "$BOARD_MANUFACTURER",
+           "Model": "$BOARD_PRODUCT_NAME",
+           "PartNumber": "$BOARD_PART_NUMBER",
+           "SerialNumber": "$BOARD_SERIAL_NUMBER"
+       }
+   }
+]

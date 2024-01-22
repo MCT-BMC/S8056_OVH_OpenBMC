@@ -1,0 +1,8 @@
+[Unit]
+Description=Phosphor sysfs LED controller
+Before=xyz.openbmc_project.Logging.IPMI.service
+
+[Service]
+Restart=always
+ExecStart=/usr/bin/env phosphor-ledcontroller -p %f
+SyslogIdentifier=phosphor-ledcontroller

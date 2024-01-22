@@ -1,0 +1,63 @@
+From a9bcd23d8b6b135a77e4373898e22abb969b936c Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Wed, 11 Aug 2021 13:33:24 +0800
+Subject: [PATCH] Set system restart cause when timeout
+
+---
+ src/watchdog.cpp | 26 ++++++++++++++++++++++++++
+ 1 file changed, 26 insertions(+)
+
+diff --git a/src/watchdog.cpp b/src/watchdog.cpp
+index 8755be5..cc64e8b 100644
+--- a/src/watchdog.cpp
++++ b/src/watchdog.cpp
+@@ -19,6 +19,8 @@ using namespace phosphor::logging;
+ using sdbusplus::exception::SdBusError;
+ using sdbusplus::xyz::openbmc_project::Common::Error::InternalFailure;
+ 
++namespace State = sdbusplus::xyz::openbmc_project::State::server;
++
+ constexpr auto PropertiesInterface = "org.freedesktop.DBus.Properties";
+ // Host state manager service to change host state when watchdog timeout
+ constexpr auto HostStateService = "xyz.openbmc_project.State.Host";
+@@ -35,6 +37,10 @@ constexpr auto selAddMethod = "IpmiSelAdd";
+ constexpr uint8_t wdEventData1Header = 0xc0;
+ constexpr uint16_t selBMCGenID = 0x0020;
+ 
++constexpr auto restartCauseService = "xyz.openbmc_project.State.Host";
++constexpr auto restartCausePath = "/xyz/openbmc_project/state/host0";
++constexpr auto restartCauseIntf = "xyz.openbmc_project.State.Host";
++
+ void Watchdog::resetTimeRemaining(bool enableWatchdog)
+ {
+     timeRemaining(interval());
+@@ -146,6 +152,26 @@ void Watchdog::timeOutHandler()
+             entry("TIMER_USE=%s", convertForMessage(expiredTimerUse()).c_str()),
+             entry("TARGET=%s", target->second.c_str()));
+ 
++        if ((action == Action::HardReset) || (action == Action::PowerCycle))
++        {
++            try
++            {
++                std::string restartCauseStr = State::convertForMessage(
++                    State::Host::RestartCause::WatchdogTimer);
++                auto method =
++                    bus.new_method_call(restartCauseService, restartCausePath,
++                                        PropertiesInterface, "Set");
++                method.append(restartCauseIntf, "RestartCause",
++                              std::variant<std::string>(restartCauseStr));
++                bus.call_noreply(method);
++            }
++            catch (const std::exception& e)
++            {
++                log<level::ERR>("watchdog: Failed to set restart cause",
++                                entry("ERROR=%s", e.what()));
++            }
++        }
++
+         try
+         {
+             auto method = bus.new_method_call(HostStateService, HostStatePath,
+-- 
+2.32.0
+

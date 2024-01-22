@@ -1,0 +1,37 @@
+From d5248e892236599753fc6ddac6da1560cdab16ea Mon Sep 17 00:00:00 2001
+From: "jeannie.wu" <jeannie.wu@mic.com.tw>
+Date: Tue, 9 Apr 2019 11:48:20 +0800
+Subject: [PATCH] Add SOL PATTERN Interface for SOL Processing
+
+---
+ xyz/openbmc_project/OEM/SOLPattern.interface.yaml | 21 +++++++++++++
+ 1 file changed, 21 insertions(+)
+ create mode 100644 xyz/openbmc_project/OEM/SOLPattern.interface.yaml
+
+diff --git a/xyz/openbmc_project/OEM/SOLPattern.interface.yaml b/xyz/openbmc_project/OEM/SOLPattern.interface.yaml
+new file mode 100644
+index 0000000..f8470c0
+--- /dev/null
++++ b/xyz/openbmc_project/OEM/SOLPattern.interface.yaml
+@@ -0,0 +1,21 @@
++description: >
++    Implement to provide SOL pattern attributes for sol processing.
++
++properties:
++    - name: PatternString
++      type: string
++      description: >
++         Patten String for search processing.
++    - name: MatchCount
++      type: int64
++      description: >
++         Patten match buffer number.
++    - name: CriticalThreshold
++      type: int64
++      description: >
++         The critical threshold fro matchcount.
++    - name: NonCriticalThreshold
++      type: int64
++      description: >
++         The non-critical threshold fro matchcount.
++# vim: tabstop=8 expandtab shiftwidth=4 softtabstop=4

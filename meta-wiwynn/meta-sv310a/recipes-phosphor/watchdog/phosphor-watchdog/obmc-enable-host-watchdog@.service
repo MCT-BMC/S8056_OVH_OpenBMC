@@ -1,0 +1,19 @@
+[Unit]
+Description=Start Watchdog%i
+Wants=mapper-wait@-xyz-openbmc_project-watchdog-host%i.service
+After=mapper-wait@-xyz-openbmc_project-watchdog-host%i.service
+Conflicts=obmc-chassis-poweroff@%i.target
+
+[Service]
+RemainAfterExit=yes
+Type=oneshot
+
+ExecStartPre=/usr/bin/busctl set-property xyz.openbmc_project.Watchdog /xyz/openbmc_project/watchdog/host%i xyz.openbmc_project.State.Watchdog CurrentTimerUse s xyz.openbmc_project.State.Watchdog.TimerUse.Reserved
+
+ExecStartPre=/usr/bin/busctl set-property xyz.openbmc_project.Watchdog /xyz/openbmc_project/watchdog/host%i xyz.openbmc_project.State.Watchdog ExpireAction s xyz.openbmc_project.State.Watchdog.Action.None
+
+ExecStartPre=/usr/bin/busctl set-property xyz.openbmc_project.Watchdog /xyz/openbmc_project/watchdog/host%i xyz.openbmc_project.State.Watchdog Interval t 180000
+
+ExecStart=/usr/bin/busctl set-property xyz.openbmc_project.Watchdog /xyz/openbmc_project/watchdog/host%i xyz.openbmc_project.State.Watchdog Enabled b true
+
+SyslogIdentifier=obmc-enable-host-watchdog

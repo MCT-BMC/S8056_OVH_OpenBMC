@@ -1,0 +1,18 @@
+[Unit]
+Description=Phosphor-Pid-Control Margin-based Fan Control Daemon
+Wants=mapper-wait@-xyz-openbmc_project-sensors-fan_tach.service
+After=mapper-wait@-xyz-openbmc_project-sensors-fan_tach.service
+Before=phosphor-discover-system-state@0.service
+
+[Service]
+Restart=always
+ExecStart={bindir}/swampd -c "/usr/share/entity-manager/configurations/fan-table.json"
+RestartSec=5
+StartLimitInterval=0
+Type=simple
+SyslogIdentifier=phosphor-pid-control
+
+ExecStopPost=/usr/bin/writePwm.sh 100
+
+[Install]
+WantedBy=multi-user.target

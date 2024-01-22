@@ -1,0 +1,28 @@
+From be5b281cda4ab73c017c5b4199c92bd81ecb71b5 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Mon, 24 May 2021 20:34:53 +0800
+Subject: [PATCH] Set the SOL buffer size from 16m to 4m
+
+---
+ log-handler.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+ mode change 100644 => 100755 log-handler.c
+
+diff --git a/log-handler.c b/log-handler.c
+old mode 100644
+new mode 100755
+index 49bd0f8..6368ad7
+--- a/log-handler.c
++++ b/log-handler.c
+@@ -41,7 +41,7 @@ struct log_handler {
+ 
+ 
+ static const char *default_filename = LOCALSTATEDIR "/log/obmc-console.log";
+-static const size_t default_logsize = 16 * 1024;
++static const size_t default_logsize = 4 * 1024;
+ 
+ static struct log_handler *to_log_handler(struct handler *handler)
+ {
+-- 
+2.7.4
+

@@ -1,0 +1,255 @@
+From 4ac9c125e6208b905a231675c84f5066b1da4775 Mon Sep 17 00:00:00 2001
+From: Jason Chang <jason_yx_chang@wiwynn.com>
+Date: Fri, 12 Jun 2020 00:20:33 +0800
+Subject: [PATCH] Fix fan mode switch issue and keep fan mode after dc cycle
+
+---
+ main.cpp        | 60 +++++++++++++++++++++++++++++--------------------
+ pid/pidloop.cpp | 25 ++++++++++++++++-----
+ pid/pidloop.hpp |  2 +-
+ pid/zone.hpp    |  3 ++-
+ util.cpp        | 27 ++++++++++++++++++++++
+ util.hpp        |  7 ++++++
+ 6 files changed, 93 insertions(+), 31 deletions(-)
+
+diff --git a/main.cpp b/main.cpp
+index 1966fa6..f2d2a3c 100644
+--- a/main.cpp
++++ b/main.cpp
+@@ -51,6 +51,8 @@
+ #include <utility>
+ #include <vector>
+ #include <systemd/sd-journal.h>
++#include <filesystem>
++#include <fstream>
+ 
+ #if CONFIGURE_DBUS
+ #include "dbus/dbusconfiguration.hpp"
+@@ -81,6 +83,8 @@ static sdbusplus::asio::connection
+ static constexpr auto debugModeObjPath = "/xyz/openbmc_project/settings/fanctrl/debug";
+ static constexpr auto debugModeIntfName = "xyz.openbmc_project.Control.DebugMode";
+ 
++static constexpr auto manualModeFilePath = "/tmp/fanCtrlManual";
++
+ // Register debug mode signal handler
+ void registerDebugSignalHandler()
+ {
+@@ -218,12 +222,42 @@ int restartControlLoops()
+         std::cerr << "No zones defined, exiting.\n";
+         std::exit(EXIT_FAILURE);
+     }
++    // If user set manual mode in previous state, keep fan control in manual mode.
++    int lastPwm = -1;
++    if (std::filesystem::exists(manualModeFilePath))
++    {
++        std::ifstream manualFile(manualModeFilePath);
++        if (manualFile.is_open())
++        {
++            if (manualFile >> lastPwm)
++            {
++                // If pwm value is greater than 255, set it to 255.
++                if (lastPwm > 0xff)
++                {
++                    lastPwm = 0xff;
++                }
++                sd_journal_print(LOG_INFO, 
++                                "Manual file exists, keep manual mode, pwm = %d\n", 
++                                lastPwm);
++            }
++            else
++            {
++                sd_journal_print(LOG_ERR, "Failed to read manual file\n");
++            }
++            manualFile.close();
++        }
++        else
++        {
++            sd_journal_print(LOG_ERR, "Failed to open manual file\n");
++        }
++    }
++
+ 
+     for (const auto& i : zones)
+     {
+         auto& timer = timers.emplace_back(io);
+         std::cerr << "pushing zone " << i.first << "\n";
+-        pidControlLoop(i.second.get(), timer);
++        pidControlLoop(i.second.get(), timer, lastPwm);
+     }
+ 
+     return 0;
+@@ -251,29 +285,7 @@ void writePwmFailsafeHandler(int signum)
+                      "Fan control receive %s. Try to "
+                      "write %d%% pwm to all pwm files.\n",
+                      sigStr.c_str(), pwmPercent);
+-
+-    std::string cmd = "/usr/bin/writePwm.sh " + std::to_string(pwmPercent);
+-    std::array<char, 1024> buffer;
+-    std::unique_ptr<FILE, decltype(&pclose)> pipePtr(popen(cmd.c_str(), "r"),
+-                                                     pclose);
+-    if (pipePtr == nullptr)
+-    {
+-        sd_journal_print(LOG_ERR, "Fan control failed to create popen. "
+-                                  "Failed to write 80%% pwm to pwm files.\n");
+-    }
+-    else
+-    {
+-        while (fgets(buffer.data(), buffer.size(), pipePtr.get()) != nullptr)
+-        {
+-            sd_journal_print(LOG_INFO, "%s", buffer.data());
+-        }
+-        if (ferror(pipePtr.get()))
+-        {
+-            sd_journal_print(LOG_ERR,
+-                             "Fan control failed to fgets. Can't not get "
+-                             "return string from write pwm script.\n");
+-        }
+-    }
++    writePwm(pwmPercent);
+ 
+     exit(signum);
+ }
+diff --git a/pid/pidloop.cpp b/pid/pidloop.cpp
+index 3934e8e..621336a 100644
+--- a/pid/pidloop.cpp
++++ b/pid/pidloop.cpp
+@@ -27,6 +27,8 @@
+ #include <thread>
+ #include <vector>
+ #include <systemd/sd-journal.h>
++#include "util.hpp"
++#include <cmath>
+ 
+ int64_t zoneID;
+ 
+@@ -47,12 +49,25 @@ static void processThermals(PIDZone* zone)
+     // Get the maximum RPM setpoint.
+     zone->determineMaxSetPointRequest();
+ }
+-
+-void pidControlLoop(PIDZone* zone, boost::asio::steady_timer& timer, bool first,
+-                    uint64_t ms100cnt, uint64_t checkFanFailuresCount)
++void pidControlLoop(PIDZone* zone, boost::asio::steady_timer& timer, int lastPwm,
++                    bool first, uint64_t ms100cnt, uint64_t checkFanFailuresCount)
+ {
+     if (first)
+     {
++        if (lastPwm >= 0)
++        {
++            zone->manual(true);
++
++            double scaledPwmValue = 0;
++
++            zone->setManualMode(true);
++
++            scaledPwmValue = lastPwm * 100 / 255;
++            
++            writePwm(static_cast<int>(std::round(scaledPwmValue)));
++        }
++
++
+         if (loggingEnabled)
+         {
+             zone->initializeLog();
+@@ -101,7 +116,7 @@ void pidControlLoop(PIDZone* zone, boost::asio::steady_timer& timer, bool first,
+         // Check if we should just go back to sleep.
+         if (zone->getManualMode())
+         {
+-            pidControlLoop(zone, timer, false, ms100cnt, checkFanFailuresCount);
++            pidControlLoop(zone, timer, -1, false, ms100cnt, checkFanFailuresCount);
+             return;
+         }
+ 
+@@ -144,6 +159,6 @@ void pidControlLoop(PIDZone* zone, boost::asio::steady_timer& timer, bool first,
+             checkFanFailuresCount = 0;
+         }
+ 
+-        pidControlLoop(zone, timer, false, ms100cnt, checkFanFailuresCount);
++        pidControlLoop(zone, timer, -1, false, ms100cnt, checkFanFailuresCount);
+     });
+ }
+diff --git a/pid/pidloop.hpp b/pid/pidloop.hpp
+index 7fbfb0f..f1a6ab4 100644
+--- a/pid/pidloop.hpp
++++ b/pid/pidloop.hpp
+@@ -15,5 +15,5 @@
+  * @param[in] ms100cnt - loop timer counter.
+  */
+ void pidControlLoop(PIDZone* zone, boost::asio::steady_timer& timer,
+-                    bool first = true, uint64_t ms100cnt = 0,
++                    int lastPwm = -1, bool first = true, uint64_t ms100cnt = 0,
+                     uint64_t checkFanFailuresCount = 0);
+diff --git a/pid/zone.hpp b/pid/zone.hpp
+index 36b7bcd..c1445f5 100644
+--- a/pid/zone.hpp
++++ b/pid/zone.hpp
+@@ -22,6 +22,7 @@ using ServerObject = typename sdbusplus::server::object::object<T...>;
+ using ModeInterface = sdbusplus::xyz::openbmc_project::Control::server::Mode;
+ using ModeObject = ServerObject<ModeInterface>;
+ 
++static auto newBusFanMode = sdbusplus::bus::new_system();
+ class ZoneInterface
+ {
+   public:
+@@ -51,7 +52,7 @@ class PIDZone : public ZoneInterface, public ModeObject
+             uint64_t updateThermalsTime, const SensorManager& mgr,
+             sdbusplus::bus::bus& bus, const char* objPath, bool defer) :
+         ModeObject(bus, objPath, defer),
+-        _bus(bus),
++        _bus(newBusFanMode),
+         _zoneId(zone), _maximumSetPoint(),
+         _minThermalOutputSetPt(minThermalOutput),
+         _failSafePercent(failSafePercent), _cycleTimeBase(cycleTimeBase),
+diff --git a/util.cpp b/util.cpp
+index ec60d7a..1c74d1d 100644
+--- a/util.cpp
++++ b/util.cpp
+@@ -68,3 +68,30 @@ IOInterfaceType getReadInterfaceType(const std::string& path)
+ 
+     return IOInterfaceType::UNKNOWN;
+ }
++
++void writePwm(int pwmPercent)
++{
++    std::string cmd = "/usr/bin/writePwm.sh " + std::to_string(pwmPercent);
++    std::array<char, 1024> buffer;
++    std::unique_ptr<FILE, decltype(&pclose)> pipePtr(popen(cmd.c_str(), "r"),
++                                                     pclose);
++    if (pipePtr == nullptr)
++    {
++        sd_journal_print(LOG_ERR, "Fan control failed to create popen. "
++                                  "Failed to write %d%% pwm to pwm files.\n", pwmPercent);
++    }
++    else
++    {
++        while (fgets(buffer.data(), buffer.size(), pipePtr.get()) != nullptr)
++        {
++            sd_journal_print(LOG_INFO, "%s", buffer.data());
++        }
++        if (ferror(pipePtr.get()))
++        {
++            sd_journal_print(LOG_ERR,
++                             "Fan control failed to fgets. Can't not get "
++                             "return string from write pwm script.\n");
++        }
++    }
++}
++
+diff --git a/util.hpp b/util.hpp
+index f9dcedf..3a3662d 100644
+--- a/util.hpp
++++ b/util.hpp
+@@ -174,3 +174,10 @@ struct VariantToDoubleVisitor
+  * Given a path that optionally has a glob portion, fill it out.
+  */
+ std::string FixupPath(std::string original);
++
++
++/*
++ * Write specified pwm to pwm files.
++ */
++void writePwm(int pwmPercent);
++
+-- 
+2.24.1
+

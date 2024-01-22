@@ -1,0 +1,13 @@
+diff --git a/drivers/hwmon/nct7802.c b/drivers/hwmon/nct7802.c
+index fd1d01618a08..cb63f98a195c 100644
+--- a/drivers/hwmon/nct7802.c
++++ b/drivers/hwmon/nct7802.c
+@@ -1174,7 +1174,7 @@ static int nct7802_init_chip(struct device *dev, struct nct7802_data *data)
+ 		return err;
+ 
+ 	/* Set RTD1~RTD3 to thermistor mode */
+-	err = regmap_update_bits(data->regmap, REG_MODE, 0x3F, 0x2A);
++	err = regmap_update_bits(data->regmap, REG_MODE, 0x7F, 0x6A);
+ 	if (err)
+ 		return err;
+ 

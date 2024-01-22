@@ -1,0 +1,25 @@
+From 0c0ea5fa9afb87cf67e51880cf2e1861d901c00b Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Tue, 22 Mar 2022 13:31:19 +0800
+Subject: [PATCH] Add BMC P2A property for setting specified service status
+
+---
+ xyz/openbmc_project/OEM/ServiceStatus.interface.yaml | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/xyz/openbmc_project/OEM/ServiceStatus.interface.yaml b/xyz/openbmc_project/OEM/ServiceStatus.interface.yaml
+index f98b020..08c50e1 100755
+--- a/xyz/openbmc_project/OEM/ServiceStatus.interface.yaml
++++ b/xyz/openbmc_project/OEM/ServiceStatus.interface.yaml
+@@ -18,4 +18,8 @@ properties:
+       type: boolean
+       description: >
+          Setting of cpu remote debug
++    - name: P2aService
++      type: boolean
++      description: >
++         Setting of BMC P2A service
+ # vim: tabstop=8 expandtab shiftwidth=4 softtabstop=4
+-- 
+2.7.4
+

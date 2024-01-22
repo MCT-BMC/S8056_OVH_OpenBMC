@@ -1,0 +1,127 @@
+From 1281c5e4ccfe9b7dfeedaab8db910dec319e665b Mon Sep 17 00:00:00 2001
+From: Eli Huang <Eli_Huang@wiwynn.com>
+Date: Mon, 19 Apr 2021 14:10:00 +0800
+Subject: [PATCH] Add system restart cause for chassis power control
+
+---
+ chassishandler.cpp | 37 ++++++++++++++++++++++++-------------
+ 1 file changed, 24 insertions(+), 13 deletions(-)
+
+diff --git a/chassishandler.cpp b/chassishandler.cpp
+index af95dc7..840474c 100644
+--- a/chassishandler.cpp
++++ b/chassishandler.cpp
+@@ -91,11 +91,6 @@ constexpr auto RESTART_CAUSE_SERVICE = "xyz.openbmc_project.State.Host";
+ constexpr auto RESTART_CAUSE_OBJ_PATH = "/xyz/openbmc_project/state/host0";
+ constexpr auto RESTART_CAUSE_INTERFACE = "xyz.openbmc_project.State.Host";
+ constexpr auto RESTART_CAUSE_PROPERTY = "RestartCause";
+-constexpr auto RESTART_CAUSE_UNKNOWN = "xyz.openbmc_project.State.Host.RestartCause.Unknown";
+-constexpr auto RESTART_CAUSE_POWER_BTN = "xyz.openbmc_project.State.Host.RestartCause.PowerButton";
+-constexpr auto RESTART_CAUSE_RESET_BTN = "xyz.openbmc_project.State.Host.RestartCause.ResetButton";
+-constexpr auto RESTART_CAUSE_WDT_RESET = "xyz.openbmc_project.State.Host.RestartCause.WatchdogTimer";
+-constexpr auto RESTART_CAUSE_CHASSIS_CTL = "xyz.openbmc_project.State.Host.RestartCause.RemoteCommand";
+ constexpr auto BOOT_OPTION_SERVICE = "xyz.openbmc_project.Settings";
+ constexpr auto BOOT_OPTION_OBJ_PATH = "/xyz/openbmc_project/control/host0/boot_option";
+ constexpr auto BOOT_OPTION_INTERFACE = "xyz.openbmc_project.Control.Boot.Option";
+@@ -1256,13 +1251,15 @@ ipmi::RspType<bool,    // Power is on
+ enum class IpmiRestartCause
+ {
+     Unknown = 0x0,
+-    RemoteCommand = 0x1,
++    IpmiPowerOn = 0x1,
+     ResetButton = 0x2,
+     PowerButton = 0x3,
+     WatchdogTimer = 0x4,
+     PowerPolicyAlwaysOn = 0x6,
+     PowerPolicyPreviousState = 0x7,
+     SoftReset = 0xa,
++    IpmiPowerCycle = 0xc,
++    IpmiPowerReset = 0xd,
+ };
+ 
+ static IpmiRestartCause
+@@ -1274,9 +1271,9 @@ static IpmiRestartCause
+         {
+             return IpmiRestartCause::Unknown;
+         }
+-        case State::Host::RestartCause::RemoteCommand:
++        case State::Host::RestartCause::IpmiPowerOn:
+         {
+-            return IpmiRestartCause::RemoteCommand;
++            return IpmiRestartCause::IpmiPowerOn;
+         }
+         case State::Host::RestartCause::ResetButton:
+         {
+@@ -1302,6 +1299,14 @@ static IpmiRestartCause
+         {
+             return IpmiRestartCause::SoftReset;
+         }
++        case State::Host::RestartCause::IpmiPowerCycle:
++        {
++            return IpmiRestartCause::IpmiPowerCycle;
++        }
++        case State::Host::RestartCause::IpmiPowerReset:
++        {
++            return IpmiRestartCause::IpmiPowerReset;
++        }
+         default:
+         {
+             return IpmiRestartCause::Unknown;
+@@ -1431,7 +1436,7 @@ void indicate_no_softoff_needed()
+     std::ofstream(path.c_str());
+ }
+ 
+-int clearBootFlagValidAndSetRestart()
++int clearBootFlagValidAndSetRestart(const char* restartCause)
+ {
+     using namespace chassis::internal;
+ 
+@@ -1459,7 +1464,7 @@ int clearBootFlagValidAndSetRestart()
+                                         RESTART_CAUSE_OBJ_PATH,
+                                         ipmi::PROP_INTF, ipmi::METHOD_SET);
+         method.append(RESTART_CAUSE_INTERFACE, RESTART_CAUSE_PROPERTY, 
+-                    std::variant<std::string>(RESTART_CAUSE_CHASSIS_CTL));
++                    std::variant<std::string>(restartCause));
+         dbus.call_noreply(method);
+     }
+     catch(const std::exception& e)
+@@ -1480,11 +1485,13 @@ int clearBootFlagValidAndSetRestart()
+ ipmi::RspType<> ipmiChassisControl(uint8_t chassisControl)
+ {
+     int rc = 0;
++    std::string restartCauseStr = "";
+     switch (chassisControl)
+     {
+         case CMD_POWER_ON:
+             rc = initiate_state_transition(State::Host::Transition::On);
+-            clearBootFlagValidAndSetRestart();
++            restartCauseStr = State::Host::convertRestartCauseToString(State::Host::RestartCause::IpmiPowerOn);
++            clearBootFlagValidAndSetRestart(restartCauseStr.c_str());
+             break;
+         case CMD_POWER_OFF:
+             // This path would be hit in 2 conditions.
+@@ -1526,7 +1533,9 @@ ipmi::RspType<> ipmiChassisControl(uint8_t chassisControl)
+             // Start the system power reset service
+             std::string resetService("host-powerreset.service");
+             rc = startSystemdUnit(resetService);
+-            clearBootFlagValidAndSetRestart();
++            restartCauseStr = 
++                State::Host::convertRestartCauseToString(State::Host::RestartCause::IpmiPowerReset);
++            clearBootFlagValidAndSetRestart(restartCauseStr.c_str());
+             break;
+         }
+         case CMD_POWER_CYCLE:
+@@ -1541,7 +1550,9 @@ ipmi::RspType<> ipmiChassisControl(uint8_t chassisControl)
+             indicate_no_softoff_needed();
+ 
+             rc = initiate_state_transition(State::Host::Transition::Reboot);
+-            clearBootFlagValidAndSetRestart();
++            restartCauseStr = 
++                State::Host::convertRestartCauseToString(State::Host::RestartCause::IpmiPowerCycle);
++            clearBootFlagValidAndSetRestart(restartCauseStr.c_str());
+             break;
+ 
+         case CMD_SOFT_OFF_VIA_OVER_TEMP:
+-- 
+2.28.0
+

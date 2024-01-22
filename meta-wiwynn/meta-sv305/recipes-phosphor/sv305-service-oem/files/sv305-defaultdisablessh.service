@@ -1,0 +1,10 @@
+[Unit]
+Description=SV305 Disable SSH Service by Default
+After=dropbear.socket
+
+[Service]
+Type=oneshot
+ExecStart=/bin/systemctl stop dropbear.socket
+
+[Install]
+WantedBy=sysinit.target

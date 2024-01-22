@@ -1,0 +1,31 @@
+From 32e32c335176d5fba648ac7eee0be53bce4640b2 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Thu, 24 Jun 2021 10:49:45 +0800
+Subject: [PATCH] Add fan control debug mode and set pwm
+
+---
+ yaml/xyz/openbmc_project/Control/Mode.interface.yaml | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/yaml/xyz/openbmc_project/Control/Mode.interface.yaml b/yaml/xyz/openbmc_project/Control/Mode.interface.yaml
+index da40d0d..a767934 100644
+--- a/yaml/xyz/openbmc_project/Control/Mode.interface.yaml
++++ b/yaml/xyz/openbmc_project/Control/Mode.interface.yaml
+@@ -15,3 +15,14 @@ properties:
+       type: boolean
+       description: >
+           Whether the object is in fail-safe mode or not.
++    - name: Debug
++      type: boolean
++      description: >
++          Whether the object is in debug mode or not.
++    - name: SetPwm
++      type: struct[string, double]
++      description: >
++          Set the whole zone to manual mode and set specified pwm value.
++          If the first string is All set all pwms in this zone.
++          This manual status will not be kept after host power cycle.
++          To restore to auto mode, set manual to false.
+-- 
+2.28.0
+

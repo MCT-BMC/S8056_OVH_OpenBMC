@@ -1,0 +1,153 @@
+[
+    {
+       "Exposes": [
+           {
+               "Address": "0x60",
+               "Bus": "$bus",
+               "Name": "POWER_MODULE",
+               "Labels": ["vout1", "iout1", "temp1"],
+               "vout1_Name": "PDB_VOL_12VOUT",
+               "iout1_Name": "PDB_I_12VOUT",
+               "temp1_Name": "PDB_Temperature",
+               "PowerStates": [
+                   {
+                    "Label": "vout1",
+                    "PowerState": "On"
+                   },
+                   {
+                       "Label": "iout1",
+                       "PowerState": "On"
+                   },
+                   {
+                       "Label": "temp1",
+                       "PowerState": "Always"
+                   }
+               ],
+               "Thresholds": [
+                    {
+                        "Direction": "greater than",
+                        "Label": "vout1",
+                        "Name": "upper critical",
+                        "Severity": 1,
+                        "Value": 12.5
+                    },
+                    {
+                        "Direction": "less than",
+                        "Label": "vout1",
+                        "Name": "lower critical",
+                        "Severity": 1,
+                        "Value": 11.64
+                    },
+                    {
+                        "Direction": "greater than",
+                        "Label": "temp1",
+                        "Name": "upper critical",
+                        "Severity": 1,
+                        "Value": 110
+                    }
+                ],
+               "Type": "MCTPDB"
+           },
+           {
+            "Address": "0x10",
+            "Bus": "$bus",
+            "Name": "HOT_SWAP",
+            "Labels": ["pin", "vin", "iout1"],
+            "pin_Name": "PDB_PWR_48VIN",
+            "vin_Name": "PDB_VOL_48VIN",
+            "iout1_Name": "PDB_I_48VIN",
+            "pin_Max": 1000,
+            "pin_Min": 0,
+            "PowerStates": [
+                {
+                    "Label": "pin",
+                    "PowerState": "On"
+                },
+                {
+                    "Label": "vin",
+                    "PowerState": "Always"
+                },
+                {
+                    "Label": "iout1",
+                    "PowerState": "On"
+                }
+            ],
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Label": "vin",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 58
+                },
+                {
+                    "Direction": "less than",
+                    "Label": "vin",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 42
+                }
+            ],
+            "Type": "pmbus"
+           },
+           {
+            "Index": 14,
+            "Name": "12V_STBY",
+            "PowerState": "On",
+            "ScaleFactor": 0.113,
+            "MaxReading": 20,
+            "Thresholds": [
+                {
+                    "Direction": "greater than",
+                    "Name": "upper critical",
+                    "Severity": 1,
+                    "Value": 12.978
+                },
+                {
+                    "Direction": "less than",
+                    "Name": "lower critical",
+                    "Severity": 1,
+                    "Value": 10.458
+                }
+            ],
+            "Type": "ADC"
+           },
+           {
+                "Name": "PDB_PWR_12VOUT",
+                "sensorUnit": "power",
+                "MaxReading": 1000,
+                "MinReading": 0,
+                "PullTime": 1,
+                "Type": "Virtual",
+                "Class": "sysfs",
+                "parameter0": "/sys/bus/i2c/drivers/pmbus/3-0060/hwmon/hwmon*/in2_input",
+                "sensorUnit0": "voltage",
+                "scaleFactor0": 1000,
+                "parameter1": "/sys/bus/i2c/drivers/pmbus/3-0060/hwmon/hwmon*/curr2_input",
+                "sensorUnit1": "current",
+                "scaleFactor1": 1000,
+                "expression0" : "*"
+           },
+           {
+               "Address": "$address",
+               "Bus": "$bus",
+               "Name": "PDB_FRU",
+               "Type": "EEPROM"
+           }
+       ],
+       "Name": "s8033 PDB",
+       "Probe": [
+            "xyz.openbmc_project.FruDevice({'BUS' : 3})",
+            "AND",
+            "xyz.openbmc_project.FruDevice({'ADDRESS': 87})",
+            "MATCH_ONE"
+        ],
+       "Type": "PowerSupply",
+       "xyz.openbmc_project.Inventory.Decorator.Asset": {
+           "Manufacturer": "$BOARD_MANUFACTURER",
+           "Model": "$BOARD_PRODUCT_NAME",
+           "PartNumber": "$BOARD_PART_NUMBER",
+           "SerialNumber": "$BOARD_SERIAL_NUMBER"
+       }
+   }
+]

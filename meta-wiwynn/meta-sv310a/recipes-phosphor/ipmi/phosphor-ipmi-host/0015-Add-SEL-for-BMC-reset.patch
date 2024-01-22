@@ -1,0 +1,133 @@
+From 22eae43bace08a6fb1abd91129010f346c0a8331 Mon Sep 17 00:00:00 2001
+From: Eli Huang <Eli_Huang@wiwynn.com>
+Date: Wed, 12 May 2021 15:31:30 +0800
+Subject: [PATCH] Add SEL for BMC reset
+
+---
+ globalhandler.cpp | 82 ++++++++++++++++++++++++++++++++++++++++++++---
+ 1 file changed, 78 insertions(+), 4 deletions(-)
+
+diff --git a/globalhandler.cpp b/globalhandler.cpp
+index 2f10244..353a4d4 100644
+--- a/globalhandler.cpp
++++ b/globalhandler.cpp
+@@ -13,11 +13,63 @@ static constexpr auto bmcStateIntf = "xyz.openbmc_project.State.BMC";
+ static constexpr auto reqTransition = "RequestedBMCTransition";
+ static constexpr auto match = "bmc0";
+ 
++constexpr char const* IPMI_SEL_SERVICE = "xyz.openbmc_project.Logging.IPMI";
++constexpr char const* IPMI_SEL_PATH = "/xyz/openbmc_project/Logging/IPMI";
++constexpr char const* IPMI_SEL_INTERFACE = "xyz.openbmc_project.Logging.IPMI";
++constexpr uint16_t selBMCGenID = 0x0020;
++
+ using namespace phosphor::logging;
+ using BMC = sdbusplus::xyz::openbmc_project::State::server::BMC;
+ 
+ void register_netfn_global_functions() __attribute__((constructor));
+ 
++enum resetType
++{
++    coldReset = 0x0,
++    warmReset = 0x1,
++};
++
++enum channel
++{
++    outOfBand = 1,
++    inBand = 15,
++};
++
++std::map<uint8_t,uint8_t> channelToEventData = 
++{
++    {inBand, 0},
++    {outOfBand, 1}
++};
++
++void addSel(uint8_t channel, uint8_t resetMethod)
++{
++    uint8_t restartCause = 0xFF;
++    std::map<uint8_t,uint8_t>::iterator it = channelToEventData.find(channel);
++    if (it != channelToEventData.end())
++    {
++        restartCause = it->second;
++    }
++    std::string message = "Reset BMC";
++    auto object_path = "/xyz/openbmc_project/sensors/discrete/BMC_Health";
++    std::vector <uint8_t> event_data = {0xA6, restartCause, resetMethod};
++    try
++    {
++        auto bus = sdbusplus::bus::new_system();
++        auto getMessage = bus.new_method_call(IPMI_SEL_SERVICE, IPMI_SEL_PATH,
++                                              IPMI_SEL_INTERFACE, "IpmiSelAdd");
++
++        getMessage.append(message, object_path, event_data, true,
++                          selBMCGenID);
++
++        bus.call_noreply(getMessage);
++    }
++    catch (const sdbusplus::exception::SdBusError& e)
++    {
++        std::cerr << "Error to Add Sel : " << message
++                  << ",error code : " << e.what() << "\n";
++    }
++}
++
+ void resetBMC()
+ {
+     sdbusplus::bus::bus bus{ipmid_get_sd_bus_connection()};
+@@ -32,14 +84,36 @@ void resetBMC()
+                           convertForMessage(BMC::Transition::Reboot));
+ }
+ 
+-/** @brief implements cold and warm reset commands
++/** @brief implements cold reset commands
++ *  @param - None
++ *  @returns IPMI completion code.
++ */
++ipmi::RspType<> ipmiGlobalColdReset(ipmi::Context::ptr ctx)
++{
++    try
++    {
++        addSel(unsigned(ctx->channel), coldReset);
++        resetBMC();
++    }
++    catch (std::exception& e)
++    {
++        log<level::ERR>(e.what());
++        return ipmi::responseUnspecifiedError();
++    }
++
++    // Status code.
++    return ipmi::responseSuccess();
++}
++
++/** @brief implements warm reset commands
+  *  @param - None
+  *  @returns IPMI completion code.
+  */
+-ipmi::RspType<> ipmiGlobalReset()
++ipmi::RspType<> ipmiGlobalWarmReset(ipmi::Context::ptr ctx)
+ {
+     try
+     {
++        addSel(unsigned(ctx->channel), warmReset);
+         resetBMC();
+     }
+     catch (std::exception& e)
+@@ -58,11 +132,11 @@ void register_netfn_global_functions()
+     // Cold Reset
+     ipmi::registerHandler(ipmi::prioOpenBmcBase, ipmi::netFnApp,
+                           ipmi::app::cmdColdReset, ipmi::Privilege::Admin,
+-                          ipmiGlobalReset);
++                          ipmiGlobalColdReset);
+ 
+     // Warm Reset
+     ipmi::registerHandler(ipmi::prioOpenBmcBase, ipmi::netFnApp,
+                           ipmi::app::cmdWarmReset, ipmi::Privilege::Admin,
+-                          ipmiGlobalReset);
++                          ipmiGlobalWarmReset);
+     return;
+ }
+-- 
+2.28.0
+

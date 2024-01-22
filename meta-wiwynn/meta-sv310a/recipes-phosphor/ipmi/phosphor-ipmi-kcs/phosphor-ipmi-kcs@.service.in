@@ -1,0 +1,13 @@
+[Unit]
+Description=Phosphor IPMI KCS DBus Bridge
+After=multi-user.target
+
+[Service]
+Type=notify
+Restart=always
+ExecStart=@BIN@ -c "%i"
+SyslogIdentifier=kcsbridged-%i
+
+[Install]
+WantedBy=multi-user.target
+RequiredBy=

@@ -1,0 +1,199 @@
+From b1c5ea0700dd73d1fa177a70de45ce0f2ac68bdc Mon Sep 17 00:00:00 2001
+From: Jason Chang <jason_yx_chang@wiwynn.com>
+Date: Mon, 25 May 2020 17:25:05 +0800
+Subject: [PATCH] Add sensor failed function for CPU NIC and FP inlet sensors
+
+---
+ pid/zone.cpp | 113 ++++++++++++++++++++++++++++++---------------------
+ 1 file changed, 67 insertions(+), 46 deletions(-)
+
+diff --git a/pid/zone.cpp b/pid/zone.cpp
+index c93d610..22f9985 100644
+--- a/pid/zone.cpp
++++ b/pid/zone.cpp
+@@ -50,6 +50,9 @@ static constexpr uint8_t nvmeStrLen = 4;
+ static constexpr auto dimmStr = "DIMM";
+ static constexpr uint8_t dimmStrLen = 4;
+ static constexpr uint8_t strPos = 0;
++static constexpr auto cpuService = "xyz.openbmc_project.CPUSensor";
++static constexpr auto fpService = "xyz.openbmc_project.HwmonTempSensor";
++static constexpr auto nicService = "xyz.openbmc_project.NICSensor";
+ 
+ double PIDZone::getMaxSetPointRequest(void) const
+ {
+@@ -78,15 +81,15 @@ bool PIDZone::getFailSafeMode(void) const
+     {
+         return true;
+     }
++*/
+     // If any CPU or DIMM sensors are failed, enter fail safe mode.
+     for (auto& it : _failSafeTemps)
+     {
+-        if ((it.find("CPU") != std::string::npos) || (it.find("DIMM") != std::string::npos))
++        if ((it.find("CPU") != std::string::npos) || (it.find("FP_Inlet") != std::string::npos) || (it.find("NIC") != std::string::npos))
+         {
+             return true;
+         }
+     }
+-*/
+     return false;
+ }
+ 
+@@ -417,14 +420,14 @@ void PIDZone::updateSensors(void)
+ {
+     using namespace std::chrono;
+     /* margin and temp are stored as temp */
+-//    tstamp now = high_resolution_clock::now();
++    tstamp now = high_resolution_clock::now();
+ 
+     for (const auto& t : _thermalInputs)
+     {
+         auto sensor = _mgr.getSensor(t);
+         ReadReturn r = sensor->read();
+         r.value = round(r.value);
+-//        int64_t timeout = sensor->getTimeout();
++        int64_t timeout = sensor->getTimeout();
+ 
+         if (debugModeEnabled)
+         {
+@@ -445,16 +448,31 @@ void PIDZone::updateSensors(void)
+         }
+ 
+         _cachedValuesByName[t] = r.value;
+-//        tstamp then = r.updated;
++        tstamp then = r.updated;
+ 
+-//        auto duration = duration_cast<std::chrono::seconds>(now - then).count();
+-//        auto period = std::chrono::seconds(timeout).count();
++        auto duration = duration_cast<std::chrono::seconds>(now - then).count();
++        auto period = std::chrono::seconds(timeout).count();
+ 
+         auto vReadingState = std::variant<bool>(false);
+         bool readingStateUnavailable = false;
+-        if (((t.find("CPU") != std::string::npos) || (t.find("DIMM") != std::string::npos)))
++
++        if ((t.find("CPU") != std::string::npos) || (t.find("FP_Inlet") != std::string::npos) || (t.find("NIC") != std::string::npos))
+         {
+-            auto method = _bus.new_method_call("xyz.openbmc_project.CPUSensor",
++            std::string serv;
++            if (t.find("CPU") != std::string::npos)
++            {
++                serv = cpuService;   
++            }
++            else if (t.find("FP_Inlet") != std::string::npos)
++            {
++                serv = fpService;
++            }
++            else
++            {
++                serv = nicService;
++            }
++
++            auto method = _bus.new_method_call(serv.c_str(),
+                                         ("/xyz/openbmc_project/sensors/temperature/" + t).c_str(),
+                                         "org.freedesktop.DBus.Properties", "Get");
+             method.append("xyz.openbmc_project.Sensor.Value", "InvalidValue");
+@@ -479,28 +497,27 @@ void PIDZone::updateSensors(void)
+             }
+         }
+ 
+-//        if (sensor->getFailed())
+-//        {
+-//            sd_journal_print(LOG_INFO, "%s temperature sensor getfailed",
+-//                             t.c_str());
+-//            _failSafeTemps.insert(t);
+-//        }
+-//        else if (timeout != 0 && duration >= period)
+-//        {
+-            // std::cerr << "Entering fail safe mode.\n";
+-//            sd_journal_print(LOG_INFO,
+-//                             "%s temperature sensor timeout, duration: %lld",
+-//                             t.c_str(), duration);
+-//            _failSafeTemps.insert(t);
+-//        }
++        if (sensor->getFailed())
++        {
++            sd_journal_print(LOG_INFO, "%s temperature sensor getfailed",
++                             t.c_str());
++            _failSafeTemps.insert(t);
++        }
++        else if (timeout != 0 && duration >= period)
++        {
++            sd_journal_print(LOG_INFO,
++                             "%s temperature sensor timeout, duration: %lld",
++                             t.c_str(), duration);
++            _failSafeTemps.insert(t);
++        }
+         // readingStateUnavailable is true means that sensor value is invalid.
+-//        else if (readingStateUnavailable == true)
+-//        {
++        else if (readingStateUnavailable == true)
++        {
+             // The interval of pid control update sensor values.
+-//            sensorFailuresTimer[t] += (getUpdateThermalsCycle() * getCycleTimeBase());
+-//            sd_journal_print(LOG_INFO,
+-//                 "%s temperature sensor readingStateUnavailable is true, duration: %lldms",
+-//                 t.c_str(), sensorFailuresTimer[t]);
++            sensorFailuresTimer[t] += (getUpdateThermalsCycle() * getCycleTimeBase());
++            sd_journal_print(LOG_INFO,
++                 "%s temperature sensor readingStateUnavailable is true, duration: %lldms",
++                 t.c_str(), sensorFailuresTimer[t]);
+ 
+             /**
+              *  If BMC can’t get the correct response from CPU or DIMM over 30 seconds.
+@@ -512,23 +529,23 @@ void PIDZone::updateSensors(void)
+              */
+ 
+             // If sensor failure time is more than 20000 ms(20 seconds)
+-//            if (sensorFailuresTimer[t] >= 20000)
+-//            {
+-//                _failSafeTemps.insert(t);
+-//            }
+-//        }
+-//        else
+-//        {
++            if (sensorFailuresTimer[t] >= 20000)
++            {
++                _failSafeTemps.insert(t);
++            }
++        }
++        else
++        {
+             // Check if it's in there: remove it.
+-//            auto kt = _failSafeTemps.find(t);
+-//            if (kt != _failSafeTemps.end())
+-//            {
+-//                sd_journal_print(LOG_INFO,
+-//                                 "erase %s temperature sensor from failsafe",
+-//                                 t.c_str());
+-//                _failSafeTemps.erase(kt);
+-//            }
+-//        }
++            auto kt = _failSafeTemps.find(t);
++            if (kt != _failSafeTemps.end())
++            {
++                sd_journal_print(LOG_INFO,
++                                 "erase %s temperature sensor from failsafe",
++                                 t.c_str());
++                _failSafeTemps.erase(kt);
++            }
++        }
+     }
+ 
+     return;
+@@ -549,7 +566,11 @@ void PIDZone::initializeCache(void)
+         _cachedValuesByName[t] = 0;
+ 
+         // Start all sensors in fail-safe mode.
+-//        _failSafeTemps.insert(t);
++        // Put CPU, NIC, and FP inlet sensors in fail-safe mode
++        if ((t.find("CPU") != std::string::npos) || (t.find("FP_Inlet") != std::string::npos) || (t.find("NIC") != std::string::npos))
++        {
++            _failSafeTemps.insert(t);
++        }
+     }
+ }
+ 
+-- 
+2.24.1
+

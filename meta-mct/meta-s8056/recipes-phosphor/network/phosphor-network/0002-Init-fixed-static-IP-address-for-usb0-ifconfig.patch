@@ -1,0 +1,37 @@
+From 14e78e6f8cfe9a4f6409114ddac03c3425000f25 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Tue, 16 Nov 2021 16:34:47 +0800
+Subject: [PATCH 2/2] Init fixed static IP address for usb0 ifconfig
+
+---
+ src/network_config.cpp | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/src/network_config.cpp b/src/network_config.cpp
+index 5bad866..53b26f4 100755
+--- a/src/network_config.cpp
++++ b/src/network_config.cpp
+@@ -25,6 +25,20 @@ void writeDHCPDefault(const std::string& filename, const std::string& interface)
+     // The new value is only assigned on first boot, when the default
+     // file is not present, or after the default file has been
+     // manually removed.
++
++    if (interface.compare("usb0") == 0)
++    {
++        filestream << "[Match]\nName=" << interface <<
++                    "\n\n[Address]\n"
++                    "Address=169.254.47.147/16\n"
++                    "\n[Network]\n"
++                    "DHCP=false\n"
++                    "LinkLocalAddressing=no\n"
++                    "IPv6AcceptRA=false\n";
++        filestream.close();
++        return;
++    }
++
+     filestream << "[Match]\nName=" << interface <<
+                 "\n[Network]\nDHCP=true\n"
+ #ifdef LINK_LOCAL_AUTOCONFIGURATION
+-- 
+2.7.4
+

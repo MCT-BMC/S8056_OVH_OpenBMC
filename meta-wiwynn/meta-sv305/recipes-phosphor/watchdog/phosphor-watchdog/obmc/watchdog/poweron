@@ -1,0 +1,7 @@
+DEVPATH=/xyz/openbmc_project/watchdog/host0
+SERVICE=xyz.openbmc_project.Watchdog
+TARGET=obmc-host-timeout@0.target
+PWR_OFF="xyz.openbmc_project.State.Watchdog.Action.PowerOff=host-poweroff.service"
+PWR_CYCLE="xyz.openbmc_project.State.Watchdog.Action.PowerCycle=obmc-host-timeout@0.target"
+PWR_RESET="xyz.openbmc_project.State.Watchdog.Action.HardReset=host-powerreset.service"
+

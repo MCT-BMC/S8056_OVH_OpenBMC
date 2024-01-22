@@ -1,0 +1,39 @@
+From 21971aa8687362753870c1f8e8c606ced2c07814 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Tue, 17 Jan 2023 08:37:13 +0800
+Subject: [PATCH] Add spcified firmware property for version purpose
+
+Add cpld property for version purpose
+Add vr property for version purpose
+Add BMC2 property for version purpose
+Add HOST2 property for version purpose
+---
+ .../openbmc_project/Software/Version.interface.yaml  | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/yaml/xyz/openbmc_project/Software/Version.interface.yaml b/yaml/xyz/openbmc_project/Software/Version.interface.yaml
+index 22a90ce..5d5eb6d 100644
+--- a/yaml/xyz/openbmc_project/Software/Version.interface.yaml
++++ b/yaml/xyz/openbmc_project/Software/Version.interface.yaml
+@@ -38,6 +38,18 @@ enumerations:
+         - name: Host
+           description: >
+             The version is a version for a managed host.
++        - name: Host2
++          description: >
++            The version is a version for a managed host.
+         - name: PSU
+           description: >
+             The version is a version for a PSU.
++        - name: CPLD
++          description: >
++            The version is a version for the CPLD.
++        - name: VR
++          description: >
++            The version is a version for a VR.
++        - name: BMC2
++          description: >
++            The version is a version for the alternate BMC.
+-- 
+2.25.1
+

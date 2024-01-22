@@ -1,0 +1,87 @@
+From 20738245849edfddd43a905f553cbeb355ef39cf Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Mon, 20 Apr 2020 10:48:50 +0800
+Subject: [PATCH 04/11] Change to steady_timer used in FanExt sensor
+
+---
+ include/FanExtSensor.hpp | 2 +-
+ src/FanExtSensor.cpp     | 7 +++----
+ src/FanExtSensorMain.cpp | 3 +--
+ 3 files changed, 5 insertions(+), 7 deletions(-)
+
+diff --git a/include/FanExtSensor.hpp b/include/FanExtSensor.hpp
+index 4d230c2..1738b4b 100644
+--- a/include/FanExtSensor.hpp
++++ b/include/FanExtSensor.hpp
+@@ -3,7 +3,7 @@
+ #include <Thresholds.hpp>
+ #include <sdbusplus/asio/object_server.hpp>
+ #include <sensor.hpp>
+-#include <boost/chrono/chrono_io.hpp>
++#include <boost/asio/steady_timer.hpp>
+ 
+ class FanExtSensor : public Sensor
+ {
+diff --git a/src/FanExtSensor.cpp b/src/FanExtSensor.cpp
+index e7bfbd6..2fa8e85 100644
+--- a/src/FanExtSensor.cpp
++++ b/src/FanExtSensor.cpp
+@@ -19,7 +19,6 @@
+ #include <unistd.h>
+ #include <boost/algorithm/string/predicate.hpp>
+ #include <boost/algorithm/string/replace.hpp>
+-#include <boost/date_time/posix_time/posix_time.hpp>
+ #include <iostream>
+ #include <limits>
+ #include <sdbusplus/asio/connection.hpp>
+@@ -28,7 +27,7 @@
+ 
+ static constexpr const char* sensorPathPrefix = "/xyz/openbmc_project/sensors/";
+ 
+-static std::chrono::seconds sensorPollSec(1);
++static constexpr unsigned int sensorPollMs = 1000;
+ static constexpr size_t warnAfterErrorCount = 10;
+ 
+ FanExtSensor::FanExtSensor(
+@@ -116,7 +115,7 @@ void FanExtSensor::handleResponse(const boost::system::error_code& err)
+             return;
+         }
+         inputDev.assign(fd);
+-        waitTimer.expires_from_now(std::chrono::steady_clock::duration(sensorPollSec));
++        waitTimer.expires_from_now(boost::asio::chrono::milliseconds(sensorPollMs));
+         waitTimer.async_wait([&](const boost::system::error_code& ec) {
+             if (ec == boost::asio::error::operation_aborted)
+             {
+@@ -169,7 +168,7 @@ void FanExtSensor::handleResponse(const boost::system::error_code& err)
+         return; // we're no longer valid
+     }
+     inputDev.assign(fd);
+-    waitTimer.expires_from_now(std::chrono::steady_clock::duration(sensorPollSec));
++    waitTimer.expires_from_now(boost::asio::chrono::milliseconds(sensorPollMs));
+     waitTimer.async_wait([&](const boost::system::error_code& ec) {
+         if (ec == boost::asio::error::operation_aborted)
+         {
+diff --git a/src/FanExtSensorMain.cpp b/src/FanExtSensorMain.cpp
+index 31418ce..b597942 100644
+--- a/src/FanExtSensorMain.cpp
++++ b/src/FanExtSensorMain.cpp
+@@ -28,7 +28,6 @@
+ #include <sdbusplus/asio/object_server.hpp>
+ 
+ namespace fs = std::filesystem;
+-static std::chrono::seconds interval(1);
+ 
+ static constexpr std::array<const char*, 1> sensorTypes =
+ {
+@@ -297,7 +296,7 @@ int main()
+         }
+         sensorsChanged->insert(message.get_path());
+         // this implicitly cancels the timer
+-        filterTimer.expires_from_now(std::chrono::steady_clock::duration(interval));
++        filterTimer.expires_from_now(boost::asio::chrono::seconds(1));
+         filterTimer.async_wait([&](const boost::system::error_code & ec) {
+             if (ec == boost::asio::error::operation_aborted)
+             {
+-- 
+2.24.1
+

@@ -1,0 +1,34 @@
+From b4047cb015049031ba4fa1e468bf6a2e4a005ac9 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Mon, 8 Jun 2020 17:58:43 +0800
+Subject: [PATCH] Add an event-only sensor for SEL entry event
+
+---
+ include/EventSensor.hpp | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/include/EventSensor.hpp b/include/EventSensor.hpp
+index 22b3afc..c6b875a 100644
+--- a/include/EventSensor.hpp
++++ b/include/EventSensor.hpp
+@@ -63,7 +63,8 @@ static const std::vector<struct sensorTypeMap> sensorList = {
+     {.sensorName = "CPU1_State", .sensorType = "processor/"},
+     {.sensorName = "BMC_Health", .sensorType = "mgmtsystemhealth/"},
+     {.sensorName = "Power_Unit", .sensorType = "powerunit/"},
+-    {.sensorName = "Processor_fail", .sensorType = "processor/"}
++    {.sensorName = "Processor_fail", .sensorType = "processor/"},
++    {.sensorName = "EventLogging", .sensorType = "sel_log/"}
+ };
+ 
+ enum class sensorListIdx : uint8_t
+@@ -77,6 +78,7 @@ enum class sensorListIdx : uint8_t
+     BMC_Health = 6,
+     Power_Unit = 7,
+     Processor_fail = 8,
++    EventLogging = 9,
+ };
+ 
+ class EventOnlySensor
+-- 
+2.24.1
+

@@ -1,0 +1,72 @@
+From 664a174517bdee68617b85a3ef413721afdbc57a Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Wed, 11 Aug 2021 13:47:38 +0800
+Subject: [PATCH] Clear boot flags valid when timeout
+
+---
+ src/watchdog.cpp | 42 ++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 42 insertions(+)
+
+diff --git a/src/watchdog.cpp b/src/watchdog.cpp
+index cc64e8b..81a869d 100644
+--- a/src/watchdog.cpp
++++ b/src/watchdog.cpp
+@@ -41,6 +41,12 @@ constexpr auto restartCauseService = "xyz.openbmc_project.State.Host";
+ constexpr auto restartCausePath = "/xyz/openbmc_project/state/host0";
+ constexpr auto restartCauseIntf = "xyz.openbmc_project.State.Host";
+ 
++constexpr auto bootOptionService = "xyz.openbmc_project.BootOption";
++constexpr auto bootOptionPath = "/xyz/openbmc_project/control/boot";
++constexpr auto bootOptionValidIntf = "xyz.openbmc_project.Control.Valid";
++// Indicate bit 2 of BMC boot flag valid bit clearing.
++constexpr auto dontClearWatchdogTimeout = 0x4;
++
+ void Watchdog::resetTimeRemaining(bool enableWatchdog)
+ {
+     timeRemaining(interval());
+@@ -125,6 +131,42 @@ uint64_t Watchdog::interval(uint64_t value)
+ // Optional callback function on timer expiration
+ void Watchdog::timeOutHandler()
+ {
++    // Get Boot Flag Valid Bit Clearing
++    uint8_t bootFlagValidBitClearing = 0;
++    try
++    {
++        auto msg = bus.new_method_call(bootOptionService, bootOptionPath,
++                                       PropertiesInterface, "Get");
++        msg.append(bootOptionValidIntf, "BootFlagValidBitClearing");
++        auto reply = bus.call(msg);
++        std::variant<uint8_t> variant;
++        reply.read(variant);
++        bootFlagValidBitClearing = std::get<uint8_t>(variant);
++    }
++    catch (const std::exception& e)
++    {
++        log<level::ERR>("watchdog: Failed to get BootFlagValidBitClearing",
++                        entry("ERROR=%s", e.what()));
++    }
++
++    // Clear Boot Flags Valid.
++    if (!(bootFlagValidBitClearing & dontClearWatchdogTimeout))
++    {
++        try
++        {
++            auto msg = bus.new_method_call(bootOptionService, bootOptionPath,
++                                           PropertiesInterface, "Set");
++            msg.append(bootOptionValidIntf, "BootFlagsValid",
++                       std::variant<bool>(false));
++            bus.call_noreply(msg);
++        }
++        catch (const std::exception& e)
++        {
++            log<level::ERR>("watchdog: Failed to set BootFlagsValid",
++                            entry("ERROR=%s", e.what()));
++        }
++    }
++
+     Action action = expireAction();
+     if (!this->enabled())
+     {
+-- 
+2.32.0
+

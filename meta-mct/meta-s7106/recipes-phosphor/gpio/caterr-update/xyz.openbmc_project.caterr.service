@@ -1,0 +1,8 @@
+[Unit]
+Description=assert CATERR 
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env caterr_update.sh assert
+SyslogIdentifier=caterr_assert
+

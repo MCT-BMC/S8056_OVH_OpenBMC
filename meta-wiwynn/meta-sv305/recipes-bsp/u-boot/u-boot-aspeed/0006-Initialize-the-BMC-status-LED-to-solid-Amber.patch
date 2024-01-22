@@ -1,0 +1,83 @@
+From d5e73259548a5ecd244636a5c77a1d4c372ffe07 Mon Sep 17 00:00:00 2001
+From: Ren_Chen <Ren_Chen@wiwynn.com>
+Date: Thu, 5 Nov 2020 14:09:17 +0800
+Subject: [PATCH] Initialize the BMC status LED to solid Amber
+
+Decription:
+- Initialize the BMC status LED to solid Amber
+
+Designed:
+- Set GPIOH7 (Green) to O(L) - OFF
+- Set GPIOM5 (Amber) to O(H) - ON
+---
+ board/aspeed/ast-g5/ast-g5.c | 40 ++++++++++++++++++++++++++++++++++++
+ 1 file changed, 40 insertions(+)
+
+diff --git a/board/aspeed/ast-g5/ast-g5.c b/board/aspeed/ast-g5/ast-g5.c
+index c9d5fe6d2b..a6a16c55c0 100644
+--- a/board/aspeed/ast-g5/ast-g5.c
++++ b/board/aspeed/ast-g5/ast-g5.c
+@@ -51,6 +51,14 @@ DECLARE_GLOBAL_DATA_PTR;
+ #define FWSPICS1_FUNC_PIN         24
+ #define FWSPICS2_FUNC_PIN         25
+ 
++#define GPIO_REG_BASE             0x1e780000
++#define GPIO_EFGH_DATA            0x20
++#define GPIO_EFGH_DIR             0x24
++#define GPIO_MNOP_DATA            0x78
++#define GPIO_MNOP_DIR             0x7c
++#define BMC_LED_PWR_GRN           31
++#define BMC_LED_PWR_AMBER         5
++
+ /* --------------------------------------------------------------------
+  * @fn Chip_Register_Init
+  * @brief Initialize the BMC chip registers if needed
+@@ -207,6 +215,37 @@ void SCU_Init(void)
+     *(volatile ulong *) (AST_SCU_BASE + 0x88) = ast_reg32;
+ }
+ 
++/*--------------------------------------------------------------------
++ * @fn Set_Default_Status_LED
++ * @brief Set the status LED to solid Amber as default
++ *
++ *--------------------------------------------------------------------*/
++void Set_Default_Status_LED()
++{
++    puts("LED Initialization...\n");
++    unsigned long ast_reg32;
++    ast_reg32 = 0x1688A8A8;
++    *(volatile ulong *) (AST_SCU_BASE) = ast_reg32;
++
++    /* Set GPIOH7 (Green) to O(L) - OFF
++       Set GPIOM5 (Amber) to O(H) - ON
++     */
++
++    ast_reg32 = *(volatile ulong *) (GPIO_REG_BASE + GPIO_EFGH_DATA);
++    ast_reg32 &= ~BIT(BMC_LED_PWR_GRN);
++    *(volatile ulong *) (GPIO_REG_BASE + GPIO_EFGH_DATA) = ast_reg32;
++    ast_reg32 = *(volatile ulong *) (GPIO_REG_BASE + GPIO_EFGH_DIR);
++    ast_reg32 |= BIT(BMC_LED_PWR_GRN);
++    *(volatile ulong *) (GPIO_REG_BASE + GPIO_EFGH_DIR) = ast_reg32;
++
++    ast_reg32 = *(volatile ulong *) (GPIO_REG_BASE + GPIO_MNOP_DATA);
++    ast_reg32 |= BIT(BMC_LED_PWR_AMBER);
++    *(volatile ulong *) (GPIO_REG_BASE + GPIO_MNOP_DATA) = ast_reg32;
++    ast_reg32 = *(volatile ulong *) (GPIO_REG_BASE + GPIO_MNOP_DIR);
++    ast_reg32 |= BIT(BMC_LED_PWR_AMBER);
++    *(volatile ulong *) (GPIO_REG_BASE + GPIO_MNOP_DIR) = ast_reg32;
++}
++
+ int board_init(void)
+ {
+ 	gd->bd->bi_boot_params = CONFIG_SYS_SDRAM_BASE + 0x100;
+@@ -216,6 +255,7 @@ int board_init(void)
+ 	Set_Default_Fan_PWM(DEFAULT_PWM);
+ 	Set_Default_UART_Route();
+ 	SCU_Init();
++        Set_Default_Status_LED();
+ 
+ 	return 0;
+ }
+-- 
+2.28.0
+

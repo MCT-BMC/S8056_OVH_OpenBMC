@@ -1,0 +1,53 @@
+From fc622592c7dba138ac1cbdb8cb2494fb6988e6d4 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Wed, 7 Aug 2019 12:57:37 +0800
+Subject: [PATCH 2/2] nvmem-sysfs.c Add not root permission
+
+---
+ drivers/nvmem/nvmem-sysfs.c | 26 ++++++++++++++++++++++++++
+ 1 file changed, 26 insertions(+)
+
+diff --git a/drivers/nvmem/nvmem-sysfs.c b/drivers/nvmem/nvmem-sysfs.c
+index 6f303b91f6e7..1487b68e9961 100644
+--- a/drivers/nvmem/nvmem-sysfs.c
++++ b/drivers/nvmem/nvmem-sysfs.c
+@@ -224,10 +224,36 @@ int nvmem_sysfs_setup_compat(struct nvmem_device *nvmem,
+ 	if (!config->base_dev)
+ 		return -EINVAL;
+ 
++#if 1
++    if (nvmem->read_only)
++    {
++        if (config->root_only)
++        {
++            nvmem->eeprom = bin_attr_ro_root_nvmem;
++        }
++        else
++        {
++            nvmem->eeprom = bin_attr_ro_nvmem;
++        }
++    }
++    else
++    {
++        if (config->root_only)
++        {
++            nvmem->eeprom = bin_attr_rw_root_nvmem;
++        }
++        else
++        {
++            nvmem->eeprom = bin_attr_rw_nvmem;
++        }
++    }
++#else
+ 	if (nvmem->read_only)
+ 		nvmem->eeprom = bin_attr_ro_root_nvmem;
+ 	else
+ 		nvmem->eeprom = bin_attr_rw_root_nvmem;
++#endif
++
+ 	nvmem->eeprom.attr.name = "eeprom";
+ 	nvmem->eeprom.size = nvmem->size;
+ #ifdef CONFIG_DEBUG_LOCK_ALLOC
+-- 
+2.22.0
+

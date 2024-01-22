@@ -1,0 +1,14 @@
+[Unit]
+Description=Generate BMC Update SEL
+Requires=xyz.openbmc_project.Logging.IPMI.service
+After=xyz.openbmc_project.Logging.IPMI.service
+
+[Service]
+Restart=no
+ExecStart=/usr/sbin/sv300g3e-bmc-update-sel.sh
+SyslogIdentifier=sv300g3e-bmc-update-sel
+TimeoutSec=infinity
+
+[Install]
+WantedBy={SYSTEMD_DEFAULT_TARGET}
+

@@ -1,0 +1,83 @@
+From 206e65934f6f09c9b7cbb75d15f4571cb6fea355 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Mon, 20 Apr 2020 10:57:46 +0800
+Subject: [PATCH 06/11] Change to steady_timer used in Ipmb sensor
+
+---
+ include/IpmbSensor.hpp |  4 ++--
+ src/IpmbSensor.cpp     | 12 ++++++------
+ 2 files changed, 8 insertions(+), 8 deletions(-)
+
+diff --git a/include/IpmbSensor.hpp b/include/IpmbSensor.hpp
+index 2185b68..3d54435 100644
+--- a/include/IpmbSensor.hpp
++++ b/include/IpmbSensor.hpp
+@@ -1,7 +1,7 @@
+ #pragma once
+ #include "sensor.hpp"
+ 
+-#include <boost/asio/deadline_timer.hpp>
++#include <boost/asio/steady_timer.hpp>
+ #include <boost/container/flat_map.hpp>
+ #include <chrono>
+ #include <limits>
+@@ -63,5 +63,5 @@ struct IpmbSensor : public Sensor
+   private:
+     sdbusplus::asio::object_server& objectServer;
+     std::shared_ptr<sdbusplus::asio::connection> dbusConnection;
+-    boost::asio::deadline_timer waitTimer;
++    boost::asio::steady_timer waitTimer;
+ };
+diff --git a/src/IpmbSensor.cpp b/src/IpmbSensor.cpp
+index 796d52a..c1c6e18 100644
+--- a/src/IpmbSensor.cpp
++++ b/src/IpmbSensor.cpp
+@@ -56,7 +56,7 @@ using IpmbMethodType =
+ 
+ boost::container::flat_map<std::string, std::unique_ptr<IpmbSensor>> sensors;
+ 
+-std::unique_ptr<boost::asio::deadline_timer> initCmdTimer;
++std::unique_ptr<boost::asio::steady_timer> initCmdTimer;
+ 
+ IpmbSensor::IpmbSensor(std::shared_ptr<sdbusplus::asio::connection>& conn,
+                        boost::asio::io_service& io,
+@@ -240,7 +240,7 @@ void IpmbSensor::read(void)
+ {
+     static constexpr size_t pollTime = 1; // in seconds
+ 
+-    waitTimer.expires_from_now(boost::posix_time::seconds(pollTime));
++    waitTimer.expires_from_now(boost::asio::chrono::seconds(pollTime));
+     waitTimer.async_wait([this](const boost::system::error_code& ec) {
+         if (ec == boost::asio::error::operation_aborted)
+         {
+@@ -510,7 +510,7 @@ void reinitSensors(sdbusplus::message::message& message)
+             // we seem to send this command too fast sometimes, wait before
+             // sending
+             initCmdTimer->expires_from_now(
+-                boost::posix_time::seconds(reinitWaitSeconds));
++                boost::asio::chrono::seconds(reinitWaitSeconds));
+ 
+             initCmdTimer->async_wait([](const boost::system::error_code ec) {
+                 if (ec == boost::asio::error::operation_aborted)
+@@ -538,15 +538,15 @@ int main()
+     systemBus->request_name("xyz.openbmc_project.IpmbSensor");
+     sdbusplus::asio::object_server objectServer(systemBus);
+ 
+-    initCmdTimer = std::make_unique<boost::asio::deadline_timer>(io);
++    initCmdTimer = std::make_unique<boost::asio::steady_timer>(io);
+ 
+     io.post([&]() { createSensors(io, objectServer, sensors, systemBus); });
+ 
+-    boost::asio::deadline_timer configTimer(io);
++    boost::asio::steady_timer configTimer(io);
+ 
+     std::function<void(sdbusplus::message::message&)> eventHandler =
+         [&](sdbusplus::message::message&) {
+-            configTimer.expires_from_now(boost::posix_time::seconds(1));
++            configTimer.expires_from_now(boost::asio::chrono::seconds(1));
+             // create a timer because normally multiple properties change
+             configTimer.async_wait([&](const boost::system::error_code& ec) {
+                 if (ec == boost::asio::error::operation_aborted)
+-- 
+2.24.1
+

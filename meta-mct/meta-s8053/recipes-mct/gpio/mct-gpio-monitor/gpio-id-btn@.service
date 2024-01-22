@@ -1,0 +1,11 @@
+[Unit]
+Description=Set ID_BTN_OUT to %I 
+StartLimitIntervalSec=6
+StartLimitBurst=1
+
+[Service]
+Type=oneshot
+ExecStartPre=echo "ID_BTN Press!!"
+ExecStart=/usr/bin/gpioset $(gpiofind ID_BTN_OUT)=%I
+SyslogIdentifier=gpio-id-btn
+RemainAfterExit=true

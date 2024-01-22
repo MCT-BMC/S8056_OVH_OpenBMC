@@ -1,0 +1,98 @@
+From a689fe1fb811123f9f4576673450b71d410ebfa8 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Sun, 15 Mar 2020 22:33:40 +0800
+Subject: [PATCH] Tach-type Fan sensors to support the invalid value property
+
+---
+ src/TachSensor.cpp | 43 ++++++++++++++++++++++++++++++++++++++++---
+ 1 file changed, 40 insertions(+), 3 deletions(-)
+
+diff --git a/src/TachSensor.cpp b/src/TachSensor.cpp
+index cc9d37d..0dd90b4 100644
+--- a/src/TachSensor.cpp
++++ b/src/TachSensor.cpp
+@@ -37,7 +37,7 @@
+ #include <utility>
+ #include <vector>
+ 
+-static constexpr unsigned int pwmPollMs = 500;
++static constexpr unsigned int pwmPollMs = 1000;
+ static constexpr size_t warnAfterErrorCount = 10;
+ 
+ TachSensor::TachSensor(const std::string& path, const std::string& objectType,
+@@ -124,10 +124,44 @@ void TachSensor::handleResponse(const boost::system::error_code& err)
+ {
+     if (err == boost::system::errc::bad_file_descriptor)
+     {
++        updateValueInvalid(true);
+         return; // we're being destroyed
+     }
+     bool missing = false;
+     size_t pollTime = pwmPollMs;
++
++    // Host power is off
++    if (!isPowerOn())
++    {
++        updateValueInvalid(true);
++        // updateValue(0);
++        errCount = 0;
++
++        // clear response buffer reading
++        std::istream invalidResponseStream(&readBuf);
++        std::string invalidResponse;
++        std::getline(invalidResponseStream, invalidResponse);
++        invalidResponseStream.clear();
++
++        inputDev.close();
++        int fd = open(path.c_str(), O_RDONLY);
++        if (fd <= 0)
++        {
++            return;
++        }
++        inputDev.assign(fd);
++        waitTimer.expires_from_now(boost::posix_time::milliseconds(pollTime));
++        waitTimer.async_wait([&](const boost::system::error_code& ec) {
++            if (ec == boost::asio::error::operation_aborted)
++            {
++                return;
++            }
++            setupRead();
++        });
++
++        return;
++    }
++
+     if (presence)
+     {
+         if (!presence->getValue())
+@@ -154,6 +188,7 @@ void TachSensor::handleResponse(const boost::system::error_code& err)
+                     updateValue(nvalue);
+                 }
+                 errCount = 0;
++                updateValueInvalid(false);
+             }
+             catch (const std::invalid_argument&)
+             {
+@@ -165,7 +200,8 @@ void TachSensor::handleResponse(const boost::system::error_code& err)
+             if (!isPowerOn())
+             {
+                 errCount = 0;
+-                updateValue(std::numeric_limits<double>::quiet_NaN());
++                // updateValue(std::numeric_limits<double>::quiet_NaN());
++                updateValueInvalid(true);
+             }
+             else
+             {
+@@ -181,7 +217,8 @@ void TachSensor::handleResponse(const boost::system::error_code& err)
+                 std::cerr << "Failure to read sensor " << name << " at " << path
+                           << " ec:" << err << "\n";
+             }
+-            updateValue(0);
++            // updateValue(0);
++            updateValueInvalid(true);
+         }
+     }
+     responseStream.clear();
+-- 
+2.24.1
+

@@ -1,0 +1,9 @@
+[Unit]
+Description=Set Platform Reset Assert
+
+[Service]
+Type=oneshot
+
+ExecStart=/usr/bin/busctl set-property "org.openbmc.control.Power" "/org/openbmc/control/power0" "org.openbmc.control.Power" "platformreset" b true
+
+ExecStopPost=/usr/bin/busctl set-property xyz.openbmc_project.GpioMonitor /xyz/openbmc_project/gpio/event xyz.openbmc_project.GpioEvent PlatformReset s "Idle"

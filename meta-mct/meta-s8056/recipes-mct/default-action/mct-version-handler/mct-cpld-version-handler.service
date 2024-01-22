@@ -1,0 +1,12 @@
+[Unit]
+Description=MiTAC CPLD firmware version handler
+After=xyz.openbmc_project.Software.BMC.Updater.service
+
+[Service]
+ExecStart=/usr/bin/env mct-cpld-version-handler
+Type=simple
+SyslogIdentifier=mct-cpld-version-handler
+TimeoutSec=infinity
+
+[Install]
+WantedBy=multi-user.target

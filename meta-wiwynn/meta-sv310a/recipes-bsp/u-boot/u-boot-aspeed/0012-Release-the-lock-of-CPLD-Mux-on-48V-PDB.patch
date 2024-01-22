@@ -1,0 +1,82 @@
+From e12149df2f1ce24be04e8a56d73d9372bcdb9156 Mon Sep 17 00:00:00 2001
+From: Ren Chen <ren_chen@wiwynn.com>
+Date: Thu, 16 Dec 2021 16:24:25 +0800
+Subject: [PATCH] Release the lock of CPLD Mux on 48V PDB if it's owned by the
+ BMC
+
+---
+ board/aspeed/ast-g5/ast-g5.c | 36 +++++++++++++++++++++++++++++++++---
+ 1 file changed, 33 insertions(+), 3 deletions(-)
+
+diff --git a/board/aspeed/ast-g5/ast-g5.c b/board/aspeed/ast-g5/ast-g5.c
+index 8aea5053e9..65b85e6c6c 100644
+--- a/board/aspeed/ast-g5/ast-g5.c
++++ b/board/aspeed/ast-g5/ast-g5.c
+@@ -68,6 +68,12 @@ DECLARE_GLOBAL_DATA_PTR;
+ 
+ #define PCA9641_STS_OTHER_LOCK    BIT(0)
+ 
++#define PDB_48V_CPLD_ADDRESS      0x5C
++#define PDB_48V_CPLD_LOCK_REG     0x04
++#define PDB_48V_CPLD_LOCK_MSK     0x0C
++#define PDB_48V_CPLD_MUX_RIGHT    0x08
++#define PDB_48V_CPLD_MUX_LEFT     0x04
++
+ // Time definition in us
+ #define SELECT_DELAY_SHORT        50
+ #define SELECT_DELAY_LONG         1000
+@@ -179,9 +185,10 @@ int requestArbiter(void)
+     return -ETIMEDOUT;
+ }
+ 
+-void Set_Fan_Controller_I2C_Watchdog(void)
++void Set_Fan_Controller_I2C_WTD_And_Unlock_CPLD_Mux_Lock(void)
+ {
+-    puts("Set Default I2C Watchdog timeout to 5 seconds\n");
++    puts("Set Default I2C Watchdog timeout to 5 seconds\n \
++          Release the lock of CPLD on 48V PDB it's owned by the BMC\n");
+ 
+     int ret;
+ 
+@@ -222,6 +229,29 @@ void Set_Fan_Controller_I2C_Watchdog(void)
+     uint8_t val = i2c_reg_read(FAN_CTL_LED_ADDR_LEFT, FAN_CTL_IO0_VAL_REG);
+     i2c_reg_write(FAN_CTL_LED_ADDR_LEFT, FAN_CTL_IO0_VAL_REG, val & 0xF7);
+ 
++    /* Check the the owner of the 48V CPLD mux.
++     * The lock is released if it's owned by the BMC.
++     * The lock register of CPLD on 48V PDB is 0x04.
++     * Here is the bit[3:0] description of the lock register
++     * bit[1:0]: BMC asks CPLD for I2C channel (BMC to CPLD)
++     * bit[3:2]: CPLD informs BMC who used I2C channel(CPLD to BMC)
++     */
++    uint8_t lock_ctl = i2c_reg_read(PDB_48V_CPLD_ADDRESS, PDB_48V_CPLD_LOCK_REG);
++    if (slot_id_1)
++    {
++        if ((lock_ctl & PDB_48V_CPLD_LOCK_MSK) == PDB_48V_CPLD_MUX_RIGHT)
++        {
++            i2c_reg_write(PDB_48V_CPLD_ADDRESS, PDB_48V_CPLD_LOCK_REG, 0xf0);
++        }
++    }
++    else
++    {
++        if ((lock_ctl & PDB_48V_CPLD_LOCK_MSK) == PDB_48V_CPLD_MUX_LEFT)
++        {
++            i2c_reg_write(PDB_48V_CPLD_ADDRESS, PDB_48V_CPLD_LOCK_REG, 0xf0);
++        }
++    }
++
+     // Release arbiter
+     i2c_reg_write(PCA9641_ARBITER_ADDRESS, PCA9641_CONTROL, 0);
+ }
+@@ -421,7 +451,7 @@ int board_init(void)
+ 	LED_Init();
+ 	Set_Failover_WDT();
+ 	i2c_init(CONFIG_SYS_I2C_SPEED, CONFIG_SYS_I2C_SLAVE);
+-	Set_Fan_Controller_I2C_Watchdog();
++	Set_Fan_Controller_I2C_WTD_And_Unlock_CPLD_Mux_Lock();
+ 
+ 	return 0;
+ }
+-- 
+2.32.0
+

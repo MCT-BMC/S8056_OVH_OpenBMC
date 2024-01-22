@@ -1,0 +1,5 @@
+DEVPATH=/xyz/openbmc_project/watchdog/host0
+SERVICE=xyz.openbmc_project.Watchdog
+PWR_OFF="xyz.openbmc_project.State.Watchdog.Action.PowerOff=xyz.openbmc_project.State.Host.Transition.Off"
+PWR_CYCLE="xyz.openbmc_project.State.Watchdog.Action.PowerCycle=xyz.openbmc_project.State.Host.Transition.Reboot"
+PWR_RESET="xyz.openbmc_project.State.Watchdog.Action.HardReset=xyz.openbmc_project.State.Host.Transition.ForceWarmReboot"

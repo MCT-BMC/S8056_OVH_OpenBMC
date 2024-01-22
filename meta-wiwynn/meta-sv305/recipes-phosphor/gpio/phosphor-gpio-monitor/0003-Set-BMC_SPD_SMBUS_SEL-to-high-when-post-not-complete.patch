@@ -1,0 +1,193 @@
+From 4ca35e916bde58934c648ac7c021c617f927ba42 Mon Sep 17 00:00:00 2001
+From: Eli Huang <Eli_Huang@wiwynn.com>
+Date: Tue, 8 Dec 2020 13:20:45 +0800
+Subject: [PATCH] Set BMC_SPD_SMBUS_SEL to high when post not completed
+
+---
+ gpioMon.cpp | 98 +++++++++++++++++++++++++++++++++++++++++++++++++++++
+ gpioMon.hpp | 11 +++++-
+ meson.build |  2 ++
+ 3 files changed, 110 insertions(+), 1 deletion(-)
+
+diff --git a/gpioMon.cpp b/gpioMon.cpp
+index e86d9df..0256dbc 100644
+--- a/gpioMon.cpp
++++ b/gpioMon.cpp
+@@ -18,6 +18,10 @@
+ 
+ #include <phosphor-logging/log.hpp>
+ #include <sdbusplus/bus.hpp>
++#include <openbmc/libobmci2c.h>
++#include <unistd.h>
++#include <iostream>
++#include <errno.h>
+ 
+ namespace phosphor
+ {
+@@ -28,6 +32,16 @@ namespace gpio
+ constexpr auto SYSTEMD_SERVICE = "org.freedesktop.systemd1";
+ constexpr auto SYSTEMD_ROOT = "/org/freedesktop/systemd1";
+ constexpr auto SYSTEMD_INTERFACE = "org.freedesktop.systemd1.Manager";
++constexpr auto BMC_SYS_MON_PWROK = "37";
++constexpr auto RST_PLTRST_PLD_B_N = "91";
++constexpr auto FM_BIOS_POST_CMPLT_N = "96";
++constexpr auto muxUnbindPath = "/sys/bus/i2c/drivers/pca954x/unbind";
++constexpr auto dimmMuxStr = "9-0070";
++constexpr uint8_t dimmMuxBusId = 9;
++constexpr uint8_t dimmMuxAddr = 0x70;
++constexpr uint8_t maxRetry = 3;
++static constexpr unsigned int bmcSpdSmbusSel = 151;
++static constexpr const char* strGpiochip = "gpiochip0";
+ 
+ using namespace phosphor::logging;
+ 
+@@ -118,6 +132,90 @@ void GpioMonitor::gpioEventHandler()
+         }
+     }
+ 
++    // Switch i2c mux for dimm to BMC
++    if((gpioNumber == FM_BIOS_POST_CMPLT_N) &&
++       (gpioLineEvent.event_type == GPIOD_LINE_EVENT_FALLING_EDGE))
++    {
++        dimmMuxStatus = DimmMuxStatus::BMC;
++    }
++
++    // Switch i2c mux for DIMM to Bios
++    if ((((gpioNumber == RST_PLTRST_PLD_B_N) || (gpioNumber == BMC_SYS_MON_PWROK)) &&
++         (gpioLineEvent.event_type == GPIOD_LINE_EVENT_FALLING_EDGE)) ||
++        ((gpioNumber == FM_BIOS_POST_CMPLT_N) &&
++         (gpioLineEvent.event_type == GPIOD_LINE_EVENT_RISING_EDGE)))
++    {
++        if (dimmMuxStatus == DimmMuxStatus::BMC)
++        {
++            std::cout<<gpioNumber<<"\n";
++            std::string path = muxUnbindPath;
++            std::string cmd = dimmMuxStr;
++            int ret = 0;
++
++            // Unbind MUX driver
++            int fd = open(path.c_str(), O_WRONLY);
++            if (fd < 0)
++            {
++                std::cerr << "Open file fail in " << __func__ << "\n";
++            }
++            else
++            {
++                ret = write(fd, cmd.c_str(), cmd.size());
++                if (ret < 0)
++                {
++                    std::cerr << "Unbind mux driver failed. Error code : " << ret << "\n";
++                }
++                close(fd);
++            }
++
++            // Disable i2c MUX for DIMM
++            std::vector<char> filename;
++            filename.assign(20, 0);
++
++            int i2cFd = open_i2c_dev(dimmMuxBusId, filename.data(), filename.size(), 0);
++            if (i2cFd < 0)
++            {
++                std::cerr << "Fail to open I2C device: " << unsigned(dimmMuxBusId) << "\n";
++            }
++            else
++            {
++                std::vector<uint8_t> data = {0x00};
++                int retry = 0;
++    
++                for (retry = 0; retry < maxRetry; retry++)
++                {
++                    ret = i2c_master_write(i2cFd, dimmMuxAddr, data.size(), data.data());
++                    if (ret >= 0)
++                    {
++                        break;
++                    }
++                }
++                if (retry == maxRetry)
++                {
++                    std::cerr << "Fail to write register. ret "<< ret <<" \n";
++                }
++                close_i2c_dev(i2cFd);
++            }
++
++            // Set BMC SPD SMBUS SEL path to CPU (H)
++            ret = gpiod_ctxless_set_value(strGpiochip,           // Label of the gpiochip.
++                                          bmcSpdSmbusSel,        // Number of GPIO pin.
++                                          1,                     // GPIO set value.
++                                          false,                 // The active state of this line - true if low.
++                                          "BMC_SPD_SMBUS_SEL",   // Name of comsumer.
++                                          NULL,                  // Callback function.
++                                          NULL);                 // value passed to callback function.
++            if (ret < 0)
++            {
++                std::cerr << "Failed in setting gpio BMC_SPD_SMBUS_SEL\n";
++            }
++            else
++            {
++                dimmMuxStatus = DimmMuxStatus::BIOS;
++            }
++        }
++    }
++
+     if (!targetsToStart.empty())
+     {
+         pendingEvents.push_back(targetsToStart);
+diff --git a/gpioMon.hpp b/gpioMon.hpp
+index 6da3a00..edddcd7 100644
+--- a/gpioMon.hpp
++++ b/gpioMon.hpp
+@@ -10,6 +10,14 @@
+ #include <map>
+ #include <vector>
+ 
++inline int8_t dimmMuxStatus = 0;
++
++enum DimmMuxStatus
++{
++    BMC = 0,
++    BIOS = 1
++};
++
+ namespace phosphor
+ {
+ namespace gpio
+@@ -48,7 +56,7 @@ class GpioMonitor
+         gpioLine(line),
+         gpioConfig(config), gpioEventDescriptor(io), target(target),
+         gpioLineMsg(lineMsg), continueAfterEvent(continueRun), waitTimer(io),
+-        gpioInterface(interface), gpioEventStatus("Idle")
++        gpioInterface(interface), gpioEventStatus("Idle"), gpioNumber(gpioStr)
+     {
+         gpioInterface->register_property(
+             gpioStr, std::string("Idle"),
+@@ -92,6 +100,7 @@ class GpioMonitor
+     /** @brief events that wait for executing */
+     std::list<std::vector<std::string>> pendingEvents;
+ 
++    std::string gpioNumber;
+     /** @brief register handler for gpio event
+      *
+      *  @return  - 0 on success and -1 otherwise
+diff --git a/meson.build b/meson.build
+index 60b140f..4c2a69d 100644
+--- a/meson.build
++++ b/meson.build
+@@ -20,6 +20,7 @@ phosphor_dbus_interfaces = dependency('phosphor-dbus-interfaces')
+ phosphor_logging = dependency('phosphor-logging')
+ sdbusplus = dependency('sdbusplus')
+ systemd = dependency('systemd')
++obmci2c = declare_dependency(link_args : '-lobmci2c')
+ 
+ boost_args = ['-DBOOST_ASIO_DISABLE_THREADS',
+               '-DBOOST_ERROR_CODE_HEADER_ONLY',
+@@ -127,6 +128,7 @@ executable(
+         phosphor_logging,
+         sdbusplus,
+         libgpiod,
++        obmci2c
+     ],
+     cpp_args: boost_args,
+     install: true,
+-- 
+2.28.0
+

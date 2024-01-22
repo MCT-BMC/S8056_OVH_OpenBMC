@@ -1,0 +1,24 @@
+  
+[Unit]
+Description=Virtual sensors
+After=obmc-mapper.target
+Requires=xyz.openbmc_project.EntityManager.service
+After=xyz.openbmc_project.EntityManager.service
+After=xyz.openbmc_project.adcsensor.service
+After=xyz.openbmc_project.cpusensor.service
+After=xyz.openbmc_project.hwmontempsensor.service
+After=xyz.openbmc_project.ipmbsensor.service
+After=xyz.openbmc_project.psusensor.service
+After=xyz.openbmc_project.fansensor.service
+After=xyz.openbmc_project.dimmtempsensor.service
+After=xyz.openbmc_project.i2cnvmesensor.service
+
+[Service]
+ExecStartPre=/usr/bin/env virtual-sensor-check.sh
+ExecStart=/usr/bin/virtual-sensor
+Restart=always
+RestartSec=5
+SyslogIdentifier=phosphor-virtual-sensor
+
+[Install]
+WantedBy=multi-user.target

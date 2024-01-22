@@ -1,0 +1,159 @@
+From 4b803a2a44a9c89f9f6f1d70d40b7062da02f9c4 Mon Sep 17 00:00:00 2001
+From: Ren Chen <ren_chen@wiwynn.com>
+Date: Tue, 30 Nov 2021 15:35:17 +0800
+Subject: [PATCH] Correct the BMC firmware update behavior
+
+Description:
+- Remove the updatable association when updating BMC firmware and add this association after BMC update successfully.
+- Create BIOS/CPLD updatable association during service startup.
+- Remove the interface "/xyz/openbmc_project/software/bios_active"
+---
+ activation.cpp    |  8 +++++---
+ image_manager.cpp |  5 +----
+ item_updater.cpp  | 24 ++++++++++++++++++++++++
+ item_updater.hpp  | 12 +++++++++---
+ 4 files changed, 39 insertions(+), 10 deletions(-)
+
+diff --git a/activation.cpp b/activation.cpp
+index 5f69329..873ee26 100644
+--- a/activation.cpp
++++ b/activation.cpp
+@@ -236,9 +236,7 @@ void Activation::onFlashWriteSuccess()
+     // Create active association
+     parent.createActiveAssociation(path);
+ 
+-    // Create updateable association as this
+-    // can be re-programmed.
+-    parent.createUpdateableAssociation(path);
++    parent.removeAssociation(path, UPDATEABLE_FWD_ASSOCIATION);
+ 
+     if (Activation::checkApplyTimeImmediate() == true)
+     {
+@@ -355,6 +353,10 @@ void Activation::onFlashWriteSuccess()
+         log<level::INFO>("BMC image ready, need reboot to get activated.");
+     }
+ 
++    // Create updateable association as this
++    // can be re-programmed.
++    parent.createUpdateableAssociation(path);
++
+     activation(softwareServer::Activation::Activations::Active);
+ }
+ 
+diff --git a/image_manager.cpp b/image_manager.cpp
+index ec43e94..73202f7 100644
+--- a/image_manager.cpp
++++ b/image_manager.cpp
+@@ -155,10 +155,7 @@ int Manager::processImage(const std::string& tarFilePath)
+     }
+     else
+     {
+-        log<level::WARNING>("No machine name in Manifest file");
+-        report<ImageFailure>(
+-            ImageFail::FAIL("MANIFEST is missing machine name"),
+-            ImageFail::PATH(manifestPath.string().c_str()));
++        log<level::ERR>("No machine name in Manifest file");
+     }
+ 
+     // Get purpose
+diff --git a/item_updater.cpp b/item_updater.cpp
+index e71c704..43b42f5 100644
+--- a/item_updater.cpp
++++ b/item_updater.cpp
+@@ -611,6 +611,10 @@ void ItemUpdater::processCPLDImage()
+     // Create an active association since this image is active
+     createActiveAssociation(path);
+ 
++    // All updateable firmware components must expose the updateable
++    // association.
++    createUpdateableAssociation(path);
++
+     // Create Version instance for this version.
+     auto versionPtr = std::make_unique<VersionClass>(
+         bus, path, version, purpose, "", "",
+@@ -646,6 +650,10 @@ void ItemUpdater::processBIOSImage()
+     // Create an active association since this image is active
+     createActiveAssociation(path);
+ 
++    // All updateable firmware components must expose the updateable
++    // association.
++    createUpdateableAssociation(path);
++
+     // Create Version instance for this version.
+     auto versionPtr = std::make_unique<VersionClass>(
+         bus, path, version, purpose, "", "",
+@@ -700,6 +708,22 @@ void ItemUpdater::removeAssociations(const std::string& path)
+     }
+ }
+ 
++void ItemUpdater::removeAssociation(const std::string& path, const std::string& object)
++{
++    for (auto iter = assocs.begin(); iter != assocs.end();)
++    {
++        if (((std::get<2>(*iter)).compare(path) == 0) && ((std::get<0>(*iter)) == object))
++        {
++            iter = assocs.erase(iter);
++            associations(assocs);
++        }
++        else
++        {
++            ++iter;
++        }
++    }
++}
++
+ bool ItemUpdater::isLowestPriority(uint8_t value)
+ {
+     for (const auto& intf : activations)
+diff --git a/item_updater.hpp b/item_updater.hpp
+index 39a6263..4b71082 100644
+--- a/item_updater.hpp
++++ b/item_updater.hpp
+@@ -61,12 +61,13 @@ class ItemUpdater : public ItemUpdaterInherit
+     {
+         setBMCInventoryPath();
+         processBMCImage();
++#ifdef HOST_BIOS_UPGRADE
+         processBIOSImage();
++#endif
++#ifdef CPLD_UPDATE
+         processCPLDImage();
+-        restoreFieldModeStatus();
+-#ifdef HOST_BIOS_UPGRADE
+-        createBIOSObject();
+ #endif
++        restoreFieldModeStatus();
+         emit_object_added();
+     };
+ 
+@@ -94,15 +95,19 @@ class ItemUpdater : public ItemUpdaterInherit
+      */
+     void processBMCImage();
+ 
++#ifdef HOST_BIOS_UPGRADE
+     /**
+      * @brief Get BIOS Version.
+      */
+     void processBIOSImage();
++#endif
+ 
++#ifdef CPLD_UPDATE
+     /**
+      * @brief Get CPLD Version.
+      */
+     void processCPLDImage();
++#endif
+ 
+     /**
+      * @brief Erase specified entry D-Bus object
+@@ -129,6 +134,7 @@ class ItemUpdater : public ItemUpdaterInherit
+      * @param[in]  path - The path to remove the associations from.
+      */
+     void removeAssociations(const std::string& path);
++    void removeAssociation(const std::string& path, const std::string& object);
+ 
+     /** @brief Determine if the given priority is the lowest
+      *
+-- 
+2.32.0
+

@@ -1,0 +1,11 @@
+[Unit]
+Description=MiTAC special mode Manager
+
+[Service]
+Restart=always
+ExecStart=/usr/bin/env mct-special-mode-manager
+SyslogIdentifier=mct-special-mode-manager
+TimeoutSec=infinity
+
+[Install]
+WantedBy={SYSTEMD_DEFAULT_TARGET}

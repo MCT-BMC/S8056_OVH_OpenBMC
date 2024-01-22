@@ -1,0 +1,172 @@
+From a96dc13fa22c1a42059f6e688b56ce36cdb835b7 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Tue, 14 Dec 2021 16:37:24 +0800
+Subject: [PATCH 23/24] Support setting/getting system information via dbus
+ interface
+
+---
+ sys_info_param.cpp | 91 +++++++++++++++++++++++++++++++++++++++++++++++++-----
+ sys_info_param.hpp | 23 ++++++++++++++
+ 2 files changed, 106 insertions(+), 8 deletions(-)
+ mode change 100644 => 100755 sys_info_param.cpp
+ mode change 100644 => 100755 sys_info_param.hpp
+
+diff --git a/sys_info_param.cpp b/sys_info_param.cpp
+old mode 100644
+new mode 100755
+index c9bee32..def062e
+--- a/sys_info_param.cpp
++++ b/sys_info_param.cpp
+@@ -1,17 +1,63 @@
+ #include "sys_info_param.hpp"
+ 
++void setSystemInfo(std::string systemInfoData)
++{
++    auto bus = sdbusplus::bus::new_default();
++
++    auto method = bus.new_method_call(systemInfo::busName, systemInfo::path, propIntf, "Set");
++    method.append(systemInfo::interface, systemInfo::prop, std::variant<std::string>(systemInfoData));
++
++    bus.call_noreply(method);
++}
++
++std::string getSystemInfo()
++{
++    auto bus = sdbusplus::bus::new_default();
++
++    //Get web service status
++    auto method = bus.new_method_call(systemInfo::busName, systemInfo::path, propIntf, "Get");
++    method.append(systemInfo::interface, systemInfo::prop);
++
++    std::variant<std::string> result;
++    try
++    {
++        auto reply = bus.call(method);
++        reply.read(result);
++    }
++    catch (const sdbusplus::exception::SdBusError& e)
++    {
++        std::cerr << "Error in system info get. ERROR= : " << e.what() << std::endl;
++    }
++
++    return std::get<std::string>(result);
++}
++
+ std::tuple<bool, std::string>
+     SysInfoParamStore::lookup(uint8_t paramSelector) const
+-{
+-    const auto iterator = params.find(paramSelector);
+-    if (iterator == params.end())
++{;
++    nlohmann::json sysInfo;
++    try
+     {
+-        return std::make_tuple(false, "");
++        std::string systmeInfo = getSystemInfo();
++        if(systmeInfo.length() == 0)
++        {
++            return std::make_tuple(false, "");
++        }
++
++        sysInfo = nlohmann::json::parse(getSystemInfo(), nullptr, false);
++
++        for (auto it = sysInfo.begin(); it != sysInfo.end(); ++it)
++        {
++            if(it.key() == std::to_string(paramSelector))
++            {
++                return std::make_tuple(true, it.value());
++            }
++        }
++    } catch (std::exception &e) {
++        std::cout << "SysInfoParamStore lookup failed. exception: " << e.what() << std::endl;
+     }
+ 
+-    auto& callback = iterator->second;
+-    auto s = callback();
+-    return std::make_tuple(true, s);
++    return std::make_tuple(false, "");
+ }
+ 
+ void SysInfoParamStore::update(uint8_t paramSelector, const std::string& s)
+@@ -20,6 +66,7 @@ void SysInfoParamStore::update(uint8_t paramSelector, const std::string& s)
+     // when invoked.
+ 
+     // clang-format off
++
+     update(paramSelector, [s]() {
+         return s;
+     });
+@@ -29,5 +76,33 @@ void SysInfoParamStore::update(uint8_t paramSelector, const std::string& s)
+ void SysInfoParamStore::update(uint8_t paramSelector,
+                                const std::function<std::string()>& callback)
+ {
+-    params[paramSelector] = callback;
++    nlohmann::json sysInfo;
++
++    try
++    {
++        std::string systmeInfo = getSystemInfo();
++        if(systmeInfo.length() != 0)
++        {
++            sysInfo = nlohmann::json::parse(systmeInfo, nullptr, false);
++        }
++
++        sysInfo[std::to_string(paramSelector)] = callback();
++        setSystemInfo(sysInfo.dump());
++
++        int ret;
++        switch(paramSelector)
++        {
++            case 1:
++                ret = system("/usr/bin/env mct-bios-version-handler");
++                if(ret != 0 )
++                {
++                    std::cerr << "Failed to set BIOS version. Error : " << std::to_string(ret) << std::endl;
++                }
++                break;
++            default:
++                break;
++        }
++    } catch (std::exception &e) {
++        std::cout << "SysInfoParamStore update failed. exception: " << e.what() << std::endl;
++    }
+ }
+diff --git a/sys_info_param.hpp b/sys_info_param.hpp
+old mode 100644
+new mode 100755
+index 6088626..e99bba8
+--- a/sys_info_param.hpp
++++ b/sys_info_param.hpp
+@@ -5,6 +5,29 @@
+ #include <map>
+ #include <string>
+ #include <tuple>
++#include <iostream>
++#include <variant>
++#include <nlohmann/json.hpp>
++#include <sdbusplus/bus.hpp>
++
++enum SystemInfoParameter
++{
++    SYSINFO_SET_STATE = 0x00,
++    SYSINFO_SYSTEM_FW_VERSION = 0x01,
++    SYSINFO_HOSTNAME = 0x02,
++    SYSINFO_PRIMARY_OS_NAME = 0x03,
++    SYSINFO_OS_NAME = 0x04,
++};
++
++static constexpr auto propIntf = "org.freedesktop.DBus.Properties";
++
++namespace systemInfo
++{
++    static constexpr const char* busName = "xyz.openbmc_project.Settings";
++    static constexpr const char* path = "/xyz/openbmc_project/oem/SystmeInfo";
++    static constexpr const char* interface = "xyz.openbmc_project.OEM.SystmeInfo";
++    static constexpr const char* prop = "SystemInformation";
++} // namespace bios
+ 
+ /**
+  * Key-value store for string-type system info parameters.
+-- 
+2.7.4
+

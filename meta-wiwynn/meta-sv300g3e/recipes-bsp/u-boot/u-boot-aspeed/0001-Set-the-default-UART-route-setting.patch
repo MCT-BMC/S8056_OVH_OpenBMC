@@ -1,0 +1,41 @@
+From 484fe8d6345fc27770fccaa787f9e7fa4a787eea Mon Sep 17 00:00:00 2001
+From: JPChang <JP_Chang@wiwynn.com>
+Date: Fri, 12 Jul 2019 17:55:30 +0800
+Subject: [PATCH] Set the default UART route setting
+
+---
+ board/aspeed/ast-g5/ast-g5.c | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/board/aspeed/ast-g5/ast-g5.c b/board/aspeed/ast-g5/ast-g5.c
+index e67a4bf..054baeb 100644
+--- a/board/aspeed/ast-g5/ast-g5.c
++++ b/board/aspeed/ast-g5/ast-g5.c
+@@ -16,11 +16,24 @@
+ 
+ DECLARE_GLOBAL_DATA_PTR;
+ 
++/*--------------------------------------------------------------------
++ * @fn Set_Default_UART_Route
++ * @brief Set the default UART Route
++ * 
++ *--------------------------------------------------------------------*/
++void Set_Default_UART_Route(void)
++{
++    puts("Set the default UART Route(UART1 <-> UART3)...\n");
++    *(volatile ulong *)(0x1E78909C) = 0x1450000 ;
++}
++
+ int board_init(void)
+ {
+ 	gd->bd->bi_boot_params = CONFIG_SYS_SDRAM_BASE + 0x100;
+ 	gd->flags = 0;
+ 
++	Set_Default_UART_Route();
++
+ 	return 0;
+ }
+ 
+-- 
+1.9.1
+

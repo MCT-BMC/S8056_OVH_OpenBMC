@@ -1,0 +1,95 @@
+From a12de2a275ebfb93ce57dbbe1fefd2aef291323e Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Tue, 6 Sep 2022 03:35:27 +0800
+Subject: [PATCH] Move hybrid sensor setting function before event only sensor
+
+To set higher priority for hybrid sensor
+---
+ dbus-sdr/sensorcommands.cpp | 36 ++++++++++++++++++------------------
+ 1 file changed, 18 insertions(+), 18 deletions(-)
+
+diff --git a/dbus-sdr/sensorcommands.cpp b/dbus-sdr/sensorcommands.cpp
+index 5ec6f78..2fd0ed7 100755
+--- a/dbus-sdr/sensorcommands.cpp
++++ b/dbus-sdr/sensorcommands.cpp
+@@ -2129,23 +2129,26 @@ static int
+         return GENERAL_ERROR;
+     }
+ 
+-    // Contruct SDR type 3 record for type 3 sensor
+-    if (getSensorEventTypeFromPath(path) == 0x6f)
++#ifdef FEATURE_HYBRID_SENSORS
++    if (auto sensor = findStaticSensor(path);
++        sensor != ipmi::sensor::sensors.end() &&
++        getSensorEventTypeFromPath(path) !=
++            static_cast<uint8_t>(SensorEventTypeCodes::threshold))
+     {
+-        get_sdr::SensorDataEventRecord record = {0};
++        get_sdr::SensorDataFullRecord record = {0};
+ 
+         // If the request doesn't read SDR body, construct only header and key
+         // part to avoid additional DBus transaction.
+         if (readBytes <= sizeof(record.header) + sizeof(record.key))
+         {
+-            constructEventSdrHeaderKey(sensorNum, recordID, record);
++            constructSensorSdrHeaderKey(sensorNum, recordID, record);
+             enableStore = false;
+         }
+-        else if (!constructVrSdr(ctx, sensorNum, recordID, connection, path,
+-                                 record))
++        else
+         {
+-            return GENERAL_ERROR;
++            constructStaticSensorSdr(ctx, sensorNum, recordID, sensor, record);
+         }
++
+         recordData.insert(recordData.end(), (uint8_t*)&record,
+                           ((uint8_t*)&record) + sizeof(record));
+         if(enableStore)
+@@ -2154,27 +2157,25 @@ static int
+         }
+         return 0;
+     }
++#endif
+ 
+-#ifdef FEATURE_HYBRID_SENSORS
+-    if (auto sensor = findStaticSensor(path);
+-        sensor != ipmi::sensor::sensors.end() &&
+-        getSensorEventTypeFromPath(path) !=
+-            static_cast<uint8_t>(SensorEventTypeCodes::threshold))
++    // Contruct SDR type 3 record for type 3 sensor
++    if (getSensorEventTypeFromPath(path) == 0x6f)
+     {
+-        get_sdr::SensorDataFullRecord record = {0};
++        get_sdr::SensorDataEventRecord record = {0};
+ 
+         // If the request doesn't read SDR body, construct only header and key
+         // part to avoid additional DBus transaction.
+         if (readBytes <= sizeof(record.header) + sizeof(record.key))
+         {
+-            constructSensorSdrHeaderKey(sensorNum, recordID, record);
++            constructEventSdrHeaderKey(sensorNum, recordID, record);
+             enableStore = false;
+         }
+-        else
++        else if (!constructVrSdr(ctx, sensorNum, recordID, connection, path,
++                                 record))
+         {
+-            constructStaticSensorSdr(ctx, sensorNum, recordID, sensor, record);
++            return GENERAL_ERROR;
+         }
+-
+         recordData.insert(recordData.end(), (uint8_t*)&record,
+                           ((uint8_t*)&record) + sizeof(record));
+         if(enableStore)
+@@ -2183,7 +2184,6 @@ static int
+         }
+         return 0;
+     }
+-#endif
+ 
+     // Construct full record (SDR type 1) for the threshold sensors
+     if (std::find(interfaces.begin(), interfaces.end(),
+-- 
+2.25.1
+

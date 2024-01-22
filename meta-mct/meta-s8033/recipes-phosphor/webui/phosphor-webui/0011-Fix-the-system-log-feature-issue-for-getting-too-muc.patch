@@ -1,0 +1,201 @@
+From 8da5e97100c9728014a1eab8b1ab00338c9a53f3 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Wed, 18 Nov 2020 17:02:49 +0800
+Subject: [PATCH] Fix the system log feature issue for getting too much event
+
+Add the recursive rest api call for getting event log from redfish log service.
+Improve performance for getting event and select event type.
+---
+ app/common/services/api-utils.js                   | 32 ++++++++---
+ .../controllers/syslog-controller.html             |  2 +-
+ app/server-health/controllers/syslog-controller.js | 64 +++++++++++++++-------
+ 3 files changed, 68 insertions(+), 30 deletions(-)
+ mode change 100644 => 100755 app/server-health/controllers/syslog-controller.js
+
+diff --git a/app/common/services/api-utils.js b/app/common/services/api-utils.js
+index d341607..ac3d653 100755
+--- a/app/common/services/api-utils.js
++++ b/app/common/services/api-utils.js
+@@ -38,12 +38,12 @@ window.angular && (function(angular) {
+                     console.log(JSON.stringify(error));
+                   });
+         },
+-        getSystemLogs: function(recordType) {
+-          var uri = '/redfish/v1/Systems/' + DataService.systemName +
+-              '/LogServices/EventLog/Entries';
++        getSystemLogs: function(recordType, entryStart) {
++          var uri = '/redfish/v1/Systems/' + 'system' +
++              '/LogServices/EventLog/Entries?$skip='+ entryStart;
+           if (recordType == 'Oem') {
+-            var uri = '/redfish/v1/Systems/' + DataService.systemName +
+-                '/LogServices/EventLog/Entries';
++            var uri = '/redfish/v1/Systems/' + 'system' +
++                '/LogServices/EventLog/Entries?$skip='+ entryStart;
+           }
+           return $http({
+                    method: 'GET',
+@@ -53,10 +53,23 @@ window.angular && (function(angular) {
+               .then(
+                   function(response) {
+                     var logEntries = [];
++                    var skip = false;
++                    var selectAll = false;
++
++                    if(response.data.hasOwnProperty('Members@odata.nextLink')){
++                      skip = true;
++                    }
++                    else{
++                      skip = false;
++                    }
++
++                    if(recordType == 'All'){
++                      selectAll = true;
++                    }
+ 
+                     angular.forEach(response.data['Members'], function(log) {
+                       if (log.hasOwnProperty('EntryType')) {
+-                        if (log['EntryType'] == recordType) {
++                        if (log['EntryType'] == recordType || selectAll) {
+                           if (log.hasOwnProperty('@odata.type')) {
+                             log["@odata.type"] = log["@odata.type"].replace('#', '');
+                           }
+@@ -64,17 +77,18 @@ window.angular && (function(angular) {
+                         }
+                       }
+                     });
+-                    return logEntries;
++
++                    return {logEntries: logEntries, skip: skip};
+                   },
+                   function(error) {
+                     console.log(JSON.stringify(error));
+                   });
+         },
+         clearSystemLogs: function(selectedRecordType) {
+-          var uri = '/redfish/v1/Systems/' + DataService.systemName +
++          var uri = '/redfish/v1/Systems/' + 'system' +
+               '/LogServices/EventLog/Actions/LogService.ClearLog';
+           if (selectedRecordType == 'Oem') {
+-            var uri = '/redfish/v1/Systems/' + DataService.systemName +
++            var uri = '/redfish/v1/Systems/' + 'system' +
+                 '/LogServices/EventLog/Actions/LogService.ClearLog';
+           }
+           return $http({
+diff --git a/app/server-health/controllers/syslog-controller.html b/app/server-health/controllers/syslog-controller.html
+index 2270638..4a6485f 100755
+--- a/app/server-health/controllers/syslog-controller.html
++++ b/app/server-health/controllers/syslog-controller.html
+@@ -9,7 +9,7 @@
+             <button type="button" class="dropdown__button" ng-click="showLogDropdown = !showLogDropdown"><strong>{{selectedRecordType}}</strong></button>
+             <ul class="dropdown__list inline" ng-show="showLogDropdown">
+               <li ng-repeat="recordType in recordTypeList">
+-                <button type="button" ng-click="selectRecordType(recordType);">{{recordType}}</button>
++                <button type="button" ng-click="selectRecordTypeLocal(recordType);">{{recordType}}</button>
+               </li>
+             </ul>
+           </div>
+diff --git a/app/server-health/controllers/syslog-controller.js b/app/server-health/controllers/syslog-controller.js
+old mode 100644
+new mode 100755
+index ad54dd2..25ff21c
+--- a/app/server-health/controllers/syslog-controller.js
++++ b/app/server-health/controllers/syslog-controller.js
+@@ -22,6 +22,7 @@ window.angular && (function(angular) {
+           $scope.itemsPerPage = Constants.PAGINATION.LOG_ITEMS_PER_PAGE;
+           $scope.loading = true;
+           $scope.sysLogs = [];
++          $scope.sysFullLogs = [];
+           $scope.customSearch = '';
+           $scope.searchTerms = [];
+           $scope.sortKey = 'Id';
+@@ -35,28 +36,51 @@ window.angular && (function(angular) {
+           $scope.filterTypes = [];
+           $scope.selectedType = 'All';
+ 
+-          $scope.selectRecordType = function(recordType) {
++          $scope.selectRecordTypeLocal = function(recordType) {
+             $scope.selectedRecordType = recordType;
+             $scope.showLogDropdown = false;
+             $scope.filterTypes = [];
++            $scope.sysLogs = [];
+ 
+-            APIUtils.getSystemLogs(recordType)
+-                .then(
+-                    function(res) {
+-                      $scope.sysLogs = res;
+-                      $scope.filterTypes.push('All');
+-                      $scope.sysLogs.forEach(function(log) {
+-                        if ($scope.filterTypes.indexOf(log.SensorType) < 0) {
+-                          $scope.filterTypes.push(log.SensorType);
+-                        }
+-                      });
+-                    },
+-                    function(error) {
+-                      console.log(JSON.stringify(error));
+-                    })
+-                .finally(function() {
+-                  $scope.loading = false;
+-                });
++            $scope.sysFullLogs.forEach(function(log) {
++              if (log['EntryType'] == recordType){
++                $scope.sysLogs.push(log);
++              }
++            });
++
++            $scope.filterTypes.push('All');
++            $scope.sysLogs.forEach(function(log) {
++              if ($scope.filterTypes.indexOf(log.SensorType) < 0) {
++                $scope.filterTypes.push(log.SensorType);
++              }
++            });
++          };
++
++          $scope.selectRecordType = function(recordType) {
++            $scope.showLogDropdown = false;
++            $scope.sysFullLogs = [];
++
++            function getSystemLog(entryStart){
++              APIUtils.getSystemLogs(recordType,entryStart)
++              .then(
++                  function(res) {
++                    res.logEntries.forEach(function(log) {
++                      $scope.sysFullLogs.push(log);
++                    });
++                    if(res.skip){
++                      getSystemLog(entryStart + 1000);
++                    }
++                    else{
++                      $scope.selectRecordTypeLocal($scope.selectedRecordType)
++                      $scope.loading = false;
++                    }
++                  },
++                  function(error) {
++                    console.log(JSON.stringify(error));
++                  });
++            }
++
++            getSystemLog(0);
+           };
+ 
+           $scope.clearSystemLogEntries = function(selectedRecordType) {
+@@ -70,7 +94,7 @@ window.angular && (function(angular) {
+                       console.log(JSON.stringify(error));
+                     })
+                 .finally(function() {
+-                  $scope.selectRecordType($scope.selectedRecordType);
++                  $scope.selectRecordType($scope.selectedType);
+                 });
+           };
+ 
+@@ -151,7 +175,7 @@ window.angular && (function(angular) {
+             }
+           };
+ 
+-          setTimeout($scope.selectRecordType($scope.selectedRecordType), 2000);
++          setTimeout($scope.selectRecordType($scope.selectedType), 2000);
+         }
+       ]);
+ })(angular);
+-- 
+2.7.4
+

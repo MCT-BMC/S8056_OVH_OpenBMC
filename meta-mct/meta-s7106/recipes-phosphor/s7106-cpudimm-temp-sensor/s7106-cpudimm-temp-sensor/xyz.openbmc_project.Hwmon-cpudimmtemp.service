@@ -1,0 +1,19 @@
+[Unit]
+Description=Phosphor CPU DIMM Hwmon Poller
+ConditionFileNotEmpty=/etc/default/obmc/hwmon/vsensor/cpudimm-temp.conf
+Requires=ipmb.bridged.start.service
+After=ipmb.bridged.start.service
+Requires=xyz.openbmc_project.Ipmi.Ipmb.cpudimm.temp.service
+After=xyz.openbmc_project.Ipmi.Ipmb.cpudimm.temp.service
+
+[Service]
+Restart=on-failure
+RestartSec=5
+ExecStartPre=/bin/bash -c 'while [ ! -d /run/vsensor/cpudimm-temp/ ]; do /bin/sleep 5; done'
+ExecStart=/usr/bin/env phosphor-hwmon-readd -o vsensor/cpudimm-temp
+SyslogIdentifier=phosphor-hwmon-readd
+EnvironmentFile=/etc/default/obmc/hwmon/vsensor/cpudimm-temp.conf
+TimeoutStartSec=60
+
+[Install]
+WantedBy={SYSTEMD_DEFAULT_TARGET}

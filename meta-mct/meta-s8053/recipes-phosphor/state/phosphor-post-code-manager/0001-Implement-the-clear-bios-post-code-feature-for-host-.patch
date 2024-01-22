@@ -1,0 +1,58 @@
+From c7dd8fafd9042959cd86fa44676a77297e29b100 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Mon, 21 Sep 2020 15:04:48 +0800
+Subject: [PATCH] Implement the clear bios post code feature for host warn
+ reset
+
+---
+ inc/post_code.hpp | 25 +++++++++++++++++++++++++
+ 1 file changed, 25 insertions(+)
+ mode change 100644 => 100755 inc/post_code.hpp
+
+diff --git a/inc/post_code.hpp b/inc/post_code.hpp
+old mode 100644
+new mode 100755
+index 5e2a7b9..14e9b45
+--- a/inc/post_code.hpp
++++ b/inc/post_code.hpp
+@@ -152,6 +152,30 @@ struct PostCode : sdbusplus::server::object_t<post_code, delete_all>
+                         }
+                     }
+                 }
++            }),
++        propertiesChangedSignalLpcReset(
++            bus,
++            sdbusplus::bus::match::rules::type::signal() +
++                sdbusplus::bus::match::rules::member("LpcReset"),
++            [this](sdbusplus::message::message &msg) {
++                std::string objectName;
++                uint32_t value;
++                msg.read(value);
++
++                if(value)
++                {
++                    if (this->postCodes.empty())
++                    {
++                        std::cerr << "LPC reset occurred twice. Empty "
++                                     "postcode log, keep boot cycle at "
++                                  << this->currentBootCycleIndex
++                                  << std::endl;
++                    }
++                    else
++                    {
++                        this->postCodes.clear();
++                    }
++                }
+             })
+     {
+         phosphor::logging::log<phosphor::logging::level::INFO>(
+@@ -199,6 +223,7 @@ struct PostCode : sdbusplus::server::object_t<post_code, delete_all>
+     void savePostCodes(uint64_t code);
+     sdbusplus::bus::match_t propertiesChangedSignalRaw;
+     sdbusplus::bus::match_t propertiesChangedSignalCurrentHostState;
++    sdbusplus::bus::match_t propertiesChangedSignalLpcReset;
+     fs::path serialize(const std::string &path);
+     bool deserialize(const fs::path &path, uint16_t &index);
+     bool deserializePostCodes(const fs::path &path,
+-- 
+2.7.4

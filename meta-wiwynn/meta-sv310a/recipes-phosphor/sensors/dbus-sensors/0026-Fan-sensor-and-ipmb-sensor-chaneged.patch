@@ -1,0 +1,910 @@
+From 5a2b69a9471d88352a9d1a372f36f830d233e37f Mon Sep 17 00:00:00 2001
+From: Eli Huang <Eli_Huang@wiwynn.com>
+Date: Mon, 25 Oct 2021 10:38:44 +0800
+Subject: [PATCH] Fan sensor and ipmb sensor chaneged
+
+---
+ include/PSUSensor.hpp   |   4 +-
+ include/TachSensor.hpp  |   8 ++-
+ include/Utils.hpp       |   2 +
+ include/sensor.hpp      |   2 +-
+ src/ADCSensorMain.cpp   |   2 +-
+ src/DIMMSensor.cpp      |   5 +-
+ src/FanMain.cpp         |  12 +++-
+ src/HwmonTempMain.cpp   |  26 +------
+ src/HwmonTempSensor.cpp | 143 +++++++++++++++++++--------------------
+ src/PSUSensor.cpp       | 145 ++++++++++++++++++++--------------------
+ src/PSUSensorMain.cpp   |  35 ++++------
+ src/TachSensor.cpp      | 126 ++++++++++++++++++++++++++++++----
+ src/Thresholds.cpp      |   1 +
+ src/Utils.cpp           |  57 +++++++++++++++-
+ 14 files changed, 354 insertions(+), 214 deletions(-)
+
+diff --git a/include/PSUSensor.hpp b/include/PSUSensor.hpp
+index 2affad9..18c94a3 100644
+--- a/include/PSUSensor.hpp
++++ b/include/PSUSensor.hpp
+@@ -23,7 +23,7 @@ class PSUSensor : public Sensor, public std::enable_shared_from_this<PSUSensor>
+               const std::string& sensorUnit, const std::string& dbusPath,
+               const unsigned int factor, const double maxValue,
+               const double minValue, const PowerState readState,
+-              const bool useLock, const uint8_t slotId);
++              const bool useLock, const uint8_t slotId, const float pollRate);
+     ~PSUSensor() override;
+     void setupRead(void);
+ 
+@@ -40,6 +40,7 @@ class PSUSensor : public Sensor, public std::enable_shared_from_this<PSUSensor>
+     uint8_t slotId;
+     std::string dbusPath;
+     uint8_t minMaxReadCounter;
++    unsigned int sensorPollMs;
+     int8_t ipmbRetry;
+     void handleResponse(const boost::system::error_code& err);
+     void readFromTheOtherNode(void);
+@@ -49,7 +50,6 @@ class PSUSensor : public Sensor, public std::enable_shared_from_this<PSUSensor>
+     int setCPLDMux(uint8_t muxStatus);
+ 
+     int fd;
+-    static constexpr unsigned int sensorPollMs = 1000;
+     static constexpr size_t warnAfterErrorCount = 10;
+ 
+     // Timer for checkThresholdsPowerDelay
+diff --git a/include/TachSensor.hpp b/include/TachSensor.hpp
+index 2b0387f..c524073 100644
+--- a/include/TachSensor.hpp
++++ b/include/TachSensor.hpp
+@@ -80,7 +80,8 @@ class TachSensor :
+                const std::string& dbusPath, const double maxValue,
+                const double minValue, const PowerState& readState,
+                const std::optional<std::string>& led,
+-               const bool isSensorFailure);
++               const bool isSensorFailure, int8_t sled,
++               const std::string& sensorType);
+     ~TachSensor() override;
+     void setupRead(void);
+ 
+@@ -99,8 +100,13 @@ class TachSensor :
+     std::shared_ptr<boost::asio::streambuf> readBuf;
+     std::string path;
+     std::optional<std::string> led;
++    int8_t sled;
++    std::string dbusPath;
++    std::string sensorType;
++    int ipmbRetry;
+     bool ledState = false;
+     void handleResponse(const boost::system::error_code& err);
++    void readFromTheOtherNode(size_t pollTime);
+     void checkThresholds(void) override;
+     void fanFailHostPowerOff(void);
+     static void hardOffInCaceSoftOffFail(
+diff --git a/include/Utils.hpp b/include/Utils.hpp
+index 26b36d2..8fb26b7 100644
+--- a/include/Utils.hpp
++++ b/include/Utils.hpp
+@@ -356,3 +356,5 @@ bool findPathFromI2C(const SensorBaseConfigMap*& baseConfigMap,
+                      uint64_t& address, std::string& i2cPath);
+ 
+ int getNextNodeStatus();
++
++int getCurrentNode();
+diff --git a/include/sensor.hpp b/include/sensor.hpp
+index afaee10..a8e340e 100644
+--- a/include/sensor.hpp
++++ b/include/sensor.hpp
+@@ -16,7 +16,7 @@ constexpr size_t sensorFailedPollTimeMs = 5000;
+ inline std::map<std::string, std::string> sensorTypeTable = {
+     {"fan", "fan_tach/"},     {"power", "power/"},  {"curr", "current/"},
+     {"temp", "temperature/"}, {"volt", "voltage/"}, {"in", "voltage/"},
+-    {"pattern", "hit/"}};
++    {"pattern", "hit/"},      {"pwm", "fan_pwm/"}};
+ constexpr const char* sensorPathPrefix = "/xyz/openbmc_project/sensors/";
+ 
+ // Enable useful logging with sensor instrumentation
+diff --git a/src/ADCSensorMain.cpp b/src/ADCSensorMain.cpp
+index 0fcdff9..182e9ac 100644
+--- a/src/ADCSensorMain.cpp
++++ b/src/ADCSensorMain.cpp
+@@ -36,7 +36,7 @@
+ #include <vector>
+ 
+ static constexpr bool debug = false;
+-static constexpr float pollRateDefault = 0.5;
++static constexpr float pollRateDefault = 1;
+ static constexpr double maxReading = 20;
+ static constexpr double minReading = 0;
+ 
+diff --git a/src/DIMMSensor.cpp b/src/DIMMSensor.cpp
+index c721338..5d55536 100644
+--- a/src/DIMMSensor.cpp
++++ b/src/DIMMSensor.cpp
+@@ -162,13 +162,14 @@ bool DIMMSensor::visitDIMMReg(void)
+     {
+         std::vector<uint8_t> cmdData = {static_cast<uint8_t>(muxSetting.cmd)};
+ 
+-        res = i2c_master_write(fd, muxSetting.addr, cmdData.size(), cmdData.data());
++        res = i2c_master_write(fd, muxSetting.addr, cmdData.size(),
++                               cmdData.data());
+         if (res < 0)
+         {
+             if constexpr (DEBUG)
+             {
+                 std::cerr << "Fail to r/w I2C device: " << path
+-                      << ", Addr: " << unsigned(muxSetting.addr) << "\n";
++                          << ", Addr: " << unsigned(muxSetting.addr) << "\n";
+                 close_i2c_dev(fd);
+             }
+             return false;
+diff --git a/src/FanMain.cpp b/src/FanMain.cpp
+index f65fe91..55009d1 100644
+--- a/src/FanMain.cpp
++++ b/src/FanMain.cpp
+@@ -173,6 +173,7 @@ void createSensors(
+ 
+             std::vector<fs::path> paths;
+             findFiles(fs::path("/sys/class/hwmon"), R"(fan\d+_input)", paths);
++            findFiles(fs::path("/sys/class/hwmon"), R"(pwm\d)", paths);
+ 
+             for (const SensorObject& sensor : sensorConfigurations)
+             {
+@@ -241,6 +242,15 @@ void createSensors(
+                     sensorsChanged->erase(*interfacePath);
+                 }
+ 
++                auto findSled = baseConfigMap->find("Sled");
++                if (findSled == baseConfigMap->end())
++                {
++                    std::cerr << "Failed to find configuration sled\n";
++                    continue;
++                }
++                int8_t sled =
++                    std::visit(VariantToIntVisitor(), findSled->second);
++
+                 // presence sensors are optional
+                 std::shared_ptr<PresenceSensor> presenceSensor(nullptr);
+                 auto presenceConfig =
+@@ -364,7 +374,7 @@ void createSensors(
+                     std::move(presenceSensor), redundancy, io, sensorName,
+                     std::move(sensorThresholds), *interfacePath, dbusPath,
+                     limits.second, limits.first, readState, led,
+-                    isSensorFailure);
++                    isSensorFailure, sled - 1, sensorType);
+                 tachSensors[sensorName]->setupRead();
+ 
+                 if (!pwmPath.empty() && fs::exists(pwmPath) &&
+diff --git a/src/HwmonTempMain.cpp b/src/HwmonTempMain.cpp
+index 6113f5c..1d63c76 100644
+--- a/src/HwmonTempMain.cpp
++++ b/src/HwmonTempMain.cpp
+@@ -87,27 +87,6 @@ void createSensors(
+                 i2cToPath.emplace(deviceName, path);
+             }
+ 
+-            // Get slot ID 1 to distinguish left or right node
+-            uint8_t slotId = 0xff;
+-            std::string gpioName = "SLOT_ID_1";
+-            try
+-            {
+-                auto gpioLine = gpiod::find_line(gpioName);
+-                if (!gpioLine)
+-                {
+-                    std::cerr << "Error requesting gpio: " << gpioName << "\n";
+-                    return;
+-                }
+-                gpioLine.request(
+-                    {"slot_id", gpiod::line_request::DIRECTION_INPUT, 0});
+-                slotId = gpioLine.get_value();
+-            }
+-            catch (std::system_error&)
+-            {
+-                std::cerr << "Error reading gpio: " << gpioName << "\n";
+-                return;
+-            }
+-
+             for (const SensorObject& sensor : sensorConfigurations)
+             {
+                 const std::string* interfacePath = &(sensor.first.str);
+@@ -206,7 +185,7 @@ void createSensors(
+                         *hwmonFile, objectType, objectServer, dbusConnection,
+                         io, sensorName, std::move(sensorThresholds), pollRate,
+                         *interfacePath, dbusPath, limits.second, limits.first,
+-                        readState, isSensorFailure, useLock, slotId);
++                        readState, isSensorFailure, useLock, getCurrentNode());
+                     sensors[sensorName]->setupRead();
+                 }
+                 // Looking for keys like "Name1" for temp2_input,
+@@ -252,7 +231,8 @@ void createSensors(
+                                 dbusConnection, io, sensorNameOther,
+                                 std::move(thresholds), pollRate, *interfacePath,
+                                 dbusPathOther, limits.second, limits.first,
+-                                readState, isSensorFailure, useLock, slotId);
++                                readState, isSensorFailure, useLock,
++                                getCurrentNode());
+                         sensors[sensorName]->setupRead();
+                     }
+                 }
+diff --git a/src/HwmonTempSensor.cpp b/src/HwmonTempSensor.cpp
+index 13028c3..a939812 100644
+--- a/src/HwmonTempSensor.cpp
++++ b/src/HwmonTempSensor.cpp
+@@ -266,96 +266,87 @@ void HwmonTempSensor::readFromTheOtherNode(void)
+         return;
+     }
+     uint8_t sensorNumber = findSensor->second.sensorNumber;
+-    uint16_t coefficientM = findSensor->second.coefficientM;
+-    int8_t exponentB = findSensor->second.exponentB;
+-    int16_t coefficientB = findSensor->second.coefficientB;
+-    int8_t exponentR = findSensor->second.exponentR;
+-
+     uint8_t commandAddress = 0;
+     uint8_t netfn = 0x4;
+     uint8_t lun = 0;
+     uint8_t command = 0x2D;
+     std::vector<uint8_t> commandData = {sensorNumber};
+ 
+-    static auto bus = sdbusplus::bus::new_system();
+-    auto method = bus.new_method_call("xyz.openbmc_project.Ipmi.Channel.Ipmb",
+-                                      "/xyz/openbmc_project/Ipmi/Channel/Ipmb",
+-                                      "org.openbmc.Ipmb", "sendRequest");
+-    method.append(commandAddress, netfn, lun, command, commandData);
+-    try
+-    {
+-        auto reply = bus.call(method);
+-        IpmbMethodType prop;
+-        reply.read(prop);
+-
+-        const auto& [status, netFn, rqLun, cmd, cc, data] = prop;
+-
+-        int readingState = 0;
+-        if (data.size() != 0)
+-        {
+-            // check bit 5 : sensor reading/state unavailable
+-            readingState = (data.at(1) & 0x20) >> 5;
+-        }
+-
+-        if ((status) || (data.size() == 0) || (readingState == 1))
+-        {
+-            ipmbRetry++;
+-            int anotherNodePowerStatus = getNextNodeStatus();
+-            if ((ipmbRetry > maxIpmbRetry) || (anotherNodePowerStatus == 0))
++    dbusConnection->async_method_call(
++        [this, findSensor](boost::system::error_code ec,
++                           const IpmbMethodType& response) {
++            const auto& [status, netFn, rqLun, cmd, cc, data] = response;
++            if (ec)
++            {
++                std::cerr << "Failed to access ipmb daemon. " << ec.message()
++                          << "\n";
++            }
++            else if (status || cc || (data.size() != 4))
++            {
++                if ((++ipmbRetry > maxIpmbRetry) || !getNextNodeStatus())
++                {
++                    if (setCPLDMux(0) == 0)
++                    {
++                        uint8_t node = slotId + 1;
++                        if (setCPLDMux(node) == 0)
++                        {
++                            ipmbRetry = 0;
++                        }
++                        else
++                        {
++                            std::cerr << "Fail to get CPLD Mux reg\n";
++                            incrementError();
++                        }
++                    }
++                    else
++                    {
++                        std::cerr << "Fail to get CPLD Mux reg\n";
++                        incrementError();
++                    }
++                }
++            }
++            else
+             {
+                 ipmbRetry = 0;
+-                uint8_t node = slotId + 1;
+-                int ret = setCPLDMux(0);
+-                if (ret < 0)
++                // check bit 5 : sensor reading/state unavailable
++                uint8_t readingState = data.at(1) & 0x20;
++                if (readingState)
+                 {
+-                    std::cerr << "Fail to get CPLD Mux reg\n";
+-                    incrementError();
++                    markFunctional(false);
+                 }
+-                ret = setCPLDMux(node);
+-                if (ret < 0)
++                else
+                 {
+-                    std::cerr << "Fail to get CPLD Mux reg\n";
+-                    incrementError();
++                    uint16_t coefficientM = findSensor->second.coefficientM;
++                    int8_t exponentB = findSensor->second.exponentB;
++                    int16_t coefficientB = findSensor->second.coefficientB;
++                    int8_t exponentR = findSensor->second.exponentR;
++                    rawValue = data.at(0);
++                    double value = ((coefficientM * rawValue) +
++                                    (coefficientB * std::pow(10, exponentB))) *
++                                   std::pow(10, exponentR);
++                    updateValue(value);
+                 }
+             }
+-        }
+-        else
+-        {
+-            uint8_t sensorReading = data.at(0);
+-            double value = ((coefficientM * sensorReading) +
+-                            (coefficientB * std::pow(10, exponentB))) *
+-                           std::pow(10, exponentR);
+-            updateValue(value);
+-            ipmbRetry = 0;
+-        }
+-    }
+-    catch (const sdbusplus::exception::SdBusError& e)
+-    {
+-        std::cerr << "Failed to access ipmb daemon. " << e.what() << "\n";
+-    }
+ 
+-    waitTimer.expires_from_now(std::chrono::milliseconds(sensorPollMs));
+-    std::weak_ptr<HwmonTempSensor> weakRef = weak_from_this();
+-    waitTimer.async_wait([weakRef](const boost::system::error_code& ec) {
+-        std::shared_ptr<HwmonTempSensor> self = weakRef.lock();
+-        if (ec == boost::asio::error::operation_aborted)
+-        {
+-            if (self)
+-            {
+-                std::cerr << "Hwmon temp sensor " << self->name
+-                          << " read cancelled " << self->path << "\n";
+-            }
+-            else
+-            {
+-                std::cerr << "Hwmon sensor read cancelled, no self\n";
+-            }
+-            return; // we're being canceled
+-        }
+-        if (self)
+-        {
+-            self->setupRead();
+-        }
+-    });
++            std::weak_ptr<HwmonTempSensor> weakRef = weak_from_this();
++            waitTimer.expires_from_now(std::chrono::milliseconds(sensorPollMs));
++            waitTimer.async_wait(
++                [weakRef](const boost::system::error_code& ec) {
++                    std::shared_ptr<HwmonTempSensor> self = weakRef.lock();
++                    if (ec == boost::asio::error::operation_aborted)
++                    {
++                        std::cerr << "Failed to reschedule\n";
++                        return;
++                    }
++                    if (self)
++                    {
++                        self->setupRead();
++                    }
++                });
++        },
++        "xyz.openbmc_project.Ipmi.Channel.Ipmb",
++        "/xyz/openbmc_project/Ipmi/Channel/Ipmb", "org.openbmc.Ipmb",
++        "sendRequest", commandAddress, netfn, lun, command, commandData);
+ }
+ 
+ void HwmonTempSensor::checkThresholds(void)
+diff --git a/src/PSUSensor.cpp b/src/PSUSensor.cpp
+index 676c274..5e61c3f 100644
+--- a/src/PSUSensor.cpp
++++ b/src/PSUSensor.cpp
+@@ -45,14 +45,17 @@ PSUSensor::PSUSensor(const std::string& path, const std::string& objectType,
+                      const std::string& sensorUnit, const std::string& dbusPath,
+                      const unsigned int factor, const double maxValue,
+                      const double minValue, const PowerState readState,
+-                     const bool useLock, const uint8_t slotId) :
++                     const bool useLock, const uint8_t slotId,
++                     const float pollRate) :
+     Sensor(boost::replace_all_copy(sensorName, " ", "_"),
+            std::move(thresholdsIn), sensorConfiguration, objectType, false,
+            maxValue, minValue, conn, readState, false),
+     std::enable_shared_from_this<PSUSensor>(), objServer(objectServer),
+     inputDev(io), waitTimer(io), path(path), pathRatedMax(""), pathRatedMin(""),
+     sensorFactor(factor), useLock(useLock), slotId(slotId), dbusPath(dbusPath),
+-    minMaxReadCounter(0), thresholdTimer(io, this)
++    minMaxReadCounter(0),
++    sensorPollMs(static_cast<unsigned int>(pollRate * 1000)),
++    thresholdTimer(io, this)
+ {
+     ipmbRetry = 0;
+     fd = open(path.c_str(), O_RDONLY);
+@@ -91,7 +94,7 @@ PSUSensor::PSUSensor(const std::string& path, const std::string& objectType,
+     {
+         unit = sensor_paths::unitAmperes;
+     }
+-    else if (sensorUnit == "volt")
++    else if ((sensorUnit == "volt") || (sensorUnit == "in"))
+     {
+         unit = sensor_paths::unitVolts;
+     }
+@@ -332,89 +335,87 @@ void PSUSensor::readFromTheOtherNode(void)
+         return;
+     }
+     uint8_t sensorNumber = findSensor->second.sensorNumber;
+-    uint16_t coefficientM = findSensor->second.coefficientM;
+-    int8_t exponentB = findSensor->second.exponentB;
+-    int16_t coefficientB = findSensor->second.coefficientB;
+-    int8_t exponentR = findSensor->second.exponentR;
+-
+     uint8_t commandAddress = 0;
+     uint8_t netfn = 0x4;
+     uint8_t lun = 0;
+     uint8_t command = 0x2D;
+     std::vector<uint8_t> commandData = {sensorNumber};
+ 
+-    static auto bus = sdbusplus::bus::new_system();
+-    auto method = bus.new_method_call("xyz.openbmc_project.Ipmi.Channel.Ipmb",
+-                                      "/xyz/openbmc_project/Ipmi/Channel/Ipmb",
+-                                      "org.openbmc.Ipmb", "sendRequest");
+-    method.append(commandAddress, netfn, lun, command, commandData);
+-    try
+-    {
+-        auto reply = bus.call(method);
+-        IpmbMethodType prop;
+-        reply.read(prop);
+-
+-        const auto& [status, netFn, rqLun, cmd, cc, data] = prop;
+-
+-        int readingState = 0;
+-        if (data.size() != 0)
+-        {
+-            // check bit 5 : sensor reading/state unavailable
+-            readingState = (data.at(1) & 0x20) >> 5;
+-        }
+-
+-        if ((status) || (data.size() == 0) || (readingState == 1))
+-        {
+-            ipmbRetry++;
+-            int anotherNodePowerStatus = getNextNodeStatus();
+-            if ((ipmbRetry > maxIpmbRetry) || (anotherNodePowerStatus == 0))
++    dbusConnection->async_method_call(
++        [this, findSensor](boost::system::error_code ec,
++                           const IpmbMethodType& response) {
++            const auto& [status, netFn, rqLun, cmd, cc, data] = response;
++            if (ec)
++            {
++                std::cerr << "Failed to access ipmb daemon. " << ec.message()
++                          << "\n";
++            }
++            else if (status || cc || (data.size() != 4))
++            {
++                if ((++ipmbRetry > maxIpmbRetry) || !getNextNodeStatus())
++                {
++                    if (setCPLDMux(0) == 0)
++                    {
++                        uint8_t node = slotId + 1;
++                        if (setCPLDMux(node) == 0)
++                        {
++                            ipmbRetry = 0;
++                        }
++                        else
++                        {
++                            std::cerr << "Fail to get CPLD Mux reg\n";
++                            incrementError();
++                        }
++                    }
++                    else
++                    {
++                        std::cerr << "Fail to get CPLD Mux reg\n";
++                        incrementError();
++                    }
++                }
++            }
++            else
+             {
+                 ipmbRetry = 0;
+-                uint8_t node = slotId + 1;
+-                int ret = setCPLDMux(0);
+-                if (ret < 0)
++                // check bit 5 : sensor reading/state unavailable
++                uint8_t readingState = data.at(1) & 0x20;
++                if (readingState)
+                 {
+-                    std::cerr << "fail to get CPLD Mux reg\n";
+-                    incrementError();
++                    markFunctional(false);
+                 }
+-
+-                ret = setCPLDMux(node);
+-                if (ret < 0)
++                else
+                 {
+-                    std::cerr << "fail to get CPLD Mux reg\n";
+-                    incrementError();
++                    uint16_t coefficientM = findSensor->second.coefficientM;
++                    int8_t exponentB = findSensor->second.exponentB;
++                    int16_t coefficientB = findSensor->second.coefficientB;
++                    int8_t exponentR = findSensor->second.exponentR;
++                    rawValue = data.at(0);
++                    double value = ((coefficientM * rawValue) +
++                                    (coefficientB * std::pow(10, exponentB))) *
++                                   std::pow(10, exponentR);
++                    updateValue(value);
+                 }
+             }
+-        }
+-        else
+-        {
+-            uint8_t sensorReading = data.at(0);
+-            double value = ((coefficientM * sensorReading) +
+-                            (coefficientB * std::pow(10, exponentB))) *
+-                           std::pow(10, exponentR);
+-            updateValue(value);
+-            ipmbRetry = 0;
+-        }
+-    }
+-    catch (const sdbusplus::exception::SdBusError& e)
+-    {
+-        std::cerr << "Failed to access ipmb daemon. " << e.what() << "\n";
+-    }
+ 
+-    std::weak_ptr<PSUSensor> weakRef = weak_from_this();
+-    waitTimer.expires_from_now(std::chrono::milliseconds(sensorPollMs));
+-    waitTimer.async_wait([weakRef](const boost::system::error_code& ec) {
+-        std::shared_ptr<PSUSensor> self = weakRef.lock();
+-        if (ec == boost::asio::error::operation_aborted)
+-        {
+-            std::cerr << "Failed to reschedule\n";
+-            return;
+-        }
+-        if (self)
+-        {
+-            self->setupRead();
+-        }
+-    });
++            std::weak_ptr<PSUSensor> weakRef = weak_from_this();
++            waitTimer.expires_from_now(std::chrono::milliseconds(3000));
++            waitTimer.async_wait(
++                [weakRef](const boost::system::error_code& ec) {
++                    std::shared_ptr<PSUSensor> self = weakRef.lock();
++                    if (ec == boost::asio::error::operation_aborted)
++                    {
++                        std::cerr << "Failed to reschedule\n";
++                        return;
++                    }
++                    if (self)
++                    {
++                        self->setupRead();
++                    }
++                });
++        },
++        "xyz.openbmc_project.Ipmi.Channel.Ipmb",
++        "/xyz/openbmc_project/Ipmi/Channel/Ipmb", "org.openbmc.Ipmb",
++        "sendRequest", commandAddress, netfn, lun, command, commandData);
+ }
+ void PSUSensor::checkThresholds(void)
+ {
+diff --git a/src/PSUSensorMain.cpp b/src/PSUSensorMain.cpp
+index 046e6c6..dffe874 100644
+--- a/src/PSUSensorMain.cpp
++++ b/src/PSUSensorMain.cpp
+@@ -39,6 +39,7 @@
+ #include <vector>
+ 
+ static constexpr bool debug = false;
++static constexpr float pollRateDefault = 1;
+ 
+ static std::vector<std::string> sensorTypes = {
+     "xyz.openbmc_project.Configuration.ADM1272",
+@@ -290,26 +291,6 @@ static void createSensorsCallback(
+         }
+     }
+ 
+-    // Get slot ID 1 to distinguish left or right node
+-    uint8_t slotId = 0xff;
+-    std::string gpioName = "SLOT_ID_1";
+-    try
+-    {
+-        auto gpioLine = gpiod::find_line(gpioName);
+-        if (!gpioLine)
+-        {
+-            std::cerr << "Error requesting gpio: " << gpioName << "\n";
+-            return;
+-        }
+-        gpioLine.request({"slot_id", gpiod::line_request::DIRECTION_INPUT, 0});
+-        slotId = gpioLine.get_value();
+-    }
+-    catch (std::system_error&)
+-    {
+-        std::cerr << "Error reading gpio: " << gpioName << "\n";
+-        return;
+-    }
+-
+     for (const SensorObject& sensor : sensorConfigs)
+     {
+         const std::string* interfacePath = &(sensor.first.str);
+@@ -378,6 +359,18 @@ static void createSensorsCallback(
+             useLock = std::visit(VariantToBoolVisitor(), findUseLock->second);
+         }
+ 
++        auto findPollRate = baseConfigMap->find("PollRate");
++        float pollRate = pollRateDefault;
++        if (findPollRate != baseConfigMap->end())
++        {
++            pollRate =
++                std::visit(VariantToFloatVisitor(), findPollRate->second);
++            if (pollRate <= 0.0f)
++            {
++                pollRate = pollRateDefault; // polling time too short
++            }
++        }
++
+         // on rescans, only update sensors we were signaled by
+         auto findSensor = sensors.find(sensorName);
+         if (!firstScan && findSensor != sensors.end())
+@@ -403,7 +396,7 @@ static void createSensorsCallback(
+             driverPath, objectType, objectServer, dbusConnection, io,
+             sensorName, std::move(sensorThresholds), *interfacePath, sensorType,
+             dbusPath, scaleFactor, limits.second, limits.first, readState,
+-            useLock, slotId);
++            useLock, getCurrentNode(), pollRate);
+         sensors[sensorName]->setupRead();
+     }
+ 
+diff --git a/src/TachSensor.cpp b/src/TachSensor.cpp
+index 5331416..8979deb 100644
+--- a/src/TachSensor.cpp
++++ b/src/TachSensor.cpp
+@@ -37,7 +37,9 @@
+ #include <utility>
+ #include <vector>
+ 
+-static constexpr unsigned int pwmPollMs = 1000;
++using IpmbMethodType =
++    std::tuple<int, uint8_t, uint8_t, uint8_t, uint8_t, std::vector<uint8_t>>;
++static constexpr unsigned int pwmPollMs = 3000;
+ static constexpr size_t warnAfterErrorCount = 10;
+ static constexpr int fanFailSoftOffTimeLimit = 12;
+ 
+@@ -52,14 +54,16 @@ TachSensor::TachSensor(const std::string& path, const std::string& objectType,
+                        const std::string& dbusPath, const double maxValue,
+                        const double minValue, const PowerState& readState,
+                        const std::optional<std::string>& ledIn,
+-                       const bool isSensorFailure) :
++                       const bool isSensorFailure, int8_t sled,
++                       const std::string& sensorType) :
+     Sensor(boost::replace_all_copy(fanName, " ", "_"), std::move(thresholdsIn),
+            sensorConfiguration, objectType, false, maxValue, minValue, conn,
+            readState, isSensorFailure),
+     objServer(objectServer), redundancy(redundancy),
+     presence(std::move(presenceSensor)),
+     inputDev(io, open(path.c_str(), O_RDONLY)), waitTimer(io), path(path),
+-    led(ledIn)
++    led(ledIn), sled(sled), dbusPath(dbusPath), sensorType(sensorType),
++    ipmbRetry(0)
+ {
+     sensorInterface = objectServer.add_interface(
+         dbusPath, "xyz.openbmc_project.Sensor.Value");
+@@ -92,7 +96,15 @@ TachSensor::TachSensor(const std::string& path, const std::string& objectType,
+             std::vector<Association>{{"sensors", "inventory", dbusPath}});
+         itemAssoc->initialize();
+     }
+-    setInitialProperties(conn, sensor_paths::unitRPMs);
++
++    if (sensorType == "pwm")
++    {
++        setInitialProperties(conn, sensor_paths::unitPercent);
++    }
++    else
++    {
++        setInitialProperties(conn, sensor_paths::unitRPMs);
++    }
+ }
+ 
+ TachSensor::~TachSensor()
+@@ -234,17 +246,100 @@ void TachSensor::setupRead(void)
+         return;
+     }
+ 
+-    boost::asio::async_read_until(
+-        inputDev, *buffer, '\n',
+-        [weakRef, buffer](const boost::system::error_code& ec,
+-                          std::size_t /*bytes_transfered*/) {
+-            std::shared_ptr<TachSensor> self = weakRef.lock();
+-            if (self)
++    if (sled == getCurrentNode())
++    {
++        boost::asio::async_read_until(
++            inputDev, *buffer, '\n',
++            [weakRef, buffer](const boost::system::error_code& ec,
++                              std::size_t /*bytes_transfered*/) {
++                std::shared_ptr<TachSensor> self = weakRef.lock();
++                if (self)
++                {
++                    self->readBuf = buffer;
++                    self->handleResponse(ec);
++                }
++            });
++    }
++    else
++    {
++        readFromTheOtherNode(pwmPollMs);
++    }
++}
++
++void TachSensor::readFromTheOtherNode(size_t pollTime)
++{
++    auto findSensor = ipmi::sensor::sensorsInfo.find(dbusPath);
++    if (findSensor == ipmi::sensor::sensorsInfo.end())
++    {
++        std::cerr << "Failed to find sensor inforamtion from " << dbusPath
++                  << "\n";
++        return;
++    }
++    uint8_t sensorNumber = findSensor->second.sensorNumber;
++    uint8_t commandAddress = 0;
++    uint8_t netfn = 0x4;
++    uint8_t lun = 0;
++    uint8_t command = 0x2D;
++    std::vector<uint8_t> commandData = {sensorNumber};
++
++    dbusConnection->async_method_call(
++        [this, findSensor, pollTime](boost::system::error_code ec,
++                                     const IpmbMethodType& response) {
++            const auto& [status, netFn, rqLun, cmd, cc, data] = response;
++            if (ec)
+             {
+-                self->readBuf = buffer;
+-                self->handleResponse(ec);
++                std::cerr << "Failed to access ipmb daemon. " << ec.message()
++                          << "\n";
+             }
+-        });
++            else if (status || cc || (data.size() != 4))
++            {
++                if (++ipmbRetry >= static_cast<int>(errorThreshold))
++                {
++                    markAvailable(false);
++                }
++            }
++            else
++            {
++                ipmbRetry = 0;
++                // check bit 5 : sensor reading/state unavailable
++                uint8_t readingState = data.at(1) & 0x20;
++                if (readingState)
++                {
++                    markAvailable(false);
++                }
++                else
++                {
++                    uint16_t coefficientM = findSensor->second.coefficientM;
++                    int8_t exponentB = findSensor->second.exponentB;
++                    int16_t coefficientB = findSensor->second.coefficientB;
++                    int8_t exponentR = findSensor->second.exponentR;
++                    uint8_t sensorReading = data.at(0);
++                    double value = ((coefficientM * sensorReading) +
++                                    (coefficientB * std::pow(10, exponentB))) *
++                                   std::pow(10, exponentR);
++                    updateValue(value);
++                }
++            }
++
++            std::weak_ptr<TachSensor> weakRef = weak_from_this();
++            waitTimer.expires_from_now(std::chrono::milliseconds(pollTime));
++            waitTimer.async_wait(
++                [weakRef](const boost::system::error_code& ec) {
++                    std::shared_ptr<TachSensor> self = weakRef.lock();
++                    if (ec == boost::asio::error::operation_aborted)
++                    {
++                        std::cerr << "Failed to reschedule\n";
++                        return;
++                    }
++                    if (self)
++                    {
++                        self->setupRead();
++                    }
++                });
++        },
++        "xyz.openbmc_project.Ipmi.Channel.Ipmb",
++        "/xyz/openbmc_project/Ipmi/Channel/Ipmb", "org.openbmc.Ipmb",
++        "sendRequest", commandAddress, netfn, lun, command, commandData);
+ }
+ 
+ void TachSensor::handleResponse(const boost::system::error_code& err)
+@@ -280,6 +375,11 @@ void TachSensor::handleResponse(const boost::system::error_code& err)
+                     std::getline(responseStream, response);
+                     rawValue = std::stod(response);
+                     responseStream.clear();
++                    if (sensorType == "pwm")
++                    {
++                        rawValue =
++                            100.0 * (static_cast<double>(rawValue) / 255);
++                    }
+                     updateValue(rawValue);
+                 }
+                 catch (const std::invalid_argument&)
+diff --git a/src/Thresholds.cpp b/src/Thresholds.cpp
+index 45df427..0de560e 100644
+--- a/src/Thresholds.cpp
++++ b/src/Thresholds.cpp
+@@ -521,6 +521,7 @@ bool checkThresholds(Sensor* sensor)
+         }
+     }
+ 
++    sensor->isFirst = false;
+     return status;
+ }
+ 
+diff --git a/src/Utils.cpp b/src/Utils.cpp
+index 8bdfb45..a359363 100644
+--- a/src/Utils.cpp
++++ b/src/Utils.cpp
+@@ -669,8 +669,17 @@ bool findPathFromDriver(const SensorBaseConfigMap*& baseConfigMap,
+     unsigned int index =
+         std::visit(VariantToUnsignedIntVisitor(), findIndex->second);
+ 
++    std::string filename;
++
+     // In configuration index is 0 based and driver is 1 based.
+-    auto filename = prefix + std::to_string(index + 1) + "_" + suffix;
++    if (prefix != "pwm")
++    {
++        filename = prefix + std::to_string(index + 1) + "_" + suffix;
++    }
++    else
++    {
++        filename = prefix + std::to_string(index + 1);
++    }
+ 
+     for (const auto& path : paths)
+     {
+@@ -754,3 +763,49 @@ int getNextNodeStatus()
+         return -1;
+     }
+ }
++
++int getCurrentNode()
++{
++    const std::filesystem::path dir = "/run/slot_id_1";
++    static int slotId1 = -1;
++    if (slotId1 != -1)
++    {
++        return slotId1;
++    }
++
++    if (std::filesystem::exists(dir / "1"))
++    {
++        slotId1 = 1;
++    }
++    else if (std::filesystem::exists(dir / "0"))
++    {
++        slotId1 = 0;
++    }
++    else
++    {
++        // We shouldn't enter here, the slot_id_1 file should be created during
++        // BMC boots up. In case of some fails occurs when creating the file,
++        // reserve the original way to request GPIO.
++        std::string gpioName = "SLOT_ID_1";
++        try
++        {
++            auto gpioLine = gpiod::find_line(gpioName);
++            if (gpioLine)
++            {
++                gpioLine.request(
++                    {"slot_id", gpiod::line_request::DIRECTION_INPUT, 0});
++                slotId1 = gpioLine.get_value();
++            }
++            else
++            {
++                std::cerr << "Error requesting gpio: " << gpioName << "\n";
++            }
++        }
++        catch (std::system_error&)
++        {
++            std::cerr << "Error reading gpio: " << gpioName << "\n";
++        }
++    }
++
++    return slotId1;
++}
+-- 
+2.32.0
+

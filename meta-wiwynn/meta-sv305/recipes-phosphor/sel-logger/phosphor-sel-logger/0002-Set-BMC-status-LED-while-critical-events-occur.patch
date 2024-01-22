@@ -1,0 +1,263 @@
+From 8c9107cbdb8238fb99def4bf4eeff29f8069a63c Mon Sep 17 00:00:00 2001
+From: Ren_Chen <Ren_Chen@wiwynn.com>
+Date: Thu, 5 Nov 2020 17:29:57 +0800
+Subject: [PATCH 2/6] Set BMC status LED while critical events occur
+
+%% original patch: 0002-Set-BMC-status-LED-while-critical-events-occur.patch
+---
+ include/threshold_event_monitor.hpp | 154 ++++++++++++++++++++++++++++
+ src/sel_logger.cpp                  |  49 +++++++++
+ 2 files changed, 203 insertions(+)
+
+diff --git a/include/threshold_event_monitor.hpp b/include/threshold_event_monitor.hpp
+index f1df9bd..ad652b1 100644
+--- a/include/threshold_event_monitor.hpp
++++ b/include/threshold_event_monitor.hpp
+@@ -17,10 +17,43 @@
+ #pragma once
+ #include <sel_logger.hpp>
+ #include <sensorutils.hpp>
++#include <xyz/openbmc_project/Led/Physical/server.hpp>
+ 
+ #include <string_view>
+ #include <variant>
+ 
++static constexpr const char* ledInterface = "xyz.openbmc_project.Led.Physical";
++static constexpr const char* greenObjPath =
++    "/xyz/openbmc_project/led/physical/status_green";
++static constexpr const char* greenService =
++    "xyz.openbmc_project.LED.Controller.status_green";
++static constexpr const char* amberObjPath =
++    "/xyz/openbmc_project/led/physical/status_amber";
++static constexpr const char* amberService =
++    "xyz.openbmc_project.LED.Controller.status_amber";
++
++static int assertCount;
++static bool pgoodState;
++
++static void setLedProperty(sdbusplus::bus::bus& bus, const std::string& path,
++                           const std::string& property,
++                           const std::string& value, const std::string& service)
++{
++    auto method = bus.new_method_call(service.c_str(), path.c_str(),
++                                      "org.freedesktop.DBus.Properties", "Set");
++    method.append(ledInterface, property, std::variant<std::string>(value));
++    try
++    {
++        bus.call_noreply(method);
++    }
++    catch (sdbusplus::exception_t& e)
++    {
++        std::cerr << "failed to set LED [" << service.c_str() << "]\n";
++    }
++
++    return;
++}
++
+ enum class thresholdEventOffsets : uint8_t
+ {
+     lowerNonCritGoingLow = 0x00,
+@@ -263,6 +296,49 @@ inline static sdbusplus::bus::match::match startThresholdAssertMonitor(
+             }
+         }
+ 
++        auto bus = sdbusplus::bus::new_default();
++        if (assert == true)
++        {
++            assertCount++;
++            if (assertCount == 1)
++            {
++                setLedProperty(bus, amberObjPath, "State",
++                               "xyz.openbmc_project.Led.Physical.Action.Blink",
++                               amberService);
++                setLedProperty(bus, greenObjPath, "State",
++                               "xyz.openbmc_project.Led.Physical.Action.Off",
++                               greenService);
++            }
++        }
++        else
++        {
++            assertCount--;
++            if (assertCount == 0)
++            {
++                if (pgoodState)
++                {
++                    setLedProperty(
++                        bus, amberObjPath, "State",
++                        "xyz.openbmc_project.Led.Physical.Action.Off",
++                        amberService);
++                    setLedProperty(bus, greenObjPath, "State",
++                                   "xyz.openbmc_project.Led.Physical.Action.On",
++                                   greenService);
++                }
++                else
++                {
++                    setLedProperty(
++                        bus, amberObjPath, "State",
++                        "xyz.openbmc_project.Led.Physical.Action.Off",
++                        amberService);
++                    setLedProperty(
++                        bus, greenObjPath, "State",
++                        "xyz.openbmc_project.Led.Physical.Action.Blink",
++                        greenService);
++                }
++            }
++        }
++
+         std::string journalMsg(std::string(sensorName) + " sensor crossed a " +
+                                threshold + " threshold going " + direction +
+                                ". Reading=" + std::to_string(assertValue) +
+@@ -281,3 +357,81 @@ inline static sdbusplus::bus::match::match startThresholdAssertMonitor(
+         std::move(thresholdAssertMatcherCallback));
+     return thresholdAssertMatcher;
+ }
++
++inline static sdbusplus::bus::match::match startCheckBmcStatusMonitor(
++    std::shared_ptr<sdbusplus::asio::connection> conn)
++{
++    auto pgoodEventMatcherCallback = [conn](sdbusplus::message::message& msg) {
++        boost::container::flat_map<std::string, std::variant<int>>
++            propertiesChanged;
++        std::string objName;
++
++        if (msg.is_method_error())
++        {
++            std::cerr << "pgoodEvent callback method error\n";
++            return;
++        }
++
++        msg.read(objName, propertiesChanged);
++        std::string event = propertiesChanged.begin()->first;
++        int* pState = std::get_if<int>(&propertiesChanged.begin()->second);
++
++        if (!pState)
++        {
++            std::cerr << "failed to get pgood\n";
++            return;
++        }
++
++        if (event == "pgood")
++        {
++            if (1 == *pState)
++            {
++                pgoodState = true;
++            }
++            else
++            {
++                pgoodState = false;
++            }
++        }
++
++        auto bus = sdbusplus::bus::new_default();
++        if (assertCount == 1)
++        {
++            setLedProperty(bus, amberObjPath, "State",
++                           "xyz.openbmc_project.Led.Physical.Action.Blink",
++                           amberService);
++            setLedProperty(bus, greenObjPath, "State",
++                           "xyz.openbmc_project.Led.Physical.Action.Off",
++                           greenService);
++        }
++        else if (assertCount == 0)
++        {
++            if (pgoodState)
++            {
++                setLedProperty(bus, amberObjPath, "State",
++                               "xyz.openbmc_project.Led.Physical.Action.Off",
++                               amberService);
++                setLedProperty(bus, greenObjPath, "State",
++                               "xyz.openbmc_project.Led.Physical.Action.On",
++                               greenService);
++            }
++            else
++            {
++                setLedProperty(bus, amberObjPath, "State",
++                               "xyz.openbmc_project.Led.Physical.Action.Off",
++                               amberService);
++                setLedProperty(bus, greenObjPath, "State",
++                               "xyz.openbmc_project.Led.Physical.Action.Blink",
++                               greenService);
++            }
++        }
++    };
++
++    sdbusplus::bus::match::match pgoodEventMatcher(
++        static_cast<sdbusplus::bus::bus&>(*conn),
++        "type='signal',interface='org.freedesktop.DBus.Properties',member='"
++        "PropertiesChanged',arg0namespace='org.openbmc.control.Power'",
++        std::move(pgoodEventMatcherCallback));
++
++    return pgoodEventMatcher;
++}
+diff --git a/src/sel_logger.cpp b/src/sel_logger.cpp
+index d76cebf..9e83da7 100644
+--- a/src/sel_logger.cpp
++++ b/src/sel_logger.cpp
+@@ -207,6 +207,52 @@ static uint16_t selAddOemRecord(const std::string& message,
+ #endif
+ }
+ 
++static void bmcStatusLedInit(std::shared_ptr<sdbusplus::asio::connection> conn)
++{
++    assertCount = 0;
++    pgoodState = false;
++    std::variant<int> pgood = -1;
++
++    auto method = conn->new_method_call(
++        "org.openbmc.control.Power", "/org/openbmc/control/power0",
++        "org.freedesktop.DBus.Properties", "Get");
++
++    method.append("org.openbmc.control.Power", "pgood");
++    try
++    {
++        auto reply = conn->call(method);
++        reply.read(pgood);
++        auto bus = sdbusplus::bus::new_default();
++
++        if (std::get<int>(pgood) == 1)
++        {
++            pgoodState = true;
++
++            setLedProperty(bus, amberObjPath, "State",
++                           "xyz.openbmc_project.Led.Physical.Action.Off",
++                           amberService);
++            setLedProperty(bus, greenObjPath, "State",
++                           "xyz.openbmc_project.Led.Physical.Action.On",
++                           greenService);
++        }
++        else
++        {
++            pgoodState = false;
++
++            setLedProperty(bus, amberObjPath, "State",
++                           "xyz.openbmc_project.Led.Physical.Action.Off",
++                           amberService);
++            setLedProperty(bus, greenObjPath, "State",
++                           "xyz.openbmc_project.Led.Physical.Action.Blink",
++                           greenService);
++        }
++    }
++    catch (sdbusplus::exception_t& e)
++    {
++        sd_journal_print(LOG_CRIT, "Failed to bmcStatusLedInit\n");
++    }
++}
++
+ static int selClear()
+ {
+     std::error_code ec;
+@@ -329,8 +375,11 @@ int main(int argc, char* argv[])
+     ifaceAddSel->initialize();
+ 
+ #ifdef SEL_LOGGER_MONITOR_THRESHOLD_EVENTS
++    bmcStatusLedInit(conn);
+     sdbusplus::bus::match::match thresholdAssertMonitor =
+         startThresholdAssertMonitor(conn);
++    sdbusplus::bus::match::match checkBmcStatusMonitor =
++        startCheckBmcStatusMonitor(conn);
+ #endif
+ 
+ #ifdef REDFISH_LOG_MONITOR_PULSE_EVENTS
+-- 
+2.28.0
+

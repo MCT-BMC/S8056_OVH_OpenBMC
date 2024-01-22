@@ -1,0 +1,377 @@
+From bf079d8fac7f39fb5cd37e0d614b3c373abd7596 Mon Sep 17 00:00:00 2001
+From: JPChang <JP_Chang@wiwynn.com>
+Date: Tue, 5 Nov 2019 18:19:54 +0800
+Subject: [PATCH 1/3] Add fan control linear
+
+Description
+- Add fan control stepwise linear function.
+- Support debug mode to record current sensor reading and output pwm.
+- Modify constant maximum stepwise points to dynamic points(according to fan table stepwise input points in json file).
+---
+ conf.hpp                   |  9 ++++----
+ dbus/dbusconfiguration.cpp | 22 ++-----------------
+ main.cpp                   |  2 ++
+ pid/buildjson.cpp          | 23 ++++++++++----------
+ pid/ec/stepwise.cpp        | 43 +++++++++++++++++++++++++++++++-------
+ pid/ec/stepwise.hpp        |  6 +++---
+ pid/fancontroller.cpp      |  6 ++++++
+ pid/stepwisecontroller.cpp |  8 ++++---
+ pid/zone.cpp               |  9 ++++++++
+ 9 files changed, 79 insertions(+), 49 deletions(-)
+
+diff --git a/conf.hpp b/conf.hpp
+index 559afaa..ca12e95 100644
+--- a/conf.hpp
++++ b/conf.hpp
+@@ -35,11 +35,10 @@ struct ControllerInfo
+     std::string type;                // fan or margin or temp?
+     std::vector<std::string> inputs; // one or more sensors.
+     double setpoint;                 // initial setpoint for thermal.
+-    union
+-    {
+-        ec::pidinfo pidInfo; // pid details
+-        ec::StepwiseInfo stepwiseInfo;
+-    };
++    
++    ec::pidinfo pidInfo; // pid details
++    ec::StepwiseInfo stepwiseInfo;
++    
+ };
+ 
+ /*
+diff --git a/dbus/dbusconfiguration.cpp b/dbus/dbusconfiguration.cpp
+index e68c852..6fb1c24 100644
+--- a/dbus/dbusconfiguration.cpp
++++ b/dbus/dbusconfiguration.cpp
+@@ -778,38 +778,20 @@ bool init(sdbusplus::bus::bus& bus, boost::asio::steady_timer& timer)
+                     info.stepwiseInfo.negativeHysteresis = std::visit(
+                         VariantToDoubleVisitor(), findNegHyst->second);
+                 }
+-                std::vector<double> readings =
++                info.stepwiseInfo.reading =
+                     std::get<std::vector<double>>(base.at("Reading"));
+-                if (readings.size() > ec::maxStepwisePoints)
+-                {
+-                    throw std::invalid_argument("Too many stepwise points.");
+-                }
+                 if (readings.empty())
+                 {
+                     throw std::invalid_argument(
+                         "Must have one stepwise point.");
+                 }
+-                std::copy(readings.begin(), readings.end(),
+-                          info.stepwiseInfo.reading);
+-                if (readings.size() < ec::maxStepwisePoints)
+-                {
+-                    info.stepwiseInfo.reading[readings.size()] =
+-                        std::numeric_limits<double>::quiet_NaN();
+-                }
+-                std::vector<double> outputs =
++                info.stepwiseInfo.output =
+                     std::get<std::vector<double>>(base.at("Output"));
+                 if (readings.size() != outputs.size())
+                 {
+                     throw std::invalid_argument(
+                         "Outputs size must match readings");
+                 }
+-                std::copy(outputs.begin(), outputs.end(),
+-                          info.stepwiseInfo.output);
+-                if (outputs.size() < ec::maxStepwisePoints)
+-                {
+-                    info.stepwiseInfo.output[outputs.size()] =
+-                        std::numeric_limits<double>::quiet_NaN();
+-                }
+             }
+         }
+     }
+diff --git a/main.cpp b/main.cpp
+index be0691d..fc433a2 100644
+--- a/main.cpp
++++ b/main.cpp
+@@ -43,6 +43,7 @@
+ #include <unordered_map>
+ #include <utility>
+ #include <vector>
++#include <systemd/sd-journal.h>
+ 
+ #if CONFIGURE_DBUS
+ #include "dbus/dbusconfiguration.hpp"
+@@ -89,6 +90,7 @@ void restartControlLoops()
+     const std::string& path =
+         (configPath.length() > 0) ? configPath : jsonConfigurationPath;
+ 
++    //sd_journal_print(LOG_INFO, "json file path: %s", path.c_str());
+     /*
+      * When building the sensors, if any of the dbus passive ones aren't on the
+      * bus, it'll fail immediately.
+diff --git a/pid/buildjson.cpp b/pid/buildjson.cpp
+index 5e90c47..9fa5f66 100644
+--- a/pid/buildjson.cpp
++++ b/pid/buildjson.cpp
+@@ -73,23 +73,20 @@ void from_json(const json& j, conf::ControllerInfo& c)
+         p.at("samplePeriod").get_to(c.stepwiseInfo.ts);
+         p.at("isCeiling").get_to(c.stepwiseInfo.isCeiling);
+ 
+-        for (size_t i = 0; i < ec::maxStepwisePoints; i++)
+-        {
+-            c.stepwiseInfo.reading[i] =
+-                std::numeric_limits<double>::quiet_NaN();
+-            c.stepwiseInfo.output[i] = std::numeric_limits<double>::quiet_NaN();
+-        }
+-
+         auto reading = p.find("reading");
+         if (reading != p.end())
+         {
+             auto r = p.at("reading");
+-            for (size_t i = 0; i < ec::maxStepwisePoints; i++)
++            for (size_t i = 0;; i++)
+             {
+                 auto n = r.find(std::to_string(i));
+                 if (n != r.end())
+                 {
+-                    r.at(std::to_string(i)).get_to(c.stepwiseInfo.reading[i]);
++                    c.stepwiseInfo.reading.emplace_back(std::move(r.at(std::to_string(i))));
++                }
++                else
++                {
++                    break;
+                 }
+             }
+         }
+@@ -98,12 +95,16 @@ void from_json(const json& j, conf::ControllerInfo& c)
+         if (output != p.end())
+         {
+             auto o = p.at("output");
+-            for (size_t i = 0; i < ec::maxStepwisePoints; i++)
++            for (size_t i = 0;; i++)
+             {
+                 auto n = o.find(std::to_string(i));
+                 if (n != o.end())
+                 {
+-                    o.at(std::to_string(i)).get_to(c.stepwiseInfo.output[i]);
++                    c.stepwiseInfo.output.emplace_back(std::move(o.at(std::to_string(i))));
++                }
++                else
++                {
++                    break;
+                 }
+             }
+         }
+diff --git a/pid/ec/stepwise.cpp b/pid/ec/stepwise.cpp
+index 0a5c0b0..828677a 100644
+--- a/pid/ec/stepwise.cpp
++++ b/pid/ec/stepwise.cpp
+@@ -27,18 +27,47 @@ double stepwise(const ec::StepwiseInfo& info, double input)
+     double value = info.output[0]; // if we are below the lowest
+                                    // point, we set the lowest value
+ 
+-    for (size_t ii = 1; ii < ec::maxStepwisePoints; ii++)
++    if(input > info.reading[0])
+     {
+-
+-        if (std::isnan(info.reading[ii]))
++        for (size_t i = 1; i < info.reading.size(); ++i)
+         {
+-            break;
++            if (info.reading[i] > input)
++            {
++                break;
++            }
++            value = info.output[i];
+         }
+-        if (info.reading[ii] > input)
++    }
++
++    return value;
++}
++double linear(const ec::StepwiseInfo& info, double input)
++{
++    double value = info.output[0];
++
++    // if input is higher than the max reading point
++    // return the max value of output
++    if(input >= info.reading.back())
++    {
++        value = info.output.back();
++    }
++    // if input is smaller than the minimum reading point
++    // return the minimum value of output
++    else if(input > info.reading[0])
++    {
++        for (size_t i = 1; i < info.reading.size(); ++i)
+         {
+-            break;
++            // DO Interpolation
++            if (info.reading[i] > input)
++            {
++                double inputLow = info.reading[i - 1];
++                double inputHigh = info.reading[i];
++                double outputLow = info.output[i - 1];
++                double outputHigh = info.output[i];
++                value = outputLow + ((outputHigh - outputLow) / (inputHigh - inputLow)) * (input - inputLow);
++                break;
++            }
+         }
+-        value = info.output[ii];
+     }
+ 
+     return value;
+diff --git a/pid/ec/stepwise.hpp b/pid/ec/stepwise.hpp
+index 3ce847a..d67014a 100644
+--- a/pid/ec/stepwise.hpp
++++ b/pid/ec/stepwise.hpp
+@@ -22,18 +22,18 @@
+ 
+ namespace ec
+ {
+-constexpr size_t maxStepwisePoints = 20;
+ 
+ struct StepwiseInfo
+ {
+     double ts; // sample time in seconds
+-    double reading[maxStepwisePoints];
+-    double output[maxStepwisePoints];
++    std::vector<double> reading;
++    std::vector<double> output;
+     double positiveHysteresis;
+     double negativeHysteresis;
+     bool isCeiling;
+ };
+ 
+ double stepwise(const ec::StepwiseInfo& info, double value);
++double linear(const ec::StepwiseInfo& info, double value);
+ 
+ } // namespace ec
+\ No newline at end of file
+diff --git a/pid/fancontroller.cpp b/pid/fancontroller.cpp
+index dd26d16..7a1707d 100644
+--- a/pid/fancontroller.cpp
++++ b/pid/fancontroller.cpp
+@@ -22,6 +22,7 @@
+ 
+ #include <algorithm>
+ #include <iostream>
++#include <systemd/sd-journal.h>
+ 
+ std::unique_ptr<PIDController>
+     FanController::createFanPid(ZoneInterface* owner, const std::string& id,
+@@ -125,6 +126,11 @@ void FanController::outputProc(double value)
+             {
+                 percent = _owner->getFailSafePercent();
+             }
++            sd_journal_print(LOG_INFO, "Fans output failsafe pwm: %lg%%", percent);
++        }
++        else
++        {
++            //sd_journal_print(LOG_INFO, "Fans output pwm: %lg%%", percent);
+         }
+     }
+ 
+diff --git a/pid/stepwisecontroller.cpp b/pid/stepwisecontroller.cpp
+index c72d61a..66b4a10 100644
+--- a/pid/stepwisecontroller.cpp
++++ b/pid/stepwisecontroller.cpp
+@@ -29,6 +29,7 @@
+ #include <memory>
+ #include <thread>
+ #include <vector>
++#include <systemd/sd-journal.h>
+ 
+ void StepwiseController::process(void)
+ {
+@@ -42,17 +43,17 @@ void StepwiseController::process(void)
+     // Calculate new output if hysteresis allows
+     if (std::isnan(output))
+     {
+-        output = ec::stepwise(info, input);
++        output = ec::linear(info, input);
+         lastInput = input;
+     }
+     else if ((input - lastInput) > info.positiveHysteresis)
+     {
+-        output = ec::stepwise(info, input);
++        output = ec::linear(info, input);
+         lastInput = input;
+     }
+     else if ((lastInput - input) > info.negativeHysteresis)
+     {
+-        output = ec::stepwise(info, input);
++        output = ec::linear(info, input);
+         lastInput = input;
+     }
+ 
+@@ -90,6 +91,7 @@ double StepwiseController::inputProc(void)
+     {
+         value = std::max(value, _owner->getCachedValue(in));
+     }
++    //sd_journal_print(LOG_INFO, "stepwise choose the maximum temperature value: %lg", value);
+     return value;
+ }
+ 
+diff --git a/pid/zone.cpp b/pid/zone.cpp
+index 6a63671..32d5e38 100644
+--- a/pid/zone.cpp
++++ b/pid/zone.cpp
+@@ -31,6 +31,7 @@
+ #include <fstream>
+ #include <iostream>
+ #include <memory>
++#include <systemd/sd-journal.h>
+ 
+ using tstamp = std::chrono::high_resolution_clock::time_point;
+ using namespace std::literals::chrono_literals;
+@@ -251,10 +252,12 @@ void PIDZone::updateFanTelemetry(void)
+         // check if fan fail.
+         if (sensor->getFailed())
+         {
++            sd_journal_print(LOG_INFO, "%s fan sensor getfailed", f.c_str());
+             _failSafeSensors.insert(f);
+         }
+         else if (timeout != 0 && duration >= period)
+         {
++            sd_journal_print(LOG_INFO, "%s fan sensor timeout, duration: %lld", f.c_str(), duration);
+             _failSafeSensors.insert(f);
+         }
+         else
+@@ -263,6 +266,7 @@ void PIDZone::updateFanTelemetry(void)
+             auto kt = _failSafeSensors.find(f);
+             if (kt != _failSafeSensors.end())
+             {
++                sd_journal_print(LOG_INFO, "erase %s fan sensor from failsafe", f.c_str());
+                 _failSafeSensors.erase(kt);
+             }
+         }
+@@ -291,6 +295,8 @@ void PIDZone::updateSensors(void)
+         ReadReturn r = sensor->read();
+         int64_t timeout = sensor->getTimeout();
+ 
++        //sd_journal_print(LOG_INFO, "%s temperature sensor reading: %lg", t.c_str(), r.value);
++
+         _cachedValuesByName[t] = r.value;
+         tstamp then = r.updated;
+ 
+@@ -299,11 +305,13 @@ void PIDZone::updateSensors(void)
+ 
+         if (sensor->getFailed())
+         {
++            sd_journal_print(LOG_INFO, "%s temperatur sensor getfailed", t.c_str());
+             _failSafeSensors.insert(t);
+         }
+         else if (timeout != 0 && duration >= period)
+         {
+             // std::cerr << "Entering fail safe mode.\n";
++            sd_journal_print(LOG_INFO, "%s temperatur sensor timeout, duration: %lld", t.c_str(), duration);
+             _failSafeSensors.insert(t);
+         }
+         else
+@@ -312,6 +320,7 @@ void PIDZone::updateSensors(void)
+             auto kt = _failSafeSensors.find(t);
+             if (kt != _failSafeSensors.end())
+             {
++                sd_journal_print(LOG_INFO, "erase %s temperatur sensor from failsafe", t.c_str());
+                 _failSafeSensors.erase(kt);
+             }
+         }
+-- 
+2.22.0
+

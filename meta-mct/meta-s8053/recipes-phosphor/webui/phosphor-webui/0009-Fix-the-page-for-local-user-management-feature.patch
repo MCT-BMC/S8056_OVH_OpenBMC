@@ -1,0 +1,37 @@
+From 39180a80f9439dc2dcfe840f9cbc3e4baf3cd85e Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Wed, 4 Nov 2020 15:52:47 +0800
+Subject: [PATCH] Fix the page for local user management feature
+
+---
+ app/access-control/controllers/user-accounts-modal-user.html | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+ mode change 100644 => 100755 app/access-control/controllers/user-accounts-modal-user.html
+
+diff --git a/app/access-control/controllers/user-accounts-modal-user.html b/app/access-control/controllers/user-accounts-modal-user.html
+old mode 100644
+new mode 100755
+index d718dcd..643744f
+--- a/app/access-control/controllers/user-accounts-modal-user.html
++++ b/app/access-control/controllers/user-accounts-modal-user.html
+@@ -64,7 +64,7 @@
+                      name="username"
+                      type="text"
+                      required
+-                     minlength="1"
++                     minlength="5"
+                      maxlength="16"
+                      ng-pattern="'^([a-zA-Z_][a-zA-Z0-9_]*)'"
+                      ng-readonly="modalCtrl.user.isRoot"
+@@ -75,7 +75,7 @@
+                 <span ng-show="form.username.$error.required">
+                   Field is required</span>
+                 <span ng-show="form.username.$error.minlength || form.username.$error.maxlength">
+-                  Length must be between <span class="nowrap">1 – 16</span> characters</span>
++                  Length must be between <span class="nowrap">5 – 16</span> characters</span>
+                 <span ng-show="form.username.$error.pattern">
+                   Invalid format</span>
+                 <span ng-show="form.username.$error.duplicateUsername">
+-- 
+2.7.4
+

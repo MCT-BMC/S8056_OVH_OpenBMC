@@ -1,0 +1,40 @@
+From 0e0be385081feb80645f9e975f3fd81e606acec8 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Mon, 12 Sep 2022 10:33:04 +0800
+Subject: [PATCH] Using dbus-sdr based set sel time handler
+
+---
+ storagehandler.cpp | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/storagehandler.cpp b/storagehandler.cpp
+index bd31314..c91af3e 100644
+--- a/storagehandler.cpp
++++ b/storagehandler.cpp
+@@ -879,11 +879,6 @@ void register_netfn_storage_functions()
+                           ipmi::storage::cmdGetSelTime, ipmi::Privilege::User,
+                           ipmiStorageGetSelTime);
+ 
+-    // <Set SEL Time>
+-    ipmi::registerHandler(ipmi::prioOpenBmcBase, ipmi::netFnStorage,
+-                          ipmi::storage::cmdSetSelTime,
+-                          ipmi::Privilege::Operator, ipmiStorageSetSelTime);
+-
+     // <Get SEL Entry>
+     ipmi_register_callback(NETFUN_STORAGE, IPMI_CMD_GET_SEL_ENTRY, NULL,
+                            getSELEntry, PRIVILEGE_USER);
+@@ -928,6 +923,11 @@ void register_netfn_storage_functions()
+                            ipmi_sen_get_sdr, PRIVILEGE_USER);
+ 
+ #endif
++    // Using set sel time handler at dynamic sensors stack used.
++    // <Set SEL Time>
++    ipmi::registerHandler(ipmi::prioOemBase, ipmi::netFnStorage,
++                          ipmi::storage::cmdSetSelTime,
++                          ipmi::Privilege::Operator, ipmiStorageSetSelTime);
+ 
+     // Common Handers used by both implementation.
+ 
+-- 
+2.7.4
+

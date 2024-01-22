@@ -1,0 +1,276 @@
+{
+    "sensors": [
+        {
+            "name": "SYS_Air_Inlet",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/SYS_Air_Inlet",
+            "timeout": 10,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "CPU_Temp",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/CPU_Temp",
+            "timeout": 10,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "P0_UMC3_CH_A0",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/P0_UMC3_CH_A0",
+            "timeout": 10,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "P0_UMC4_CH_B0",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/P0_UMC4_CH_B0",
+            "timeout": 10,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "P0_UMC0_CH_C0",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/P0_UMC0_CH_C0",
+            "timeout": 10,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "P0_UMC5_CH_D0",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/P0_UMC5_CH_D0",
+            "timeout": 10,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "P0_UMC1_CH_E0",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/P0_UMC1_CH_E0",
+            "timeout": 10,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "P0_UMC2_CH_F0",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/P0_UMC2_CH_F0",
+            "timeout": 10,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "P0_UMC9_CH_G0",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/P0_UMC9_CH_G0",
+            "timeout": 10,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "P0_UMC10_CH_H0",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/P0_UMC10_CH_H0",
+            "timeout": 10,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "P0_UMC6_CH_I0",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/P0_UMC6_CH_I0",
+            "timeout": 10,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "P0_UMC11_CH_J0",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/P0_UMC11_CH_J0",
+            "timeout": 10,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "P0_UMC7_CH_K0",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/P0_UMC7_CH_K0",
+            "timeout": 10,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "P0_UMC8_CH_L0",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/P0_UMC8_CH_L0",
+            "timeout": 10,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "M2_Temp",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/M2_Temp",
+            "timeout": 10,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "NIC_Temp",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/NIC_Temp",
+            "timeout": 10,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "OCP_Area_Temp",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/OCP_Area_Temp",
+            "timeout": 10,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "M2_Area_Temp",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/M2_Area_Temp",
+            "timeout": 10,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "SYS_Air_Outlet",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/SYS_Air_Outlet",
+            "timeout": 10,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "CPU_MOSFET_1",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/CPU_MOSFET_1",
+            "timeout": 10,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "CPU_MOSFET_2",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/CPU_MOSFET_2",
+            "timeout": 10,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "CPU_MOSFET_3",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/CPU_MOSFET_3",
+            "timeout": 10,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "PDB2_Temp",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/PDB2_Temp",
+            "timeout": 10,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "NVME1_Temp",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/NVME1_Temp",
+            "timeout": 10,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "NVME2_Temp",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/NVME2_Temp",
+            "timeout": 10,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "NVME3_Temp",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/NVME3_Temp",
+            "timeout": 10,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "NVME4_Temp",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/NVME4_Temp",
+            "timeout": 10,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "PADDLE_CARD_1",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/PADDLE_CARD_1",
+            "timeout": 10,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "PADDLE_CARD_2",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/PADDLE_CARD_2",
+            "timeout": 10,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "PADDLE_CARD_3",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/PADDLE_CARD_3",
+            "timeout": 10,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "PADDLE_CARD_4",
+            "type": "temp",
+            "readPath": "/xyz/openbmc_project/sensors/temperature/PADDLE_CARD_4",
+            "timeout": 10,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "SYS_FAN_1_A",
+            "type": "fan",
+            "readPath": "/xyz/openbmc_project/sensors/fan_tach/SYS_FAN_1_A",
+            "writePath": "/sys/devices/platform/ahb/ahb:apb/1e610000.pwm-tacho-controller/hwmon/**/pwm1",
+            "min": 0,
+            "max": 255,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "SYS_FAN_2_A",
+            "type": "fan",
+            "readPath": "/xyz/openbmc_project/sensors/fan_tach/SYS_FAN_2_A",
+            "writePath": "/sys/devices/platform/ahb/ahb:apb/1e610000.pwm-tacho-controller/hwmon/**/pwm2",
+            "min": 0,
+            "max": 255,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "SYS_FAN_3_A",
+            "type": "fan",
+            "readPath": "/xyz/openbmc_project/sensors/fan_tach/SYS_FAN_3_A",
+            "writePath": "/sys/devices/platform/ahb/ahb:apb/1e610000.pwm-tacho-controller/hwmon/**/pwm3",
+            "min": 0,
+            "max": 255,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "SYS_FAN_4_A",
+            "type": "fan",
+            "readPath": "/xyz/openbmc_project/sensors/fan_tach/SYS_FAN_4_A",
+            "writePath": "/sys/devices/platform/ahb/ahb:apb/1e610000.pwm-tacho-controller/hwmon/**/pwm4",
+            "min": 0,
+            "max": 255,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "SYS_FAN_5_A",
+            "type": "fan",
+            "readPath": "/xyz/openbmc_project/sensors/fan_tach/SYS_FAN_5_A",
+            "writePath": "/sys/devices/platform/ahb/ahb:apb/1e610000.pwm-tacho-controller/hwmon/**/pwm5",
+            "min": 0,
+            "max": 255,
+            "ignoreDbusMinMax": true
+        },
+        {
+            "name": "SYS_FAN_6_A",
+            "type": "fan",
+            "readPath": "/xyz/openbmc_project/sensors/fan_tach/SYS_FAN_6_A",
+            "writePath": "/sys/devices/platform/ahb/ahb:apb/1e610000.pwm-tacho-controller/hwmon/**/pwm6",
+            "min": 0,
+            "max": 255,
+            "ignoreDbusMinMax": true
+        }
+
+    ]
+  }

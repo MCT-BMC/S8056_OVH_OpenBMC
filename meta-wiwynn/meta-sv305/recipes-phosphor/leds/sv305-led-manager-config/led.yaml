@@ -1,0 +1,14 @@
+enclosure_identify:
+    identify:
+        Action: 'On'
+        
+status_amber:
+    status_amber:
+        Action: 'Blink'
+        DutyOn: 50
+        Period: 1000
+
+status_green:
+    status_green:
+        Action: 'On'
+        

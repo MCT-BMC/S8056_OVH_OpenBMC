@@ -1,0 +1,33 @@
+From d0d4a8825065f06b893ed09ef4f175359818485f Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Wed, 12 Oct 2022 06:49:08 +0800
+Subject: [PATCH] Replace sbrmi read function v10 to v20
+
+Cause v10 function did not implement.
+---
+ drivers/hwmon/sbrmi-common.c | 9 ++-------
+ 1 file changed, 2 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/hwmon/sbrmi-common.c b/drivers/hwmon/sbrmi-common.c
+index 34fc96d679e7..fcf9e85b41aa 100644
+--- a/drivers/hwmon/sbrmi-common.c
++++ b/drivers/hwmon/sbrmi-common.c
+@@ -107,13 +107,8 @@ struct apml_spl_ops apml_ops;
+ void rmi_set_apml_ops(int rev)
+ {
+ 	/* default definitions for CPUID and MCA-MSR protocols */
+-	apml_ops.rmi_cpuid_read = rmi_cpuid_read_v10;
+-	apml_ops.rmi_mca_msr_read = rmi_mca_msr_read_v10;
+-
+-	if (rev == 0x20) {
+-		apml_ops.rmi_cpuid_read = rmi_cpuid_read_v20;
+-		apml_ops.rmi_mca_msr_read = rmi_mca_msr_read_v20;
+-	}
++	apml_ops.rmi_cpuid_read = rmi_cpuid_read_v20;
++	apml_ops.rmi_mca_msr_read = rmi_mca_msr_read_v20;
+ }
+ 
+ /*
+-- 
+2.25.1
+

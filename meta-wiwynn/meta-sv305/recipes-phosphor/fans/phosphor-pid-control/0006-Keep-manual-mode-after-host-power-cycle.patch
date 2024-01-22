@@ -1,0 +1,519 @@
+From 04cf2b81231595b74b7d66e2b27f406eb90be164 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Wed, 19 May 2021 14:34:34 +0800
+Subject: [PATCH 6/7] Keep manual mode after host power cycle
+
+---
+ conf.hpp               |   4 ++
+ dbus/dbuswrite.cpp     |   6 ++
+ interfaces.hpp         |  10 +++
+ pid/builder.cpp        |   5 +-
+ pid/buildjson.cpp      |   7 ++
+ pid/fancontroller.cpp  |   3 -
+ pid/pidloop.cpp        |   2 +-
+ pid/zone.cpp           | 144 ++++++++++++++++++++++++++++++++++++++++-
+ pid/zone.hpp           |  22 ++++++-
+ pid/zone_interface.hpp |   3 +
+ sensors/buildjson.cpp  |  11 ++++
+ sensors/pluggable.cpp  |   5 ++
+ sensors/pluggable.hpp  |   1 +
+ sensors/sensor.hpp     |   5 ++
+ sysfs/sysfswrite.cpp   |   6 ++
+ 15 files changed, 224 insertions(+), 10 deletions(-)
+
+diff --git a/conf.hpp b/conf.hpp
+index a593dad..3248806 100644
+--- a/conf.hpp
++++ b/conf.hpp
+@@ -22,6 +22,7 @@ struct SensorConfig
+     /* Can be a sensor path or a dbus path. */
+     std::string readPath;
+     std::string writePath;
++    int64_t pwmNumber;
+     /* min/max values for writing a percentage or error checking. */
+     int64_t min;
+     int64_t max;
+@@ -92,6 +93,9 @@ struct ZoneConfig
+ 
+     /* Customize time settings for every cycle */
+     CycleTime cycleTime;
++
++    // Whether keeping manual mode after BMC reset.
++    bool keepManualAfterReset = false;
+ };
+ 
+ using PIDConf = std::map<std::string, ControllerInfo>;
+diff --git a/dbus/dbuswrite.cpp b/dbus/dbuswrite.cpp
+index fce95ae..4524a32 100644
+--- a/dbus/dbuswrite.cpp
++++ b/dbus/dbuswrite.cpp
+@@ -100,6 +100,9 @@ void DbusWritePercent::write(double value, bool force, int64_t* written)
+     {
+         *written = oldValue;
+     }
++
++    setWriteValue(value);
++
+     return;
+ }
+ 
+@@ -163,6 +166,9 @@ void DbusWrite::write(double value, bool force, int64_t* written)
+     {
+         *written = oldValue;
+     }
++
++    setWriteValue(value);
++
+     return;
+ }
+ 
+diff --git a/interfaces.hpp b/interfaces.hpp
+index dcd8590..8689e75 100644
+--- a/interfaces.hpp
++++ b/interfaces.hpp
+@@ -1,6 +1,7 @@
+ #pragma once
+ 
+ #include <chrono>
++#include <optional>
+ 
+ namespace pid_control
+ {
+@@ -86,10 +87,19 @@ class WriteInterface
+     {
+         return _max;
+     }
++    void setWriteValue(double value)
++    {
++        writeValue = value;
++    }
++    std::optional<double> getWriteValue(void)
++    {
++        return writeValue;
++    }
+ 
+   private:
+     int64_t _min;
+     int64_t _max;
++    std::optional<double> writeValue = std::nullopt;
+ };
+ 
+ } // namespace pid_control
+diff --git a/pid/builder.cpp b/pid/builder.cpp
+index 72d70a0..f57483c 100644
+--- a/pid/builder.cpp
++++ b/pid/builder.cpp
+@@ -69,8 +69,9 @@ std::unordered_map<int64_t, std::shared_ptr<ZoneInterface>>
+ 
+         auto zone = std::make_shared<DbusPidZone>(
+             zoneId, zoneConf->second.minThermalOutput,
+-            zoneConf->second.failsafeSettings, zoneConf->second.cycleTime, mgr,
+-            modeControlBus, getControlPath(zoneId).c_str(), deferSignals);
++            zoneConf->second.failsafeSettings, zoneConf->second.cycleTime,
++            zoneConf->second.keepManualAfterReset, mgr, modeControlBus,
++            getControlPath(zoneId).c_str(), deferSignals);
+ 
+         std::cerr << "Zone Id: " << zone->getZoneID() << "\n";
+ 
+diff --git a/pid/buildjson.cpp b/pid/buildjson.cpp
+index 2132ffc..3509504 100644
+--- a/pid/buildjson.cpp
++++ b/pid/buildjson.cpp
+@@ -281,6 +281,13 @@ std::pair<std::map<int64_t, conf::PIDConf>, std::map<int64_t, conf::ZoneConfig>>
+             std::ceil(thisZoneConfig.cycleTime.updateThermalsTime /
+                       thisZoneConfig.cycleTime.cycleTimeBase);
+ 
++        auto findKeepManualAfterReset = zone.find("keepManualAfterReset");
++        if (findKeepManualAfterReset != zone.end())
++        {
++            findKeepManualAfterReset->get_to(
++                thisZoneConfig.keepManualAfterReset);
++        }
++
+         auto pids = zone["pids"];
+         for (const auto& pid : pids)
+         {
+diff --git a/pid/fancontroller.cpp b/pid/fancontroller.cpp
+index db98c5a..036a0c1 100644
+--- a/pid/fancontroller.cpp
++++ b/pid/fancontroller.cpp
+@@ -170,9 +170,6 @@ void FanController::outputProc(double value)
+         lastRealOutput = percent;
+     }
+ 
+-    // value and kFanFailSafeDutyCycle are 10 for 10% so let's fix that.
+-    percent /= 100;
+-
+     // PidSensorMap for writing.
+     for (const auto& it : _inputs)
+     {
+diff --git a/pid/pidloop.cpp b/pid/pidloop.cpp
+index 376bf92..fdfb67f 100644
+--- a/pid/pidloop.cpp
++++ b/pid/pidloop.cpp
+@@ -102,7 +102,7 @@ void pidControlLoop(std::shared_ptr<ZoneInterface> zone,
+              */
+ 
+             // Check if we should just go back to sleep.
+-            if (zone->getManualMode())
++            if (zone->getManualMode() || zone->restoreManualPwm())
+             {
+                 pidControlLoop(zone, timer, isCanceling, false, ms100cnt);
+                 return;
+diff --git a/pid/zone.cpp b/pid/zone.cpp
+index a566972..fe91026 100644
+--- a/pid/zone.cpp
++++ b/pid/zone.cpp
+@@ -28,6 +28,8 @@
+ #include "pid/tuning.hpp"
+ #include "sensors/pluggable.hpp"
+ 
++#include <boost/algorithm/string.hpp>
++
+ #include <algorithm>
+ #include <chrono>
+ #include <cstring>
+@@ -87,6 +89,57 @@ void DbusPidZone::setManualMode(bool mode)
+     _manualMode = mode;
+ }
+ 
++bool DbusPidZone::restoreManualPwm(void)
++{
++    if (std::filesystem::exists(_manualFilePath))
++    {
++        std::ifstream fManual(_manualFilePath);
++        if (fManual.is_open())
++        {
++            std::string line;
++            while (std::getline(fManual, line))
++            {
++                std::vector<std::string> data;
++                boost::split(data, line, boost::is_any_of(" "));
++                if (data.size() != 3)
++                {
++                    std::cerr << "Invalid format in " << _manualFilePath
++                              << "\n";
++                    continue;
++                }
++
++                std::string sensorName = data[1];
++                double pwmValue = std::stod(data[2]);
++                if (std::find(_fanInputs.begin(), _fanInputs.end(),
++                              sensorName) == _fanInputs.end())
++                {
++                    std::cerr << "Can't find sensor " << sensorName
++                              << " while restoring manual pwm\n";
++                    continue;
++                }
++
++                auto sensor = _mgr.getSensor(sensorName);
++                sensor->write(pwmValue);
++            }
++            fManual.close();
++        }
++        else
++        {
++            std::cerr << "Failed to open " << _manualFilePath << "\n";
++        }
++
++        // Set to manual mode.
++        setManualMode(true);
++        ModeObject::manual(true);
++
++        return true;
++    }
++    else
++    {
++        return false;
++    }
++}
++
+ bool DbusPidZone::getFailSafe(double& failsafePercent, bool needPrint) const
+ {
+     double fanFailsafePercent = 0;
+@@ -816,7 +869,61 @@ Sensor* DbusPidZone::getSensor(const std::string& name)
+ 
+ bool DbusPidZone::manual(bool value)
+ {
+-    std::cerr << "manual: " << value << std::endl;
++    std::cerr << "zone " << getZoneID() << " manual: " << value << std::endl;
++    if (value)
++    {
++        // Prepare fan write path and pwm value string
++        std::stringstream ss;
++        for (const auto& f : _fanInputs)
++        {
++            auto sensor = _mgr.getSensor(f);
++            std::optional<int64_t> writeValue = sensor->getWriteValue();
++            if (writeValue.has_value())
++            {
++                // PwmNumber SensorName PwmValue
++                ss << sensor->getInfo()->pwmNumber << " " << f << " "
++                   << writeValue.value() << "\n";
++            }
++        }
++        if (ss.str().empty())
++        {
++            std::cerr << "Failed to get last fan output pwm.\n";
++            throw sdbusplus::exception::SdBusError(-ENXIO, "Internal error");
++        }
++
++        if (!std::filesystem::exists(ManualFileDir) &&
++            !std::filesystem::create_directory(ManualFileDir))
++        {
++            std::cerr << "Failed to create manual directory\n";
++            throw sdbusplus::exception::SdBusError(
++                -EIO, "Failed to create directory");
++        }
++        std::ofstream fManual(_manualFilePath);
++        if (!fManual.is_open())
++        {
++            std::cerr << "Failed to create manual mode file for zone "
++                      << getZoneID() << "\n";
++            throw sdbusplus::exception::SdBusError(-EIO,
++                                                   "Failed to create file");
++        }
++
++        fManual << ss.str();
++        if (fManual.fail())
++        {
++            fManual.close();
++            std::filesystem::remove(_manualFilePath);
++            std::cerr << "Failed to write manual mode file for zone "
++                      << getZoneID() << "\n";
++            throw sdbusplus::exception::SdBusError(-EIO,
++                                                   "Failed to write file");
++        }
++        fManual.close();
++    }
++    else
++    {
++        std::filesystem::remove(_manualFilePath);
++    }
++
+     setManualMode(value);
+     return ModeObject::manual(value);
+ }
+@@ -833,4 +940,39 @@ bool DbusPidZone::debug(bool value)
+     return ModeObject::debug(value);
+ }
+ 
++std::tuple<std::string, double>
++    DbusPidZone::setPwm(std::tuple<std::string, double> value)
++{
++    auto& [sensorName, pwmValue] = value;
++    std::cerr << "zone " << getZoneID() << " " << sensorName
++              << " set pwm: " << pwmValue << "\n";
++
++    // Set to manual mode.
++    setManualMode(true);
++
++    if (sensorName == "All")
++    {
++        for (const auto& f : _fanInputs)
++        {
++            auto sensor = _mgr.getSensor(f);
++            sensor->write(pwmValue);
++        }
++    }
++    else
++    {
++        if (std::find(_fanInputs.begin(), _fanInputs.end(), sensorName) ==
++            _fanInputs.end())
++        {
++            std::cerr << "Can't find sensor " << sensorName
++                      << " while setting pwm\n";
++            throw sdbusplus::exception::SdBusError(-EINVAL, "Invalid sensor");
++        }
++
++        auto sensor = _mgr.getSensor(sensorName);
++        sensor->write(pwmValue);
++    }
++
++    return ModeObject::setPwm(value);
++}
++
+ } // namespace pid_control
+diff --git a/pid/zone.hpp b/pid/zone.hpp
+index 76797a2..1f3e026 100644
+--- a/pid/zone.hpp
++++ b/pid/zone.hpp
+@@ -12,6 +12,7 @@
+ #include <sdbusplus/server.hpp>
+ #include <xyz/openbmc_project/Control/Mode/server.hpp>
+ 
++#include <filesystem>
+ #include <fstream>
+ #include <map>
+ #include <memory>
+@@ -27,6 +28,8 @@ using ModeObject = ServerObject<ModeInterface>;
+ namespace pid_control
+ {
+ 
++static constexpr auto ManualFileDir = "/var/fanManual/";
++
+ /*
+  * The DbusPidZone inherits from the Mode object so that it can listen for
+  * control mode changes.  It primarily holds all PID loops and holds the sensor
+@@ -37,17 +40,25 @@ class DbusPidZone : public ZoneInterface, public ModeObject
+   public:
+     DbusPidZone(int64_t zone, double minThermalOutput,
+                 conf::FailsafeSetting& failsafeSettings,
+-                conf::CycleTime cycleTime, SensorManager& mgr,
+-                sdbusplus::bus::bus& bus, const char* objPath, bool defer) :
++                conf::CycleTime cycleTime, bool keepManualModeAfterReset,
++                SensorManager& mgr, sdbusplus::bus::bus& bus,
++                const char* objPath, bool defer) :
+         ModeObject(bus, objPath, defer),
+         _zoneId(zone), _maximumSetPoint(),
+         _minThermalOutputSetPt(minThermalOutput),
+-        _failsafeSettings(failsafeSettings), _cycleTime(cycleTime), _mgr(mgr)
++        _failsafeSettings(failsafeSettings), _cycleTime(cycleTime),
++        _manualFilePath(ManualFileDir + ("zone" + std::to_string(zone))),
++        _mgr(mgr)
+     {
+         if (loggingEnabled)
+         {
+             _log.open(loggingPath + "/zone_" + std::to_string(zone) + ".log");
+         }
++
++        if (!keepManualModeAfterReset)
++        {
++            std::filesystem::remove(_manualFilePath);
++        }
+     }
+ 
+     bool getManualMode(void) const override;
+@@ -55,6 +66,7 @@ class DbusPidZone : public ZoneInterface, public ModeObject
+      * only one reader/one writer.
+      */
+     void setManualMode(bool mode);
++    bool restoreManualPwm(void) override;
+     bool getFailSafe(double& failsafePercent,
+                      bool needPrint = false) const override;
+     bool getDebugMode(void) const override;
+@@ -98,6 +110,9 @@ class DbusPidZone : public ZoneInterface, public ModeObject
+     bool failSafe() const override;
+     /* Method for setting the debug mode over dbus */
+     bool debug(bool value) override;
++    /* Method for setting the pwm value over dbus */
++    std::tuple<std::string, double>
++        setPwm(std::tuple<std::string, double> value) override;
+ 
+     /* Method for checking whether sensor is readable. If not try to
+      * re-initialize sensor
+@@ -115,6 +130,7 @@ class DbusPidZone : public ZoneInterface, public ModeObject
+     const double _minThermalOutputSetPt;
+     const conf::FailsafeSetting _failsafeSettings;
+     const conf::CycleTime _cycleTime;
++    const std::string _manualFilePath;
+     bool _checkFanFailuresFlag = false;
+ 
+     std::set<std::string> _failSafeFans;
+diff --git a/pid/zone_interface.hpp b/pid/zone_interface.hpp
+index 92e1b83..928aa65 100644
+--- a/pid/zone_interface.hpp
++++ b/pid/zone_interface.hpp
+@@ -90,6 +90,9 @@ class ZoneInterface
+      */
+     virtual bool getManualMode(void) const = 0;
+ 
++    /** Method for setting pwm according to manual file setting */
++    virtual bool restoreManualPwm(void) = 0;
++
+     /** Return if the zone is set to debug mode. */
+     virtual bool getDebugMode(void) const = 0;
+ 
+diff --git a/sensors/buildjson.cpp b/sensors/buildjson.cpp
+index eebb8f9..bde00a9 100644
+--- a/sensors/buildjson.cpp
++++ b/sensors/buildjson.cpp
+@@ -45,6 +45,17 @@ void from_json(const json& j, conf::SensorConfig& s)
+         j.at("writePath").get_to(s.writePath);
+     }
+ 
++    s.pwmNumber = -1;
++    if (s.type == "fan")
++    {
++        s.pwmNumber = -1;
++        auto pwmNumber = j.find("pwmNumber");
++        if (pwmNumber != j.end())
++        {
++            j.at("pwmNumber").get_to(s.pwmNumber);
++        }
++    }
++
+     /* Default to not ignore dbus MinValue/MaxValue - only used by passive
+      * sensors.
+      */
+diff --git a/sensors/pluggable.cpp b/sensors/pluggable.cpp
+index 76591fb..fa86ad4 100644
+--- a/sensors/pluggable.cpp
++++ b/sensors/pluggable.cpp
+@@ -54,6 +54,11 @@ bool PluggableSensor::isReadable(void)
+     return (_reader.get() == nullptr) ? false : true;
+ }
+ 
++std::optional<int64_t> PluggableSensor::getWriteValue(void)
++{
++    return _writer->getWriteValue();
++}
++
+ void PluggableSensor::setReader(std::unique_ptr<ReadInterface> ri)
+ {
+     _reader = std::move(ri);
+diff --git a/sensors/pluggable.hpp b/sensors/pluggable.hpp
+index 5330a1f..fbf0831 100644
+--- a/sensors/pluggable.hpp
++++ b/sensors/pluggable.hpp
+@@ -29,6 +29,7 @@ class PluggableSensor : public Sensor
+     bool getFailed(void) override;
+     double getTjMax(void) override;
+     bool isReadable(void) override;
++    std::optional<int64_t> getWriteValue(void) override;
+ 
+     void setReader(std::unique_ptr<ReadInterface> ri);
+ 
+diff --git a/sensors/sensor.hpp b/sensors/sensor.hpp
+index 3d9356b..8fd149f 100644
+--- a/sensors/sensor.hpp
++++ b/sensors/sensor.hpp
+@@ -62,6 +62,11 @@ class Sensor
+         return false;
+     };
+ 
++    virtual std::optional<int64_t> getWriteValue(void)
++    {
++        return std::nullopt;
++    }
++
+     std::string getName(void) const
+     {
+         return _name;
+diff --git a/sysfs/sysfswrite.cpp b/sysfs/sysfswrite.cpp
+index db903cb..a01f79a 100644
+--- a/sysfs/sysfswrite.cpp
++++ b/sysfs/sysfswrite.cpp
+@@ -24,6 +24,10 @@ namespace pid_control
+ 
+ void SysFsWritePercent::write(double value)
+ {
++    setWriteValue(value);
++
++    value /= 100;
++
+     double minimum = getMin();
+     double maximum = getMax();
+ 
+@@ -41,6 +45,8 @@ void SysFsWritePercent::write(double value)
+ 
+ void SysFsWrite::write(double value)
+ {
++    setWriteValue(value);
++
+     std::ofstream ofs;
+     ofs.open(_writePath);
+     ofs << static_cast<int64_t>(value);
+-- 
+2.28.0
+

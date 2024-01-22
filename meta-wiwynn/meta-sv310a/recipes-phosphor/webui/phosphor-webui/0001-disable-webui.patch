@@ -1,0 +1,165 @@
+From 54473812c7c667e3855738b5881318981ec328c0 Mon Sep 17 00:00:00 2001
+From: Nik Johnson <nik@nikjohnson.net>
+Date: Mon, 23 Nov 2020 16:06:54 -0500
+Subject: [PATCH] disable-webui
+
+---
+ app/common/services/api-utils.js            | 10 +++++
+ app/index.js                                | 46 ++++++++++++++-------
+ app/login/controllers/login-controller.html |  3 ++
+ app/login/controllers/login-controller.js   | 21 +++++++++-
+ 4 files changed, 62 insertions(+), 18 deletions(-)
+
+diff --git a/app/common/services/api-utils.js b/app/common/services/api-utils.js
+index f10476d..3f679dd 100644
+--- a/app/common/services/api-utils.js
++++ b/app/common/services/api-utils.js
+@@ -1780,6 +1780,16 @@ window.angular && (function(angular) {
+                 return response.data;
+               });
+         },
++        getServiceStatus: function() {
++          return $http({
++                   method: 'GET',
++                   url: DataService.getHost() + '/xyz/openbmc_project/oem/ServiceStatus',
++                   withCredentials: true
++                 })
++              .then(function(response) {
++                return response.data;
++              });
++        }
+       };
+       return SERVICE;
+     }
+diff --git a/app/index.js b/app/index.js
+index 156fab6..cbceca8 100644
+--- a/app/index.js
++++ b/app/index.js
+@@ -187,29 +187,43 @@ window.angular && (function(angular) {
+         }
+       ])
+       .run([
+-        '$rootScope', '$location', 'dataService', 'userModel', '$cookies',
+-        function($rootScope, $location, dataService, userModel, $cookies) {
++        '$rootScope', '$location', 'dataService', 'userModel', '$cookies', 'APIUtils',
++        function($rootScope, $location, dataService, userModel, $cookies, APIUtils) {
+           $rootScope.dataService = dataService;
+           dataService.path = $location.path();
+-          $rootScope.$on('$routeChangeStart', function(event, next, current) {
+-            if (next.$$route == null || next.$$route == undefined) return;
+-            if (next.$$route.authenticated) {
+-              if (!userModel.isLoggedIn()) {
+-                $location.path('/login');
++          function routeChangeStart() {
++            $rootScope.$on('$routeChangeStart', function(event, next, current) {
++              if (next.$$route == null || next.$$route == undefined) return;
++              if (next.$$route.authenticated) {
++                if (!userModel.isLoggedIn()) {
++                  $location.path('/login');
++                }
+               }
+-            }
+ 
+-            if (next.$$route.originalPath == '/' ||
+-                next.$$route.originalPath == '/login') {
+-              if (userModel.isLoggedIn()) {
+-                if (current && current.$$route) {
+-                  $location.path(current.$$route.originalPath);
+-                } else {
+-                  $location.path('/overview/server');
++              if (next.$$route.originalPath == '/' ||
++                  next.$$route.originalPath == '/login') {
++                if (userModel.isLoggedIn()) {
++                  if (current && current.$$route) {
++                    $location.path(current.$$route.originalPath);
++                  } else {
++                    $location.path('/overview/server');
++                  }
+                 }
+               }
++            });
++          }
++
++          APIUtils.getServiceStatus().then(
++            function(data) {
++              $rootScope.isWebEnable = data.data.WebService
++              routeChangeStart();
++            },
++            function(error) {
++              console.log(JSON.stringify(error));
++              routeChangeStart();
+             }
+-          });
++          );
++
+           $rootScope.$on('$locationChangeSuccess', function(event) {
+             var path = $location.path();
+             dataService.path = path;
+diff --git a/app/login/controllers/login-controller.html b/app/login/controllers/login-controller.html
+index e162d8f..618d184 100644
+--- a/app/login/controllers/login-controller.html
++++ b/app/login/controllers/login-controller.html
+@@ -11,6 +11,9 @@
+             <b>Invalid username or password.</b>
+             <br>Please try again.
+           </div>
++          <div class="alert alert-danger" role="alert" ng-if="isDisable">
++            <b>Web service is disabled.</b>
++          </div>
+           <label for="host">BMC Host or BMC IP Address</label>
+           <input type="text" id="host" name="host" class="validate-input" ng-model="host" has-error="serverUnreachable && login__form.host.$pristine" required  autofocus ng-keydown="tryLogin(host, username, password, $event)">
+           <div ng-messages="login__form.host.$error" class="form-error" ng-class="{'visible' : login__form.host.$touched || submitted}">
+diff --git a/app/login/controllers/login-controller.js b/app/login/controllers/login-controller.js
+index cc0f0b3..ae2a67b 100644
+--- a/app/login/controllers/login-controller.js
++++ b/app/login/controllers/login-controller.js
+@@ -10,15 +10,18 @@ window.angular && (function(angular) {
+   'use strict';
+ 
+   angular.module('app.login').controller('LoginController', [
++    '$rootScope',
+     '$scope',
+     '$window',
+     'dataService',
+     'userModel',
+     '$location',
+-    function($scope, $window, dataService, userModel, $location) {
++    'APIUtils',
++    function($rootScope, $scope, $window, dataService, userModel, $location, APIUtils) {
+       $scope.dataService = dataService;
+       $scope.serverUnreachable = false;
+       $scope.invalidCredentials = false;
++      $scope.isDisable = false;
+       $scope.host = $scope.dataService.host.replace(/^https?\:\/\//ig, '');
+ 
+       $scope.tryLogin = function(host, username, password, event) {
+@@ -31,6 +34,7 @@ window.angular && (function(angular) {
+       $scope.login = function(host, username, password) {
+         $scope.serverUnreachable = false;
+         $scope.invalidCredentials = false;
++        $scope.isDisable = false;
+         if (!username || username == '' || !password || password == '' ||
+             !host || host == '') {
+           return false;
+@@ -43,7 +47,20 @@ window.angular && (function(angular) {
+               // don't allow forwarding to non-local urls
+               if (next === undefined || next == null ||
+                   next.indexOf(':') >= 0) {
+-                $window.location.hash = '#/overview/server';
++                    APIUtils.getServiceStatus().then(
++                  function(data) {
++                    $rootScope.isWebEnable = data.data.WebService
++                    if($rootScope.isWebEnable){
++                      $window.location.hash = '#/overview/server';
++                    }
++                    else{
++                      $scope.isDisable = true;
++                    }
++                  },
++                  function(error) {
++                    console.log(JSON.stringify(error));
++                  }
++                );
+               } else {
+                 $window.location.href = next;
+               }

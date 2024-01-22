@@ -1,0 +1,8 @@
+[Unit]
+Description=Flash BIOS image %I to Host
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+ExecStart=/usr/sbin/bios-updater %i
+StandardOutput=journal+console

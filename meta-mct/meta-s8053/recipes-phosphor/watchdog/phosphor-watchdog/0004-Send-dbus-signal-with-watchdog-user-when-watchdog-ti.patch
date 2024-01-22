@@ -1,0 +1,77 @@
+From 1568b4d425285e4c623e46959c3bdbbcf64f2e9c Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Fri, 11 Mar 2022 15:49:17 +0800
+Subject: [PATCH] Send dbus signal with watchdog user when watchdog timeout
+
+---
+ src/watchdog.cpp | 33 +++++++++++++++++++++++++++++++++
+ src/watchdog.hpp |  3 +++
+ 2 files changed, 36 insertions(+)
+
+diff --git a/src/watchdog.cpp b/src/watchdog.cpp
+index bc5ed33..fef88e3 100755
+--- a/src/watchdog.cpp
++++ b/src/watchdog.cpp
+@@ -369,6 +369,8 @@ void Watchdog::timeOutHandler()
+     }
+ 
+     tryFallbackOrDisable();
++
++    sendWatchdogSignal(timeUser);
+ }
+ 
+ void Watchdog::tryFallbackOrDisable()
+@@ -569,5 +571,36 @@ void Watchdog::addWatchdogSEL(Base::Watchdog::Action action,Base::Watchdog::Time
+     }
+ }
+ 
++void Watchdog::sendWatchdogSignal(TimerUse timeUser){
++    auto msg = bus.new_signal("/", "org.freedesktop.DBus", "IpmiWatchdogTimeout");
++    // uint32_t parameter = timeUser;
++    uint32_t parameter = 0x00;
++
++    switch (timeUser)
++    {
++        case Watchdog::TimerUse::BIOSFRB2:
++            parameter = 0x01;
++            break;
++        case Watchdog::TimerUse::BIOSPOST:
++            parameter = 0x02;
++            break;
++        case Watchdog::TimerUse::OSLoad:
++            parameter = 0x03;
++            break;
++        case Watchdog::TimerUse::SMSOS:
++            parameter = 0x04;
++            break;
++        case Watchdog::TimerUse::OEM:
++            parameter = 0x05;
++            break;
++        default:
++            parameter = 0x00;
++            break;
++    }
++
++    msg.append(parameter);
++    msg.signal_send();
++}
++
+ } // namespace watchdog
+ } // namespace phosphor
+diff --git a/src/watchdog.hpp b/src/watchdog.hpp
+index 2f30d0b..019087d 100755
+--- a/src/watchdog.hpp
++++ b/src/watchdog.hpp
+@@ -197,6 +197,9 @@ class Watchdog : public WatchdogInherits
+     /** @brief Add a watchdog SEL to SEL list  */
+     void addWatchdogSEL(Base::Watchdog::Action action,Base::Watchdog::TimerUse timeUse);
+ 
++    /** @brief Send watchdog timout signal to dbus */
++    void sendWatchdogSignal(TimerUse timeUser);
++
+     /** @brief Object path of the watchdog */
+     std::string_view objPath;
+ };
+-- 
+2.7.4
+

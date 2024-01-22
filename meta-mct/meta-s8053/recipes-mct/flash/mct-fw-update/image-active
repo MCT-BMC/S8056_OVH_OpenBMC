@@ -1,0 +1,29 @@
+#!/bin/sh
+
+set -e
+
+IMAGE_FILE=$1
+
+if [  -z "$IMAGE_FILE"  ]; then
+	echo "Please set your file name"
+	exit -1
+fi
+
+versionId=$(echo $IMAGE_FILE|cut -d'/' -f 4)
+
+if [  -z "$versionId"  ]; then
+	echo "Failed to get version ID"
+	exit -1
+fi
+
+echo $versionId
+
+
+SERVICE="xyz.openbmc_project.Software.BMC.Updater"
+OBJECT="/xyz/openbmc_project/software/$versionId"
+INTERFACE="xyz.openbmc_project.Software.Activation"
+Activation="xyz.openbmc_project.Software.Activation.Activations.Ready"
+RequestedActivation="xyz.openbmc_project.Software.Activation.RequestedActivations.None"
+
+busctl set-property $SERVICE $OBJECT $INTERFACE Activation s $Activation
+busctl set-property $SERVICE $OBJECT $INTERFACE RequestedActivation s $RequestedActivation

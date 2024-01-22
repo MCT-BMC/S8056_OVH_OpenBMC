@@ -1,0 +1,52 @@
+From 5022aa4be6f218c76e5c074db7ba478569dd5528 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Wed, 18 Mar 2020 22:46:56 +0800
+Subject: [PATCH] Set non-blocking sync read to PECI-type sensors
+
+---
+ src/CPUSensor.cpp | 18 ++++++++++++++----
+ 1 file changed, 14 insertions(+), 4 deletions(-)
+
+diff --git a/src/CPUSensor.cpp b/src/CPUSensor.cpp
+index 48c6f39..17f8423 100644
+--- a/src/CPUSensor.cpp
++++ b/src/CPUSensor.cpp
+@@ -95,10 +95,17 @@ CPUSensor::~CPUSensor()
+ 
+ void CPUSensor::setupRead(void)
+ {
++#if 0
+     boost::asio::async_read_until(
+         inputDev, readBuf, '\n',
+         [&](const boost::system::error_code& ec,
+             std::size_t /*bytes_transfered*/) { handleResponse(ec); });
++#endif
++     // Sync read with Non-blocking IO to PECI sensor
++    boost::system::error_code ec;
++    inputDev.non_blocking(true);
++    boost::asio::read_until(inputDev, readBuf, '\n', ec);
++    handleResponse(ec);
+ }
+ 
+ void CPUSensor::handleResponse(const boost::system::error_code& err)
+@@ -118,10 +125,13 @@ void CPUSensor::handleResponse(const boost::system::error_code& err)
+         errCount = 0;
+ 
+         // clear response buffer reading
+-        std::istream invalidResponseStream(&readBuf);
+-        std::string invalidResponse;
+-        std::getline(invalidResponseStream, invalidResponse);
+-        invalidResponseStream.clear();
++        if(err != boost::system::errc::resource_unavailable_try_again)
++        {
++            std::istream invalidResponseStream(&readBuf);
++            std::string invalidResponse;
++            std::getline(invalidResponseStream, invalidResponse);
++            invalidResponseStream.clear();
++        }
+ 
+         inputDev.close();
+         int fd = open(path.c_str(), O_RDONLY);
+-- 
+2.24.1
+

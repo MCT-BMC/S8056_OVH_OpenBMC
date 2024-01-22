@@ -1,0 +1,17 @@
+[Unit]
+Description=Phosphor-Pid-Control Margin-based Fan Control Daemon
+After=xyz.openbmc_project.EntityManager.service
+After=xyz.openbmc_project.ObjectMapper.service
+After=xyz.openbmc_project.Chassis.Control.Power@0.service
+After=mct-sku-manager.service
+
+[Service]
+Restart=always
+ExecStart={bindir}/phosphor-pid-control.sh
+RestartSec=5
+StartLimitInterval=0
+Type=simple
+SyslogIdentifier=phosphor-pid-control
+
+[Install]
+WantedBy=multi-user.target

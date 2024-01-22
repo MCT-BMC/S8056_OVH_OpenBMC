@@ -1,0 +1,6 @@
+---
+/xyz/openbmc_project/oem/BmcStatus:
+    - Interface: xyz.openbmc_project.OEM.BmcStatus
+      Properties:
+          bootSourceStatus:
+              Default: -1

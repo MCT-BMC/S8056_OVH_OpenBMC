@@ -1,0 +1,132 @@
+#! /bin/sh
+IMAGE_FILE=$1
+
+BUS_CMD="/usr/bin/env busctl"
+CPLD_UPDATER_CMD="/usr/bin/env jbi"
+CPLD_PROGRESS_CMD="/usr/bin/env flash-progress-update"
+GPIO_SET_CMD="/usr/bin/env gpioset"
+GPIO_FIND_CMD="/usr/bin/env gpiofind"
+SYSTEMCTL_CMD="/usr/bin/env systemctl"
+
+PROGREE_ENABLE=$2
+CPLD_VERSION_ID=$(echo $IMAGE_FILE |cut -d / -f 4)
+
+POWER_OBJ="xyz.openbmc_project.State.Host"
+POWER_PATH="/xyz/openbmc_project/state/host0"
+POWER_INTF="xyz.openbmc_project.State.Host"
+POWER_PROPERTY="RequestedHostTransition"
+POWER_OFF="xyz.openbmc_project.State.Host.Transition.Off"
+
+SEL_SERVICE="xyz.openbmc_project.Logging.IPMI"
+SEL_OBJECT="/xyz/openbmc_project/Logging/IPMI"
+SEL_INTERFACE="xyz.openbmc_project.Logging.IPMI"
+SEL_METHOD="IpmiSelAdd"
+
+DUAL_BIOS_SERVICE="mct-dual-bios-handler.service"
+
+set_gpio_value()
+{
+    $GPIO_SET_CMD `$GPIO_FIND_CMD $1`=$2
+}
+
+set_gpio_to_bmc()
+{
+    echo "Switch jtag GPIO to bmc"
+
+    set_gpio_value JTAG_MUX_S 1
+    set_gpio_value JTAG_MUX_OE 0
+    set_gpio_value HDT_SEL 1
+    set_gpio_value JTAG_OE_N 0
+    set_gpio_value JTAG_HDR_N_S 1
+
+    return 0
+}
+
+set_gpio_to_cpld()
+{
+    echo "Switch jtag GPIO to cpld"
+
+    set_gpio_value JTAG_MUX_S 0
+    set_gpio_value HDT_SEL 0
+    set_gpio_value JTAG_OE_N 1
+    set_gpio_value JTAG_HDR_N_S 0
+
+    return 0
+}
+
+set_update_progress()
+{
+    #Update progress with version ID
+    if [  -n "$PROGREE_ENABLE"  ]; then
+        $CPLD_PROGRESS_CMD $CPLD_VERSION_ID $1
+    fi
+}
+
+log_update_sel()
+{
+    busctl call $SEL_SERVICE $SEL_OBJECT $SEL_INTERFACE $SEL_METHOD ssaybq \
+    "CPLD FW Update SEL Entry" "/xyz/openbmc_project/sensors/versionchange/CPLD_FW_UPDATE" \
+    3 {0x07,0x00,0xFF} yes 0x20
+}
+
+echo "MCT CPLD update handler"
+
+#Power off host server.
+echo "Power off host server"
+$BUS_CMD set-property $POWER_OBJ $POWER_PATH $POWER_INTF $POWER_PROPERTY s $POWER_OFF
+
+set_update_progress 10
+
+sleep 15
+
+#Disable BMC internal service.
+echo "Disable BMC host related monitor service"
+$SYSTEMCTL_CMD stop $DUAL_BIOS_SERVICE
+
+set_update_progress 15
+
+sleep 3
+
+if [ $($BUS_CMD get-property $POWER_OBJ $POWER_PATH $POWER_INTF $POWER_PROPERTY|awk 'NR==1 {print $2}'|cut -d . -f 6|cut -d \" -f 0) != "Off" ];
+then
+    echo "Host server didn't power off"
+    echo "Cpld upgrade failed"
+    exit -1
+fi
+echo "Host server powered off"
+
+set_update_progress 20
+
+echo "Set GPIO to access jtag for BMC"
+set_gpio_to_bmc
+sleep 5
+
+set_update_progress 30
+
+echo "Flashing cpld image $IMAGE_FILE..."
+$CPLD_UPDATER_CMD -aPROGRAM -W $IMAGE_FILE
+
+set_update_progress 90
+
+echo "Set GPIO back for cpld to access jtag header"
+set_gpio_to_cpld
+sleep 5
+
+set_update_progress 95
+
+#Enable BMC internal service.
+echo "Enable BMC host related monitor service"
+$SYSTEMCTL_CMD restart $DUAL_BIOS_SERVICE
+
+set_update_progress 97
+
+sleep 3
+
+log_update_sel
+
+echo "cpld updated successfully..."
+echo "Please do the AC cycle for finishing cpld update"
+
+set_update_progress 100
+
+exit 0

@@ -1,0 +1,81 @@
+From 7deccbcab104fd818afe368275e8f36a5155b04a Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Sun, 15 Mar 2020 16:15:54 +0800
+Subject: [PATCH] Add Invalid Value dbus sensor property for power-on sensors
+
+---
+ include/sensor.hpp | 25 +++++++++++++++++++++++--
+ 1 file changed, 23 insertions(+), 2 deletions(-)
+
+diff --git a/include/sensor.hpp b/include/sensor.hpp
+index e298677..2169c2e 100644
+--- a/include/sensor.hpp
++++ b/include/sensor.hpp
+@@ -37,6 +37,7 @@ struct Sensor
+     std::shared_ptr<sdbusplus::asio::dbus_interface> thresholdInterfaceCritical;
+     std::shared_ptr<sdbusplus::asio::dbus_interface> association;
+     double value = std::numeric_limits<double>::quiet_NaN();
++    bool invalidValue = false;
+     bool overriddenState = false;
+     bool internalSet = false;
+     double hysteresisTrigger;
+@@ -59,6 +60,14 @@ struct Sensor
+         return 1;
+     }
+ 
++    int setSensorValueInvalid(const bool& newState, bool& oldState)
++    {
++        oldState = newState;
++        invalidValue = newState;
++
++        return 1;
++    }
++
+     void
+         setInitialProperties(std::shared_ptr<sdbusplus::asio::connection>& conn)
+     {
+@@ -70,6 +79,10 @@ struct Sensor
+             "Value", value, [&](const double& newValue, double& oldValue) {
+                 return setSensorValue(newValue, oldValue);
+             });
++        sensorInterface->register_property(
++            "InvalidValue", invalidValue, [&](const bool& newState, bool& oldState) {
++                return setSensorValueInvalid(newState, oldState);
++            });
+         for (auto& threshold : thresholds)
+         {
+             std::shared_ptr<sdbusplus::asio::dbus_interface> iface;
+@@ -159,7 +172,7 @@ struct Sensor
+         {
+             return;
+         }
+-
++#if 1
+         bool isChanged = false;
+ 
+         // Avoid floating-point equality comparison,
+@@ -188,7 +201,7 @@ struct Sensor
+         {
+             return;
+         }
+-
++#endif
+         // The value will be changed, keep track of it for next time
+         value = newValue;
+ 
+@@ -207,4 +220,12 @@ struct Sensor
+         // in all current implementations of sensors that have thresholds.
+         checkThresholds();
+     }
++
++    void updateValueInvalid(const bool& newState)
++    {
++        if(newState != invalidValue)
++        {
++            sensorInterface->set_property("InvalidValue", newState);
++        }
++    }
+ };
+-- 
+2.24.1
+

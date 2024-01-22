@@ -1,0 +1,313 @@
+From e353c6d88ca120f59e85bb14ed155aa058754a70 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Thu, 17 Mar 2022 10:47:14 +0800
+Subject: [PATCH 1/2] Support Fru-related feature
+
+Support baseboard fru reading
+Add FRU device read only property
+Bypass FRU checking when writing FRU with invailed or null
+Add PDB FRU device supportrd
+---
+ src/FruDevice.cpp | 165 +++++++++++++++++++++++++++++++++++++++++++++++++++---
+ src/FruUtils.cpp  |   4 ++
+ 2 files changed, 162 insertions(+), 7 deletions(-)
+ mode change 100644 => 100755 src/FruDevice.cpp
+ mode change 100644 => 100755 src/FruUtils.cpp
+
+diff --git a/src/FruDevice.cpp b/src/FruDevice.cpp
+old mode 100644
+new mode 100755
+index dc7b77f..4529df8
+--- a/src/FruDevice.cpp
++++ b/src/FruDevice.cpp
+@@ -62,21 +62,39 @@ static constexpr bool debug = false;
+ constexpr size_t maxFruSize = 512;
+ constexpr size_t maxEepromPageIndex = 255;
+ constexpr size_t busTimeoutSeconds = 5;
++static uint32_t FRU_OFFSET = 0x6000;
++#define MB_FRU_BUS  0x02
++#define MB_FRU_ADDRESS  0x50
++#define PDB_FRU_BUS  0x03
++#define PDB_FRU_ADDRESS  0x57
+ 
+ constexpr const char* blacklistPath = PACKAGE_DIR "blacklist.json";
+ 
++// FRU configuration JSON
++constexpr const char* fruConfig =
++    "/usr/share/entity-manager/configurations/fru.json";
++
+ const static constexpr char* baseboardFruLocation =
+     "/etc/fru/baseboard.fru.bin";
+ 
+ const static constexpr char* i2CDevLocation = "/dev";
+ 
++struct DeviceInfo
++{
++    uint32_t deviceID;
++    size_t size;
++    bool readOnly;
++};
++
+ using DeviceMap = boost::container::flat_map<int, std::vector<uint8_t>>;
++using DeviceInfoMap = std::unordered_map<std::string, struct DeviceInfo>;
+ using BusMap = boost::container::flat_map<int, std::shared_ptr<DeviceMap>>;
+ 
+ static std::set<size_t> busBlacklist;
+ struct FindDevicesWithCallback;
+ 
+ static BusMap busMap;
++static DeviceInfoMap deviceInfoMap;
+ 
+ static boost::container::flat_map<
+     std::pair<size_t, size_t>, std::shared_ptr<sdbusplus::asio::dbus_interface>>
+@@ -125,7 +143,7 @@ static int64_t readFromEeprom(int flag __attribute__((unused)), int fd,
+                               uint16_t address __attribute__((unused)),
+                               uint16_t offset, uint8_t len, uint8_t* buf)
+ {
+-    auto result = lseek(fd, offset, SEEK_SET);
++    auto result = lseek(fd, offset + FRU_OFFSET, SEEK_SET);
+     if (result < 0)
+     {
+         std::cerr << "failed to seek\n";
+@@ -282,6 +300,16 @@ static std::vector<uint8_t> processEeprom(int bus, int address)
+ 
+     std::string errorMessage = "eeprom at " + std::to_string(bus) +
+                                " address " + std::to_string(address);
++
++    if(bus == MB_FRU_BUS && address == MB_FRU_ADDRESS)
++    {
++        FRU_OFFSET=0x6000;
++    }
++    else
++    {
++        FRU_OFFSET=0x0000;
++    }
++
+     std::vector<uint8_t> device = readFRUContents(
+         0, file, static_cast<uint16_t>(address), readFromEeprom, errorMessage);
+ 
+@@ -342,7 +370,7 @@ std::set<int> findI2CEeproms(int i2cBus,
+         foundList.insert(address);
+ 
+         std::vector<uint8_t> device = processEeprom(i2cBus, address);
+-        if (!device.empty())
++        if (!device.empty() || (i2cBus ==MB_FRU_BUS && address==MB_FRU_ADDRESS) || (i2cBus ==PDB_FRU_BUS && address==PDB_FRU_ADDRESS))
+         {
+             devices->emplace(address, device);
+         }
+@@ -530,6 +558,96 @@ void loadBlacklist(const char* path)
+     return;
+ }
+ 
++static void getFruDevices(void)
++{
++    // Find fru device from motherboard config json.
++    std::ifstream motherboardConf(fruConfig);
++    if (motherboardConf.is_open() == false)
++    {
++        std::cerr << "Failed to open file: " << fruConfig << "\n";
++        return;
++    }
++    auto data = nlohmann::json::parse(motherboardConf, nullptr, false);
++    if (data.is_discarded())
++    {
++        std::cerr << "Invalid json format: " << fruConfig << "\n";
++        return;
++    }
++
++    auto fruFind = data.find("Fru");
++    if (fruFind != data.end())
++    {
++        for (auto& fru : *fruFind)
++        {
++            uint32_t index;
++            size_t size;
++            bool readOnly = false;
++            int bus;
++            std::string address;
++
++            auto indexFind = fru.find("Index");
++            if (indexFind != fru.end())
++            {
++                indexFind->get_to(index);
++            }
++            else
++            {
++                std::cerr << "Can't find Index in fru json\n";
++                continue;
++            }
++
++            auto sizeFind = fru.find("Size");
++            if (sizeFind != fru.end())
++            {
++                sizeFind->get_to(size);
++            }
++            else
++            {
++                std::cerr << "Can't find Size in fru json\n";
++                continue;
++            }
++
++            auto busFind = fru.find("Bus");
++            if (busFind != fru.end())
++            {
++                busFind->get_to(bus);
++            }
++            else
++            {
++                std::cerr << "Can't find Bus in fru json\n";
++                continue;
++            }
++
++            auto addressFind = fru.find("Address");
++            if (addressFind != fru.end())
++            {
++                addressFind->get_to(address);
++            }
++            else
++            {
++                std::cerr << "Can't find Address in fru json\n";
++                continue;
++            }
++
++            auto readOnlyFind = fru.find("ReadOnly");
++            if (readOnlyFind != fru.end())
++            {
++                readOnlyFind->get_to(readOnly);
++            }
++
++            const int hexBase = 16;
++            int addressInt = std::stoi(address, nullptr, hexBase);
++
++            struct DeviceInfo deviceInfo = {index, size, readOnly};
++
++            std::stringstream deviceBusAddr;
++            deviceBusAddr << bus << "-" << std::right << std::setfill('0')
++                          << std::setw(4) << std::hex << addressInt;
++            deviceInfoMap.emplace(deviceBusAddr.str(), deviceInfo);
++        }
++    }
++}
++
+ static void findI2CDevices(const std::vector<fs::path>& i2cBuses,
+                            BusMap& busmap, bool powerIsOn,
+                            sdbusplus::asio::object_server& objServer)
+@@ -618,6 +736,7 @@ struct FindDevicesWithCallback :
+     void run()
+     {
+         findI2CDevices(_i2cBuses, _busMap, _powerIsOn, _objServer);
++        getFruDevices();
+     }
+ 
+     const std::vector<fs::path>& _i2cBuses;
+@@ -657,9 +776,12 @@ void addFruObjectToDbus(
+     resCodes res = formatIPMIFRU(device, formattedFRU);
+     if (res == resCodes::resErr)
+     {
+-        std::cerr << "failed to parse FRU for device at bus " << bus
+-                  << " address " << address << "\n";
+-        return;
++        if((bus != MB_FRU_BUS || address != MB_FRU_ADDRESS) && (bus != PDB_FRU_BUS || address != PDB_FRU_ADDRESS))
++        {
++            std::cerr << "failed to parse FRU for device at bus " << bus
++                    << " address " << address << "\n";
++            return;
++        }
+     }
+     if (res == resCodes::resWarn)
+     {
+@@ -798,6 +920,14 @@ void addFruObjectToDbus(
+     iface->register_property("BUS", bus);
+     iface->register_property("ADDRESS", address);
+ 
++    std::stringstream deviceBusAddr;
++    deviceBusAddr << bus << "-" << std::right << std::setfill('0')
++                  << std::setw(4) << std::hex << address;
++    auto deviceInfo = deviceInfoMap[deviceBusAddr.str()];
++    iface->register_property("INDEX", deviceInfo.deviceID);
++    iface->register_property("SIZE", deviceInfo.size);
++    iface->register_property("READONLY", deviceInfo.readOnly);
++
+     iface->initialize();
+ }
+ 
+@@ -832,8 +962,11 @@ bool writeFRU(uint8_t bus, uint8_t address, const std::vector<uint8_t>& fru)
+     // verify legal fru by running it through fru parsing logic
+     if (formatIPMIFRU(fru, tmp) != resCodes::resOK)
+     {
+-        std::cerr << "Invalid fru format during writeFRU\n";
+-        return false;
++        if((bus != MB_FRU_BUS || address != MB_FRU_ADDRESS) && (bus != PDB_FRU_BUS || address != PDB_FRU_ADDRESS))
++        {
++            std::cerr << "Invalid fru format during writeFRU\n";
++            return false;
++        }
+     }
+     // baseboard fru
+     if (bus == 0 && address == 0)
+@@ -860,6 +993,24 @@ bool writeFRU(uint8_t bus, uint8_t address, const std::vector<uint8_t>& fru)
+             return false;
+         }
+ 
++        if(bus==MB_FRU_BUS && address==MB_FRU_ADDRESS)
++        {
++            FRU_OFFSET=0x6000;
++        }
++        else
++        {
++            FRU_OFFSET=0x0000;
++        }
++
++        //mitac support fru offset for write operation
++        auto result = lseek(eeprom, FRU_OFFSET, SEEK_SET);
++        if (result < 0)
++        {
++            std::cerr << "failed to seek\n";
++            return false;
++        }
++        //mitac end
++
+         ssize_t writtenBytes = write(eeprom, fru.data(), fru.size());
+         if (writtenBytes < 0)
+         {
+diff --git a/src/FruUtils.cpp b/src/FruUtils.cpp
+old mode 100644
+new mode 100755
+index 1152f87..767190c
+--- a/src/FruUtils.cpp
++++ b/src/FruUtils.cpp
+@@ -444,6 +444,7 @@ resCodes
+                 }
+             }
+         } while (state == DecodeState::ok);
++#if 0
+         for (; fruBytesIter < fruBytesIterEndArea; fruBytesIter++)
+         {
+             uint8_t c = *fruBytesIter;
+@@ -455,6 +456,7 @@ resCodes
+                 break;
+             }
+         }
++#endif
+     }
+ 
+     return ret;
+@@ -551,6 +553,7 @@ bool validateHeader(const std::array<uint8_t, I2C_SMBUS_BLOCK_MAX>& blockData)
+         return false;
+     }
+ 
++#if 0 //MiTAC : ipmitool issue: fru edit don't check the non-existing area and fill incorrect area offset.
+     // verify offsets are 0, or don't point to another offset
+     std::set<uint8_t> foundOffsets;
+     for (int ii = 1; ii < 6; ii++)
+@@ -565,6 +568,7 @@ bool validateHeader(const std::array<uint8_t, I2C_SMBUS_BLOCK_MAX>& blockData)
+             return false;
+         }
+     }
++#endif
+ 
+     // validate checksum
+     size_t sum = 0;
+-- 
+2.7.4
+

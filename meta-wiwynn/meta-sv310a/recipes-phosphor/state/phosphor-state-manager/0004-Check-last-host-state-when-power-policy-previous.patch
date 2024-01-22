@@ -1,0 +1,157 @@
+From cb9ade067d35629940ba8882bd20cd594a670f9c Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Thu, 12 Aug 2021 11:19:04 +0800
+Subject: [PATCH] Check last host state when power policy previous
+
+---
+ discover_system_state.cpp | 20 +++++++++++++-------
+ host_state_manager.cpp    | 12 ++++++++++++
+ host_state_manager.hpp    | 12 ++++++++++--
+ 3 files changed, 35 insertions(+), 9 deletions(-)
+
+diff --git a/discover_system_state.cpp b/discover_system_state.cpp
+index 9ad6a16..adfdcac 100644
+--- a/discover_system_state.cpp
++++ b/discover_system_state.cpp
+@@ -271,12 +271,13 @@ int main(int argc, char** argv)
+             log<level::INFO>("power_policy=RESTORE, restoring last state");
+ 
+             // Read last requested state and re-request it to execute it
+-            auto hostReqState = getProperty(bus, hostPath, HOST_BUSNAME,
+-                                            "RequestedHostTransition");
++            auto lastHostState =
++                getProperty(bus, hostPath, HOST_BUSNAME, "LastHostState");
+ 
+-            if (hostReqState !=
+-                convertForMessage(server::Host::Transition::Off))
++            if (lastHostState ==
++                convertForMessage(server::Host::HostState::Running))
+             {
++                log<level::INFO>("Last state is on, powering host on");
+                 uint32_t delayTime = getRandomDelayTime(bus, settings);
+                 std::this_thread::sleep_for(std::chrono::seconds(delayTime));
+ 
+@@ -286,10 +287,15 @@ int main(int argc, char** argv)
+                 setProperty(bus, RESTART_CAUSE_OBJ_PATH,
+                             RESTART_CAUSE_INTERFACE, RESTART_CAUSE_PROPERTY,
+                             restartCauseStr);
+-            }
+ 
+-            setProperty(bus, hostPath, HOST_BUSNAME, "RequestedHostTransition",
+-                        hostReqState);
++                setProperty(bus, hostPath, HOST_BUSNAME,
++                            "RequestedHostTransition",
++                            convertForMessage(server::Host::Transition::On));
++            }
++            else
++            {
++                log<level::INFO>("Last state is off, keeping host off");
++            }
+         }
+     }
+     catch (const SdBusError& e)
+diff --git a/host_state_manager.cpp b/host_state_manager.cpp
+index 6fe2617..5186eff 100644
+--- a/host_state_manager.cpp
++++ b/host_state_manager.cpp
+@@ -128,6 +128,7 @@ void Host::determineInitialState()
+     {
+         // set to default value.
+         server::Host::requestedHostTransition(Transition::Off);
++        server::Host::lastHostState(HostState::Running);
+     }
+ 
+     return;
+@@ -292,6 +293,7 @@ void Host::sysStateChangeJobRemoved(sdbusplus::message::message& msg)
+     {
+         log<level::INFO>("Received signal that host is off");
+         this->currentHostState(server::Host::HostState::Off);
++        this->lastHostState(server::Host::HostState::Off);
+         this->bootProgress(bootprogress::Progress::ProgressStages::Unspecified);
+         this->operatingSystemState(osstatus::Status::OSStatus::Inactive);
+     }
+@@ -301,6 +303,7 @@ void Host::sysStateChangeJobRemoved(sdbusplus::message::message& msg)
+     {
+         log<level::INFO>("Received signal that host is running");
+         this->currentHostState(server::Host::HostState::Running);
++        this->lastHostState(server::Host::HostState::Running);
+ 
+         // Remove temporary file which is utilized for scenarios where the
+         // BMC is rebooted while the host is still up.
+@@ -329,6 +332,7 @@ void Host::sysStateChangeJobRemoved(sdbusplus::message::message& msg)
+         {
+             log<level::INFO>("Maintaining quiesce");
+             this->currentHostState(server::Host::HostState::Quiesced);
++            this->lastHostState(server::Host::HostState::Quiesced);
+         }
+     }
+ }
+@@ -346,6 +350,7 @@ void Host::sysStateChangeJobNew(sdbusplus::message::message& msg)
+     {
+         log<level::INFO>("Received signal that host is in diagnostice mode");
+         this->currentHostState(server::Host::HostState::DiagnosticMode);
++        this->lastHostState(server::Host::HostState::DiagnosticMode);
+     }
+ }
+ 
+@@ -433,6 +438,13 @@ Host::HostState Host::currentHostState(HostState value)
+     return server::Host::currentHostState(value);
+ }
+ 
++Host::HostState Host::lastHostState(HostState value)
++{
++    auto retVal = server::Host::lastHostState(value);
++    serialize();
++    return retVal;
++}
++
+ } // namespace manager
+ } // namespace state
+ } // namespace phosphor
+diff --git a/host_state_manager.hpp b/host_state_manager.hpp
+index af22ade..f71a6e1 100644
+--- a/host_state_manager.hpp
++++ b/host_state_manager.hpp
+@@ -94,6 +94,9 @@ class Host : public HostInherit
+     /** @brief Set value of CurrentHostState */
+     HostState currentHostState(HostState value) override;
+ 
++    /** @brief Set value of LastHostState */
++    HostState lastHostState(HostState value) override;
++
+     /**
+      * @brief Set host reboot count to default
+      *
+@@ -218,7 +221,9 @@ class Host : public HostInherit
+                                       server::Progress::bootProgress()),
+                 convertForMessage(
+                     sdbusplus::xyz::openbmc_project::State::OperatingSystem::
+-                        server::Status::operatingSystemState()));
++                        server::Status::operatingSystemState()),
++                convertForMessage(sdbusplus::xyz::openbmc_project::State::
++                                      server::Host::lastHostState()));
+     }
+ 
+     /** @brief Function required by Cereal to perform deserialization.
+@@ -236,7 +241,8 @@ class Host : public HostInherit
+         std::string reqTranState;
+         std::string bootProgress;
+         std::string osState;
+-        archive(reqTranState, bootProgress, osState);
++        std::string lastHostState;
++        archive(reqTranState, bootProgress, osState, lastHostState);
+         auto reqTran = Host::convertTransitionFromString(reqTranState);
+         // When restoring, set the requested state with persistent value
+         // but don't call the override which would execute it
+@@ -247,6 +253,8 @@ class Host : public HostInherit
+         sdbusplus::xyz::openbmc_project::State::OperatingSystem::server::
+             Status::operatingSystemState(
+                 Host::convertOSStatusFromString(osState));
++        sdbusplus::xyz::openbmc_project::State::server::Host::lastHostState(
++            Host::convertHostStateFromString(lastHostState));
+     }
+ 
+     /** @brief Serialize and persist requested host state
+-- 
+2.32.0
+

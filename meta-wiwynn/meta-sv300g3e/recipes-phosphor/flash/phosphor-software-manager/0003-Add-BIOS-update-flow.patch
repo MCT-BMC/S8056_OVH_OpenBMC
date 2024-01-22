@@ -1,0 +1,190 @@
+From a56d0a3ec09c5dda16db3468cba72c1e3367d646 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Fri, 22 May 2020 20:03:31 +0800
+Subject: [PATCH] Add BIOS update flow
+
+---
+ activation.cpp                | 96 +++++++++++++++++++++++++++++++++++
+ activation.hpp                |  7 +++
+ obmc-flash-host-bios@.service |  2 +-
+ 3 files changed, 104 insertions(+), 1 deletion(-)
+
+diff --git a/activation.cpp b/activation.cpp
+index a80c901..f5cf95b 100644
+--- a/activation.cpp
++++ b/activation.cpp
+@@ -9,6 +9,9 @@
+ #include <phosphor-logging/log.hpp>
+ #include <sdbusplus/exception.hpp>
+ #include <xyz/openbmc_project/Common/error.hpp>
++#include <fstream>
++#include <iostream>
++
+ 
+ #ifdef WANT_SIGNATURE_VERIFY
+ #include "image_verify.hpp"
+@@ -270,6 +273,13 @@ void Activation::deleteImageManagerObject()
+     }
+ }
+ 
++void Activation::deleteFile()
++{
++    fs::path dirPath(std::string{IMG_UPLOAD_DIR});
++    dirPath = dirPath / versionId;
++    fs::remove_all(dirPath);
++}
++
+ auto Activation::requestedActivation(RequestedActivations value)
+     -> RequestedActivations
+ {
+@@ -411,6 +421,7 @@ bool Activation::checkApplyTimeImmediate()
+ #ifdef HOST_BIOS_UPGRADE
+ void Activation::flashWriteHost()
+ {
++/*
+     auto method = bus.new_method_call(SYSTEMD_BUSNAME, SYSTEMD_PATH,
+                                       SYSTEMD_INTERFACE, "StartUnit");
+     auto biosServiceFile = "obmc-flash-host-bios@" + versionId + ".service";
+@@ -424,6 +435,49 @@ void Activation::flashWriteHost()
+         log<level::ERR>("Error in trying to upgrade Host Bios.");
+         report<InternalFailure>();
+     }
++*/
++
++    std::string bios_fw_file_name;
++    auto ret = getBiosFwFileName(bios_fw_file_name);
++    bios_info.clear();
++
++    if (ret == 0)
++    {
++        std::string bios_fw_file_name_str("bios_fw_file_name");
++
++        bios_fw_file_name = bios_fw_file_name_str + "=" + bios_fw_file_name;
++        bios_info.push_back(bios_fw_file_name);
++
++        auto set_environment_method = bus.new_method_call(SYSTEMD_BUSNAME, SYSTEMD_PATH,
++                                            SYSTEMD_INTERFACE, "SetEnvironment");
++
++        set_environment_method.append(bios_info);
++        try
++        {
++            auto reply = bus.call(set_environment_method);
++        }
++        catch (const SdBusError& e)
++        {
++            log<level::ERR>("Error in trying to SetEnvironment.");
++            deleteFile();
++            report<InternalFailure>();
++        }
++
++        auto method = bus.new_method_call(SYSTEMD_BUSNAME, SYSTEMD_PATH,
++                            SYSTEMD_INTERFACE, "StartUnit");
++        auto biosServiceFile = "obmc-flash-host-bios@" + versionId + ".service";
++        method.append(biosServiceFile, "replace");
++        try
++        {
++            auto reply = bus.call(method);
++        }
++        catch (const SdBusError& e)
++        {
++            log<level::ERR>("Error in trying to upgrade Host Bios.");
++            report<InternalFailure>();
++        }
++    }
++
+ }
+ 
+ void Activation::onStateChangesBios(sdbusplus::message::message& msg)
+@@ -446,6 +500,23 @@ void Activation::onStateChangesBios(sdbusplus::message::message& msg)
+         // Remove version object from image manager
+         deleteImageManagerObject();
+ 
++        // Unset environment proeprty
++        auto unset_environment_method = bus.new_method_call(SYSTEMD_BUSNAME, SYSTEMD_PATH,
++                                                SYSTEMD_INTERFACE, "UnsetEnvironment");
++        unset_environment_method.append(bios_info);
++        try
++        {
++            auto reply = bus.call(unset_environment_method);
++        }
++        catch (const SdBusError& e)
++        {
++            log<level::ERR>("Error in trying to UnsetEnvironment.");
++            report<InternalFailure>();
++        }
++
++        // Delete file in the /tmp/image/<version id>
++        deleteFile();
++
+         if (newStateResult == "done")
+         {
+             // Set activation progress to 100
+@@ -468,6 +539,31 @@ void Activation::onStateChangesBios(sdbusplus::message::message& msg)
+     return;
+ }
+ 
++int32_t Activation::getBiosFwFileName(std::string& bios_fw_file_name)
++{
++    fs::path dirPath(std::string{IMG_UPLOAD_DIR});
++    dirPath = dirPath / versionId;
++
++    int file_count = 0;
++    for (auto& it: fs::directory_iterator(dirPath))
++    {
++        if ( it.path().filename() != "MANIFEST" )
++        {
++            bios_fw_file_name = it.path();
++        }
++        file_count++;
++    }
++
++    // The count of files should be 2 : BIOS firmware file and Manifest.
++    if (file_count != 2)
++    {
++        log<level::ERR>("Erro in number of files");
++        return -1;
++    }
++
++    return 0;
++}
++
+ #endif
+ 
+ void Activation::rebootBmc()
+diff --git a/activation.hpp b/activation.hpp
+index 4869c30..b6ea32d 100644
+--- a/activation.hpp
++++ b/activation.hpp
+@@ -230,12 +230,19 @@ class Activation : public ActivationInherit, public Flash
+     /** @brief Overloaded write flash function */
+     void flashWrite() override;
+ 
++    void deleteFile();
++
+ #ifdef HOST_BIOS_UPGRADE
+     /* @brief write to Host flash function */
+     void flashWriteHost();
+ 
+     /** @brief Function that acts on Bios upgrade service file state changes */
+     void onStateChangesBios(sdbusplus::message::message&);
++
++    /** @brief Get the BIOS firmware file name. */
++    int32_t getBiosFwFileName(std::string&);
++
++    std::vector<std::string> bios_info;
+ #endif
+ 
+     /** @brief Overloaded function that acts on service file state changes */
+diff --git a/obmc-flash-host-bios@.service b/obmc-flash-host-bios@.service
+index 13a01af..9282c4b 100644
+--- a/obmc-flash-host-bios@.service
++++ b/obmc-flash-host-bios@.service
+@@ -4,4 +4,4 @@ Description=Flash Host Bios image %I to Host
+ [Service]
+ Type=oneshot
+ RemainAfterExit=no
+-ExecStart=echo Please add custom command for flashing image /tmp/image/%i
++ExecStart=/usr/sbin/bios-updater ${bios_fw_file_name}
+-- 
+2.24.1
+

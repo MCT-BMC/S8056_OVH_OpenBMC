@@ -1,0 +1,5 @@
+/xyz/openbmc_project/oem/ServiceStatus:
+    - Interface: xyz.openbmc_project.OEM.ServiceStatus
+      Properties:
+          WebService:
+              Default: 0

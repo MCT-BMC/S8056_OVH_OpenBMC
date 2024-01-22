@@ -1,0 +1,64 @@
+From 17b0711a25e9cb9ad857fe873200eb5f5709e0cc Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Fri, 25 Mar 2022 12:56:34 +0800
+Subject: [PATCH] Add I2C NVMe sensor supported
+
+---
+ meson_options.txt         |  1 +
+ service_files/meson.build |  1 +
+ src/meson.build           | 18 ++++++++++++++++++
+ 3 files changed, 20 insertions(+)
+
+diff --git a/meson_options.txt b/meson_options.txt
+index 459fad3..8379884 100755
+--- a/meson_options.txt
++++ b/meson_options.txt
+@@ -17,6 +17,7 @@ option('dimm-temp', type: 'feature', value: 'enabled', description: 'Enable DIMM
+ option('nic', type: 'feature', value: 'enabled', description: 'Enable NIC over MCTP sensor.',)
+ option('sol-pattern', type: 'feature', value: 'enabled', description: 'Enable SOL pattern sensor.',)
+ option('virtual', type: 'feature', value: 'enabled', description: 'Enable virtual sensor.',)
++option('i2c-nvme', type: 'feature', value: 'enabled', description: 'Enable I2C NVMe sensor.',)
+ option('tests', type: 'feature', value: 'enabled', description: 'Build tests.',)
+ option('validate-unsecure-feature', type : 'feature', value : 'disabled', description : 'Enables unsecure features required by validation. Note: mustbe turned off for production images.',)
+ option('insecure-sensor-override', type : 'feature', value : 'disabled', description : 'Enables Sensor override feature without any check.',)
+diff --git a/service_files/meson.build b/service_files/meson.build
+index 476e25e..3e3713f 100755
+--- a/service_files/meson.build
++++ b/service_files/meson.build
+@@ -17,6 +17,7 @@ unit_files = [
+     ['nic', 'xyz.openbmc_project.nicsensor.service'],
+     ['sol-pattern', 'xyz.openbmc_project.solpatternsensor.service'],
+     ['virtual', 'xyz.openbmc_project.virtualsensor.service'],
++    ['i2c-nvme', 'xyz.openbmc_project.i2cnvmesensor.service'],
+ ]
+ 
+ foreach tuple : unit_files
+diff --git a/src/meson.build b/src/meson.build
+index 724d678..fbc18a7 100755
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -322,3 +322,21 @@ if get_option('virtual').enabled()
+         ],
+     )
+ endif
++
++if get_option('i2c-nvme').enabled()
++    executable(
++        'i2cnvmesensor',
++        'I2cNVMeSensor.cpp',
++        dependencies: [
++            i2c,
++            sdbusplus,
++        ],
++        implicit_include_directories: false,
++        include_directories: '../include',
++        install: true,
++        link_with: [
++            utils_a,
++            thresholds_a,
++        ],
++    )
++endif
+-- 
+2.7.4
+

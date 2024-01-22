@@ -1,0 +1,219 @@
+From 372036b9b18f5d3a368f702b8e7f22b509ddfd37 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Tue, 28 Sep 2021 16:41:10 +0800
+Subject: [PATCH] Support FRU list in chassis assembly node
+
+Sort assembly array with FRU device index.
+---
+ redfish-core/lib/assembly.hpp | 181 ++++++++++++++++++++++++++++++++++
+ 1 file changed, 181 insertions(+)
+
+diff --git a/redfish-core/lib/assembly.hpp b/redfish-core/lib/assembly.hpp
+index 1cbb8cfc..a7352df9 100755
+--- a/redfish-core/lib/assembly.hpp
++++ b/redfish-core/lib/assembly.hpp
+@@ -8,6 +8,182 @@ namespace redfish
+ {
+ using VariantType = std::variant<bool, std::string, uint64_t, uint32_t>;
+ 
++inline static std::string getNameStringFromPath(const std::string& path)
++{
++    size_t typeEnd = path.rfind("/");
++    if (typeEnd == std::string::npos)
++    {
++        return path;
++    }
++    size_t typeStart = path.rfind("/", typeEnd);
++    if (typeStart == std::string::npos)
++    {
++        return path;
++    }
++    // Start at the character after the '/'
++    typeStart++;
++    return path.substr(typeStart, typeEnd - typeStart);
++}
++
++inline void getFruProperty(nlohmann::json& assemblyData,
++                           const std::pair<std::string,VariantType>& fruProperty,
++                           const std::string setFruProperty,
++                           const std::string selectFruProperty)
++{
++    if (fruProperty.first == selectFruProperty)
++    {
++        const std::string* value =
++            std::get_if<std::string>(&fruProperty.second);
++        if (value == nullptr)
++        {
++            return;
++        }
++        assemblyData[setFruProperty] = *value;
++    }
++}
++
++inline void
++    getFruDeviceProperties(const std::shared_ptr<bmcweb::AsyncResp>& aResp)
++{
++    BMCWEB_LOG_DEBUG << "Get FRU device for assembly associated";
++        crow::connections::systemBus->async_method_call(
++            [aResp](
++                const boost::system::error_code ec,
++                const std::vector<std::pair<
++                std::string,
++                std::vector<std::pair<std::string, std::vector<std::string>>>>>&
++                subtree) {
++                if (ec)
++                {
++                    BMCWEB_LOG_DEBUG << "DBUS response error";
++                    messages::internalError(aResp->res);
++                    return;
++                }
++
++                if (subtree.size() == 0)
++                {
++                    BMCWEB_LOG_DEBUG << "No object paths found";
++                    return;
++                }
++
++                std::vector<std::string> updatedAssemblyList;
++                std::size_t assemblyIndex = 0;
++
++                for (const auto& [objectPath, interfaceMap] : subtree)
++                {
++                    for (const auto& [serviceName, interfaces] : interfaceMap)
++                    {
++                        for (const auto& interface : interfaces){
++                            BMCWEB_LOG_DEBUG << "Get FRU device service name = " << serviceName;
++                            BMCWEB_LOG_DEBUG << "Get FRU device object path = " << objectPath;
++                            BMCWEB_LOG_DEBUG << "Get FRU device interface = " << interface;
++
++                            if (interface == "xyz.openbmc_project.FruDevice")
++                            {
++                                nlohmann::json& tempyArray = aResp->res.jsonValue["Assemblies"];
++                                std::string dataID =
++                                    "/redfish/v1/Chassis/s8033_Baseboard/Assembly#/Assemblies/";
++                                dataID.append(std::to_string(assemblyIndex));
++
++                                tempyArray.push_back({{"@odata.type", "#Assembly.v1_3_0.AssemblyData"},
++                                                        {"@odata.id", dataID},
++                                                        {"MemberId", std::to_string(assemblyIndex)}});
++                                assemblyIndex++;
++                            }
++                        }
++                    }
++                }
++
++                for (const auto& [objectPath, interfaceMap] : subtree)
++                {
++                    for (const auto& [serviceName, interfaces] : interfaceMap)
++                    {
++                        for (const auto& interface : interfaces){
++                            BMCWEB_LOG_DEBUG << "Get FRU device service name = " << serviceName;
++                            BMCWEB_LOG_DEBUG << "Get FRU device object path = " << objectPath;
++                            BMCWEB_LOG_DEBUG << "Get FRU device interface = " << interface;
++
++                            if (interface == "xyz.openbmc_project.FruDevice")
++                            {
++                                crow::connections::systemBus->async_method_call(
++                                    [aResp, objectPath](
++                                        const boost::system::error_code ec2,
++                                        const std::vector<
++                                            std::pair<std::string, VariantType>>&
++                                            propertiesList) {
++                                        const uint32_t* fruIndex;
++                                        if (ec2)
++                                        {
++                                            BMCWEB_LOG_DEBUG
++                                                << "DBUS response error";
++                                            messages::internalError(aResp->res);
++                                            return;
++                                        }
++
++                                        for (const std::pair<std::string,
++                                                         VariantType>&
++                                             property : propertiesList)
++                                        {
++                                            if (property.first == "INDEX")
++                                            {
++                                                fruIndex =
++                                                    std::get_if<uint32_t>(&property.second);
++                                                if (fruIndex == nullptr)
++                                                {
++                                                    BMCWEB_LOG_DEBUG << "Get FRU index error";
++                                                    return;
++                                                }
++                                                break;
++                                            }
++                                        }
++
++                                        nlohmann::json& assemblyArray =
++                                            aResp->res.jsonValue["Assemblies"];
++
++                                        nlohmann::json& assemblyData = assemblyArray.at(*fruIndex);;
++
++                                        for (const std::pair<std::string,
++                                                            VariantType>&
++                                                property : propertiesList)
++                                        {
++                                            BMCWEB_LOG_DEBUG << "Get FRU property : " << property.first;
++
++                                            assemblyData["Name"] = getNameStringFromPath(objectPath);;
++                                            getFruProperty(assemblyData,property,"Producer","BOARD_MANUFACTURER");
++                                            getFruProperty(assemblyData,property,"ProductionDate","BOARD_MANUFACTURE_DATE");
++                                            getFruProperty(assemblyData,property,"PartNumber","BOARD_PART_NUMBER");
++                                            getFruProperty(assemblyData,property,"Model","BOARD_PRODUCT_NAME");
++                                            getFruProperty(assemblyData,property,"SerialNumber","BOARD_SERIAL_NUMBER");
++                                            getFruProperty(assemblyData,property,"ChassisInfoAm1","CHASSIS_INFO_AM1");
++                                            getFruProperty(assemblyData,property,"ChassisPartName","CHASSIS_PART_NUMBER");
++                                            getFruProperty(assemblyData,property,"ChassisSerialNumber","CHASSIS_SERIAL_NUMBER");
++                                            getFruProperty(assemblyData,property,"ChassisType","CHASSIS_TYPE");
++                                            getFruProperty(assemblyData,property,"ProductPartNumber","PRODUCT_PART_NUMBER");
++                                            getFruProperty(assemblyData,property,"ProductName","PRODUCT_PRODUCT_NAME");
++                                            getFruProperty(assemblyData,property,"ProductSerialNumber","PRODUCT_SERIAL_NUMBER");
++                                            getFruProperty(assemblyData,property,"ProductVersion","PRODUCT_VERSION");
++                                            getFruProperty(assemblyData,property,"ProductManufacturer","PRODUCT_MANUFACTURER");
++                                            getFruProperty(assemblyData,property,"ProductInfoAm3","PRODUCT_INFO_AM3");
++                                        }
++                                    },
++                                    serviceName, objectPath,
++                                    "org.freedesktop.DBus.Properties", "GetAll",
++                                    "xyz.openbmc_project."
++                                    "FruDevice");
++                            }
++                        }
++                    }
++                }
++                aResp->res.jsonValue["Assemblies@odata.count"] = assemblyIndex;
++            },
++            "xyz.openbmc_project.ObjectMapper",
++            "/xyz/openbmc_project/object_mapper",
++            "xyz.openbmc_project.ObjectMapper", "GetSubTree",
++            "/xyz/openbmc_project/FruDevice", int32_t(0),
++            std::array<const char*, 1>{
++                "xyz.openbmc_project.FruDevice"});
++}
++
+ /**
+  * @brief Get properties for the assemblies associated to given chassis
+  * @param[in] aResp - Shared pointer for asynchronous calls.
+@@ -384,6 +560,10 @@ inline void checkForAssemblyAssociations(
+             {
+                 getAssemblyEndpoints(aResp, chassisPath);
+             }
++            else
++            {
++                getFruDeviceProperties(aResp);
++            }
+         },
+         service, chassisPath, "org.freedesktop.DBus.Properties", "Get",
+         "xyz.openbmc_project.Association.Definitions", "Associations");
+@@ -440,6 +620,7 @@ inline void checkAssociation(const std::shared_ptr<bmcweb::AsyncResp>& aResp,
+                     }
+                 }
+             }
++            getFruDeviceProperties(aResp);
+             return;
+         },
+         "xyz.openbmc_project.ObjectMapper",
+-- 
+2.25.1
+

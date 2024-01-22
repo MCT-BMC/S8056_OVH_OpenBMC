@@ -1,0 +1,165 @@
+From 80eb985d4ce7f2c1463a751c7dd0911c54c896fd Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Thu, 26 Aug 2021 11:33:11 +0800
+Subject: [PATCH] Set led when sensor fail events occur
+
+%% original patch: 0004-Set-led-when-sensor-fail-events-occur.patch
+---
+ include/threshold_event_monitor.hpp | 45 +++++++++++++++++++++
+ src/sel_logger.cpp                  | 63 ++++++++++++++++-------------
+ 2 files changed, 81 insertions(+), 27 deletions(-)
+
+diff --git a/include/threshold_event_monitor.hpp b/include/threshold_event_monitor.hpp
+index 499f82a..2ebf464 100644
+--- a/include/threshold_event_monitor.hpp
++++ b/include/threshold_event_monitor.hpp
+@@ -29,11 +29,46 @@ enum class thresholdEventOffsets : uint8_t
+     upperCritGoingHigh = 0x09,
+ };
+ 
++static constexpr auto ledGroupService = "xyz.openbmc_project.LED.GroupManager";
++static constexpr auto ledGroupPathRoot = "/xyz/openbmc_project/led/groups/";
++static constexpr auto ledGroupInterface = "xyz.openbmc_project.Led.Group";
++
+ static constexpr const uint8_t thresholdEventDataTriggerReadingByte2 = (1 << 6);
+ static constexpr const uint8_t thresholdEventDataTriggerReadingByte3 = (1 << 4);
+ 
+ static const std::string openBMCMessageRegistryVersion("0.1");
+ 
++static int assertCount = 0;
++void setLedEvent(std::shared_ptr<sdbusplus::asio::connection> outBus,
++                 const std::string& group, const bool& asserted)
++{
++    try
++    {
++        auto method = outBus->new_method_call(
++            ledGroupService, (ledGroupPathRoot + group).c_str(),
++            "org.freedesktop.DBus.Properties", "Set");
++        method.append(ledGroupInterface, "Asserted",
++                      std::variant<bool>(asserted));
++        outBus->call_noreply(method);
++    }
++    catch (const sdbusplus::exception_t& e)
++    {
++        std::cerr << "Failed to set LED status from group " << group << "\n";
++    }
++}
++
++void setSensorFailLed(std::shared_ptr<sdbusplus::asio::connection> outBus)
++{
++    if (assertCount == 1)
++    {
++        setLedEvent(outBus, "sensor_fail", true);
++    }
++    else if (assertCount == 0)
++    {
++        setLedEvent(outBus, "sensor_fail", false);
++    }
++}
++
+ inline static sdbusplus::bus::match::match startThresholdAssertMonitor(
+     std::shared_ptr<sdbusplus::asio::connection> conn,
+     std::shared_ptr<sdbusplus::asio::connection> outBus)
+@@ -255,6 +290,16 @@ inline static sdbusplus::bus::match::match startThresholdAssertMonitor(
+             }
+         }
+ 
++        if (assert)
++        {
++            ++assertCount;
++        }
++        else
++        {
++            --assertCount;
++        }
++        setSensorFailLed(outBus);
++
+         std::string journalMsg(std::string(sensorName) + " sensor crossed a " +
+                                threshold + " threshold going " + direction +
+                                ". Reading=" + std::to_string(assertValue) +
+diff --git a/src/sel_logger.cpp b/src/sel_logger.cpp
+index bc61d07..289ea93 100644
+--- a/src/sel_logger.cpp
++++ b/src/sel_logger.cpp
+@@ -389,34 +389,43 @@ static int selClear()
+ }
+ 
+ inline static sdbusplus::bus::match::match
+-    startSensorFailMonitor(std::shared_ptr<sdbusplus::asio::connection> conn)
++    startSensorFailMonitor(std::shared_ptr<sdbusplus::asio::connection> conn,
++                           std::shared_ptr<sdbusplus::asio::connection> outBus)
+ {
+-    auto sensorFailMatcherCallback = [conn](sdbusplus::message::message& msg) {
+-        // Get the sensor information from the message
+-        std::string sensorName;
+-        uint8_t sensorNumber;
+-        bool isAssert;
+-        try
+-        {
+-            msg.read(sensorName, sensorNumber, isAssert);
+-        }
+-        catch (sdbusplus::exception_t&)
+-        {
+-            std::cerr << "Failed to get sensor fail information from "
+-                      << msg.get_path() << "\n";
+-            return;
+-        }
++    auto sensorFailMatcherCallback =
++        [conn, outBus](sdbusplus::message::message& msg) {
++            // Get the sensor information from the message
++            std::string sensorName;
++            uint8_t sensorNumber;
++            bool isAssert;
++            try
++            {
++                msg.read(sensorName, sensorNumber, isAssert);
++            }
++            catch (sdbusplus::exception_t&)
++            {
++                std::cerr << "Failed to get sensor fail information from "
++                          << msg.get_path() << "\n";
++                return;
++            }
+ 
+-        if (isAssert)
+-        {
+-            const std::string journalMsg = sensorName + " Sensor Fail";
+-            const std::string path =
+-                "/xyz/openbmc_project/sensors/discrete/BMC_Health";
+-            std::vector<uint8_t> eventData = {0x04, sensorNumber, 0xFF};
+-            selAddSystemRecord(journalMsg, path, eventData, isAssert,
+-                               selBMCGenID);
+-        }
+-    };
++            if (isAssert)
++            {
++                ++assertCount;
++
++                const std::string journalMsg = sensorName + " Sensor Fail";
++                const std::string path =
++                    "/xyz/openbmc_project/sensors/discrete/BMC_Health";
++                std::vector<uint8_t> eventData = {0xC4, sensorNumber, 0xFF};
++                selAddSystemRecord(journalMsg, path, eventData, isAssert,
++                                   selBMCGenID);
++            }
++            else
++            {
++                --assertCount;
++            }
++            setSensorFailLed(outBus);
++        };
+     sdbusplus::bus::match::match sensorFailMatcher(
+         static_cast<sdbusplus::bus::bus&>(*conn),
+         "type='signal', member='SensorFailAssert'",
+@@ -459,7 +468,7 @@ int main(int argc, char* argv[])
+     sdbusplus::bus::match::match thresholdAssertMonitor =
+         startThresholdAssertMonitor(conn, outBus);
+     sdbusplus::bus::match::match sensorFailMonitor =
+-        startSensorFailMonitor(conn);
++        startSensorFailMonitor(conn, outBus);
+ #endif
+ 
+ #ifdef REDFISH_LOG_MONITOR_PULSE_EVENTS
+-- 
+2.32.0
+

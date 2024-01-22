@@ -1,0 +1,16 @@
+[Unit]
+Description=MiTAC LPC Interrupt Monitor
+Wants=xyz.openbmc_project.State.BMC.service
+After=xyz.openbmc_project.State.BMC.service
+Requires=phosphor-ipmi-host.service
+After=phosphor-ipmi-host.service
+
+
+[Service]
+Restart=always
+ExecStart=/usr/bin/env lpc-interrupt-monitor
+SyslogIdentifier=lpc-interrupt-monitor
+TimeoutSec=infinity
+
+[Install]
+WantedBy={SYSTEMD_DEFAULT_TARGET}

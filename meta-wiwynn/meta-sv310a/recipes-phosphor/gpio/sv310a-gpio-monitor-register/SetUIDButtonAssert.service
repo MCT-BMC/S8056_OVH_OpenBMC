@@ -1,0 +1,9 @@
+[Unit]
+Description=Set UID Button Assert
+
+[Service]
+Type=oneshot
+
+ExecStart=/usr/bin/env toggle-identify-led.sh
+
+ExecStopPost=/usr/bin/busctl set-property xyz.openbmc_project.GpioMonitor /xyz/openbmc_project/gpio/event xyz.openbmc_project.GpioEvent UID_BTN_N s "Idle"

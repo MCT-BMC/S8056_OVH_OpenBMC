@@ -1,0 +1,15 @@
+[Unit]
+Description=Twitter SOL Pattern Sensor
+StopWhenUnneeded=false
+Requires=xyz.openbmc_project.EntityManager.service
+After=xyz.openbmc_project.EntityManager.service
+Wants=obmc-console@ttyS2.service
+After=obmc-console@ttyS2.service
+
+[Service]
+Restart=always
+RestartSec=5
+ExecStart=/usr/bin/solpatternsensor
+
+[Install]
+WantedBy=multi-user.target

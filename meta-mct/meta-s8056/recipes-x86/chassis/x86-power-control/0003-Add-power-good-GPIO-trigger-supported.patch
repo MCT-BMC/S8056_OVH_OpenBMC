@@ -1,0 +1,45 @@
+From 9cbb8edae1da644f13cc7151e87f2124f17a7687 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Tue, 15 Mar 2022 13:47:03 +0800
+Subject: [PATCH 2/9] Add power good GPIO trigger supported
+
+---
+ src/power_control.cpp | 22 ++++++++++++++++++++++
+ 1 file changed, 22 insertions(+)
+
+diff --git a/src/power_control.cpp b/src/power_control.cpp
+index e5054f3..2c975a0 100755
+--- a/src/power_control.cpp
++++ b/src/power_control.cpp
+@@ -2116,6 +2116,28 @@ static void psPowerOKHandler(bool state)
+ {
+     Event powerControlEvent =
+         state ? Event::psPowerOKAssert : Event::psPowerOKDeAssert;
++
++    auto bus = sdbusplus::bus::new_default();
++    auto msg = bus.new_signal("/", "org.freedesktop.DBus", "PowerTrigger");
++    bool parameter;
++
++    if (!state)
++    {
++        parameter = false;
++        msg.append(parameter);
++        msg.signal_send();
++        chassisIface->set_property("CurrentPowerState",
++                            std::string(getChassisState(PowerState::off)));
++    }
++    else
++    {
++        parameter = true;
++        msg.append(parameter);
++        msg.signal_send();
++        chassisIface->set_property("CurrentPowerState",
++                    std::string(getChassisState(PowerState::on)));
++    }
++
+     sendPowerControlEvent(powerControlEvent);
+ }
+ 
+-- 
+2.7.4
+

@@ -1,0 +1,146 @@
+From 286f4306998d950549e939a8482fb85aac612735 Mon Sep 17 00:00:00 2001
+From: Varun Sampat <vsampat@twitter.com>
+Date: Fri, 8 Nov 2019 19:04:25 -0500
+Subject: [PATCH] FRU state sensor for power cycle log
+
+---
+ CMakeLists.txt                                     | 13 +++++
+ .../xyz.openbmc_project.frustatesensor.service     | 12 ++++
+ src/FruStateSensor.cpp                             | 67 ++++++++++++++++++++++
+ 3 files changed, 92 insertions(+)
+ create mode 100644 service_files/xyz.openbmc_project.frustatesensor.service
+ create mode 100644 src/FruStateSensor.cpp
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 66fad74..9236525 100755
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -52,6 +52,7 @@ option (DISABLE_HOSTRESET "Disable installing host reset sensor" OFF)
+ option (DISABLE_PWR_BUTTON "Disable installing power button sensor" OFF)
+ option (DISABLE_VERSION_CHANGE "Disable installing version change sensor" OFF)
+ option (DISABLE_POWER_STATUS "Disable installing power status sensor" OFF)
++option (DISABLE_FRU_STATE "Disable installing FRU state sensor" OFF)
+ 
+ include ("cmake/HunterGate.cmake")
+ 
+@@ -227,6 +228,10 @@ add_executable (aclostsensor src/AcLostSensor.cpp)
+ add_dependencies (aclostsensor sdbusplus-project)
+ target_link_libraries (aclostsensor ${SENSOR_LINK_LIBS})
+ 
++add_executable (frustatesensor src/FruStateSensor.cpp)
++add_dependencies (frustatesensor sdbusplus-project)
++target_link_libraries (frustatesensor ${SENSOR_LINK_LIBS})
++
+ if (NOT YOCTO)
+     add_dependencies (adcsensor ${EXTERNAL_PACKAGES})
+     add_dependencies (cpusensor ${EXTERNAL_PACKAGES})
+@@ -244,6 +249,7 @@ if (NOT YOCTO)
+     add_dependencies (pwrbuttonsensor ${EXTERNAL_PACKAGES})
+     add_dependencies (versionchangesensor ${EXTERNAL_PACKAGES})
+     add_dependencies (aclostsensor ${EXTERNAL_PACKAGES})
++    add_dependencies (frustatesensor ${EXTERNAL_PACKAGES})
+ endif ()
+ 
+ set (SERVICE_FILE_SRC_DIR ${PROJECT_SOURCE_DIR}/service_files)
+@@ -369,3 +375,10 @@ if (NOT DISABLE_POWER_STATUS)
+                  ${SERVICE_FILE_SRC_DIR}/xyz.openbmc_project.aclostsensor.service
+                  DESTINATION ${SERVICE_FILE_INSTALL_DIR})
+ endif ()
++
++if (NOT DISABLE_FRU_STATE)
++    install (TARGETS frustatesensor DESTINATION bin)
++    install (FILES
++                 ${SERVICE_FILE_SRC_DIR}/xyz.openbmc_project.frustatesensor.service
++                 DESTINATION ${SERVICE_FILE_INSTALL_DIR})
++endif ()
+diff --git a/service_files/xyz.openbmc_project.frustatesensor.service b/service_files/xyz.openbmc_project.frustatesensor.service
+new file mode 100644
+index 0000000..fe24f38
+--- /dev/null
++++ b/service_files/xyz.openbmc_project.frustatesensor.service
+@@ -0,0 +1,12 @@
++[Unit]
++Description=IPMI defined FRU State sensor 
++StopWhenUnneeded=false
++After=xyz.openbmc_project.EntityManager.service
++[Service]
++Restart=always
++RestartSec=5
++ExecStart=/usr/bin/env frustatesensor
++SyslogIdentifier=frustatesensor
++
++[Install]
++WantedBy=multi-user.target
+diff --git a/src/FruStateSensor.cpp b/src/FruStateSensor.cpp
+new file mode 100644
+index 0000000..afad071
+--- /dev/null
++++ b/src/FruStateSensor.cpp
+@@ -0,0 +1,67 @@
++/*
++// Copyright (c) 2018 Intel Corporation
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//      http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++*/
++
++#include <Utils.hpp>
++#include <boost/algorithm/string/predicate.hpp>
++#include <boost/asio.hpp>
++#include <chrono>
++#include <ctime>
++#include <iostream>
++#include <sdbusplus/asio/connection.hpp>
++#include <sdbusplus/asio/object_server.hpp>
++#include <sdbusplus/asio/sd_event.hpp>
++#include <sdbusplus/bus.hpp>
++#include <sdbusplus/exception.hpp>
++#include <sdbusplus/server.hpp>
++#include <sdbusplus/timer.hpp>
++#include <sensor.hpp>
++#include <systemd/sd-journal.h>
++
++
++static constexpr bool DEBUG = true;
++
++static constexpr char const* ipmiSELService =    "xyz.openbmc_project.Logging.IPMI";
++static constexpr char const* ipmiSELPath = "/xyz/openbmc_project/Logging/IPMI";
++static constexpr char const* ipmiSELAddInterface = "xyz.openbmc_project.Logging.IPMI";
++
++static const std::string ipmiSELAddMessage = "SEL Entry";
++static const std::string sensorPath = "/xyz/openbmc_project/sensors/fru_state/IPMI_POWER_CYCLE";
++
++static constexpr size_t selEvtDataMaxSize = 3;
++
++int main()
++{
++    // setup connection to dbus
++    boost::asio::io_service io;
++    auto systemBus = std::make_shared<sdbusplus::asio::connection>(io);
++    auto objServer = sdbusplus::asio::object_server(systemBus);
++
++    // setup object server, define interface
++    systemBus->request_name("xyz.openbmc_project.FruStateSensor");
++
++    // add interface into sensor tree
++    std::shared_ptr<sdbusplus::asio::dbus_interface> iface =
++        objServer.add_interface(sensorPath,sensorValueInterface);
++
++    double value = 0;
++    //dummy value, just identifier for sdr command   
++    iface->register_property("Value", value);
++    iface->initialize();
++    
++    io.run();
++
++    return 0;
++}

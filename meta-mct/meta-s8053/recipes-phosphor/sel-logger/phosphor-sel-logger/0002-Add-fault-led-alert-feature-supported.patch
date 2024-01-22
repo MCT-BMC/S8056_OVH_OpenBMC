@@ -1,0 +1,69 @@
+From ebbe7a7778b1869acdfaf1887bcb53594ca7c3c1 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Fri, 11 Jun 2021 17:19:30 +0800
+Subject: [PATCH] Add fault led alert feature supported
+
+---
+ include/threshold_event_monitor.hpp                 | 21 +++++++++++++++++++++
+ .../xyz.openbmc_project.Logging.IPMI.service        |  1 +
+ 2 files changed, 22 insertions(+)
+ mode change 100644 => 100755 include/threshold_event_monitor.hpp
+ mode change 100644 => 100755 service_files/xyz.openbmc_project.Logging.IPMI.service
+
+diff --git a/include/threshold_event_monitor.hpp b/include/threshold_event_monitor.hpp
+old mode 100644
+new mode 100755
+index f1df9bd..9eae652
+--- a/include/threshold_event_monitor.hpp
++++ b/include/threshold_event_monitor.hpp
+@@ -20,6 +20,19 @@
+ 
+ #include <string_view>
+ #include <variant>
++#include <xyz/openbmc_project/Led/Physical/server.hpp>
++
++#define FAULT_LED_SERVICE "xyz.openbmc_project.mct.led"
++#define FAULT_LED_OBJECTPATH "/xyz/openbmc_project/mct/led"
++#define FAULT_LED_INTERFACE "xyz.openbmc_project.mct.led"
++
++static void sendDbusMethod(const std::string& service, const std::string& path,
++                          const std::string& interface, const std::string& dbusMethod)
++{
++    auto bus = sdbusplus::bus::new_default();
++    auto method = bus.new_method_call(service.c_str(), path.c_str(), interface.c_str(), dbusMethod.c_str());
++    bus.call_noreply(method);
++}
+ 
+ enum class thresholdEventOffsets : uint8_t
+ {
+@@ -268,6 +281,14 @@ inline static sdbusplus::bus::match::match startThresholdAssertMonitor(
+                                ". Reading=" + std::to_string(assertValue) +
+                                " Threshold=" + std::to_string(thresholdVal) +
+                                ".");
++        if (assert == true)
++        {
++            sendDbusMethod(FAULT_LED_SERVICE, FAULT_LED_OBJECTPATH, FAULT_LED_INTERFACE, "increaseFaultLed");
++        }
++        else
++        {
++            sendDbusMethod(FAULT_LED_SERVICE, FAULT_LED_OBJECTPATH, FAULT_LED_INTERFACE, "decreaseFaultLed");
++        }
+ 
+         selAddSystemRecord(
+             journalMsg, std::string(msg.get_path()), eventData, assert,
+diff --git a/service_files/xyz.openbmc_project.Logging.IPMI.service b/service_files/xyz.openbmc_project.Logging.IPMI.service
+old mode 100644
+new mode 100755
+index 9b8ae41..0259a02
+--- a/service_files/xyz.openbmc_project.Logging.IPMI.service
++++ b/service_files/xyz.openbmc_project.Logging.IPMI.service
+@@ -1,5 +1,6 @@
+ [Unit]
+ Description=IPMI SEL Logging Service
++After=mct-led-manager.service
+ 
+ [Service]
+ Restart=always
+-- 
+2.7.4
+

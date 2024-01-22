@@ -1,0 +1,208 @@
+[
+    {
+        "Name": "PowerGood",
+        "GpioNum": 37,
+        "ChipId": "0",
+        "EventMon": "BOTH",
+        "Target":
+        {
+            "FALLING": [
+                "SetPowerGoodPropertyOff.service"
+            ],
+            "RISING": [
+                "SetPowerGoodPropertyOn.service"
+            ]
+        },
+        "Continue": true
+    },
+    {
+        "Name": "PostComplete",
+        "GpioNum": 96,
+        "ChipId": "gpiochip0",
+        "EventMon": "BOTH",
+        "Target":
+        {
+            "FALLING": [
+                "SetPostCompleteAssert.service"
+            ],
+            "RISING": [
+                "SetPostCompleteDeassert.service"
+            ]
+        },
+        "Continue": true
+    },
+    {
+        "Name": "IdentifyBtnEvent",
+        "GpioNum": 1,
+        "ChipId": "gpiochip0",
+        "EventMon": "FALLING",
+        "Target":
+        {
+            "FALLING": [
+                "SetIdentifyBtnAssert.service"
+            ]
+        },
+        "Continue": true
+    },
+    {
+        "Name": "P0_THERMTRIP_LVT3_PLD_N",
+        "GpioNum": 42,
+        "ChipId": "gpiochip0",
+        "EventMon": "FALLING",
+        "Target":
+        {
+            "FALLING": [
+                "SetCPUThermalTripAssert.service"
+            ]
+        },
+        "Continue": true
+
+    },
+    {
+        "Name": "VR_VDD_MEM_ABCD_SUS_VRHOT_N",
+        "GpioNum": 24,
+        "ChipId": "gpiochip0",
+        "EventMon": "FALLING",
+        "Target":
+        {
+            "FALLING": [
+                "SetMemABCDVRHOTAssert.service"
+            ]
+        },
+        "Continue": true
+    },
+    {
+        "Name": "VR_VDD_MEM_EFGH_SUS_VRHOT_N",
+        "GpioNum": 25,
+        "ChipId": "gpiochip0",
+        "EventMon": "FALLING",
+        "Target":
+        {
+            "FALLING": [
+                "SetMemEFGHVRHOTAssert.service"
+            ]
+        },
+        "Continue": true
+    },
+    {
+        "Name": "VDD_SOC_RUN_VRHOT_N",
+        "GpioNum": 58,
+        "ChipId": "gpiochip0",
+        "EventMon": "FALLING",
+        "Target":
+        {
+            "FALLING": [
+                "SetSocRunVRHOTAssert.service"
+            ]
+        },
+        "Continue": true
+    },
+    {
+        "Name": "VDD_CORE_RUN_VRHOT_R_N",
+        "GpioNum": 110,
+        "ChipId": "gpiochip0",
+        "EventMon": "FALLING",
+        "Target":
+        {
+            "FALLING": [
+                "SetCoreRunVRHOTAssert.service"
+            ]
+        },
+        "Continue": true
+    },
+    {
+        "Name": "VDD_MEM_ABCD_SUS_FAULT",
+        "GpioNum": 56,
+        "ChipId": "gpiochip0",
+        "EventMon": "RISING",
+        "Target":
+        {
+            "RISING": [
+                "SetMemABCDSusFaultAssert.service"
+            ]
+        },
+        "Continue": true
+    },
+    {
+        "Name": "VDD_MEM_EFGH_SUS_FAULT",
+        "GpioNum": 57,
+        "ChipId": "gpiochip0",
+        "EventMon": "FALLING",
+        "Target":
+        {
+            "FALLING": [
+                "SetMemEFGHSusFaultAssert.service"
+            ]
+        },
+        "Continue": true
+    },
+    {
+        "Name": "VDD_SOC_RUN_FAULT",
+        "GpioNum": 89,
+        "ChipId": "gpiochip0",
+        "EventMon": "RISING",
+        "Target":
+        {
+            "RISING": [
+                "SetSocRunFaultAssert.service"
+            ]
+        },
+        "Continue": true
+    },
+    {
+        "Name": "VDD_CORE_RUN_FAULT",
+        "GpioNum": 137,
+        "ChipId": "gpiochip0",
+        "EventMon": "RISING",
+        "Target":
+        {
+            "RISING": [
+                "SetCoreRunFaultAssert.service"
+            ]
+        },
+        "Continue": true
+    },
+    {
+        "Name": "VOLTAGE_ALERT_R_N",
+        "GpioNum": 138,
+        "ChipId": "gpiochip0",
+        "EventMon": "FALLING",
+        "Target":
+        {
+            "FALLING": [
+                "SetVoltageAlert.service"
+            ]
+        },
+        "Continue": true
+    },
+    {
+        "Name": "IRQ_SML1_PMBUS_ALERT_N_R",
+        "GpioNum": 215,
+        "ChipId": "gpiochip0",
+        "EventMon": "FALLING",
+        "Target":
+        {
+            "FALLING": [
+                "SetPsuAlert.service"
+            ]
+        },
+        "Continue": true
+    },
+    {
+        "Name": "RST_PLTRST_PLD_B_N",
+        "GpioNum": 91,
+        "ChipId": "gpiochip0",
+        "EventMon": "BOTH",
+        "Target":
+        {
+            "FALLING": [
+                "SetPlatformResetAssert.service"
+            ],
+            "RISING": [
+                "SetPlatformResetDeassert.service"
+            ]
+
+        },
+        "Continue": true
+    }
+]

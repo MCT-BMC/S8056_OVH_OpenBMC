@@ -1,0 +1,40 @@
+From 030dfb5451869dba49fa404aaf307a343381ab24 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Tue, 15 Mar 2022 16:37:57 +0800
+Subject: [PATCH 8/9] Add post complete dbus signal supported
+
+---
+ src/power_control.cpp | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/src/power_control.cpp b/src/power_control.cpp
+index 18d7b5b..a7387e0 100755
+--- a/src/power_control.cpp
++++ b/src/power_control.cpp
+@@ -807,6 +807,15 @@ static void setDimmStatus(uint32_t status)
+     }
+ }
+ 
++static void sendPostCompleteSignal()
++{
++    auto bus = sdbusplus::bus::new_default();
++    auto msg = bus.new_signal("/", "org.freedesktop.DBus", "EndOfPost");
++    bool parameter = true;
++    msg.append(parameter);
++    msg.signal_send();
++}
++
+ static void systemPowerGoodFailedLog()
+ {
+     sd_journal_send(
+@@ -2496,6 +2505,7 @@ static void postCompleteHandler(bool state)
+             {
+                 logSELEvent("Post Complete SEL Entry","/xyz/openbmc_project/sensors/system_event/END_OF_POST",0x01,0xFF,0xFF);
+                 setDimmStatus(1);
++                sendPostCompleteSignal();
+             }
+         });
+     }
+-- 
+2.7.4
+

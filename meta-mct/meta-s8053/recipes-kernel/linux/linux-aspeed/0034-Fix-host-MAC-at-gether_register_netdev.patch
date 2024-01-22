@@ -1,0 +1,43 @@
+From 98e49cca088bc4ef8ee793dab08d0461f67a94e5 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Wed, 28 Sep 2022 07:04:49 +0800
+Subject: [PATCH] Fix host MAC at gether_register_netdev()
+
+---
+ drivers/usb/gadget/function/u_ether.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/usb/gadget/function/u_ether.c b/drivers/usb/gadget/function/u_ether.c
+index 97ce5ea..b96cf1b 100644
+--- a/drivers/usb/gadget/function/u_ether.c
++++ b/drivers/usb/gadget/function/u_ether.c
+@@ -847,7 +847,7 @@ struct net_device *gether_setup_name_default(const char *netname)
+ 	dev->dev_mac[3] = 0x3B;
+ 	dev->dev_mac[4] = 0x66;
+ 	dev->dev_mac[5] = 0x89;	
+-	pr_warn("using random %s ethernet address\n", "self");
++	pr_warn("using fixed %s ethernet address\n", "self");
+ 	//eth_random_addr(dev->host_mac);
+ 	dev->host_mac[0] = 0xA0;
+ 	dev->host_mac[1] = 0x42;
+@@ -855,7 +855,7 @@ struct net_device *gether_setup_name_default(const char *netname)
+ 	dev->host_mac[3] = 0x3B;
+ 	dev->host_mac[4] = 0x66;
+ 	dev->host_mac[5] = 0x8A;	
+-	pr_warn("using random %s ethernet address\n", "host");
++	pr_warn("using fixed %s ethernet address\n", "host");
+ 
+ 	net->netdev_ops = &eth_netdev_ops;
+ 
+@@ -881,7 +881,7 @@ int gether_register_netdev(struct net_device *net)
+ 	dev = netdev_priv(net);
+ 	g = dev->gadget;
+ 
+-	net->addr_assign_type = NET_ADDR_RANDOM;
++	net->addr_assign_type = NET_ADDR_PERM;
+ 	eth_hw_addr_set(net, dev->dev_mac);
+ 
+ 	status = register_netdev(net);
+-- 
+2.7.4
+

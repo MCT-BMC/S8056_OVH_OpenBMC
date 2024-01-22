@@ -1,0 +1,31 @@
+From e0901744aa79799a0ac61f30c7a7342c1490de92 Mon Sep 17 00:00:00 2001
+From: Ren_Chen <Ren_Chen@wiwynn.com>
+Date: Mon, 9 Nov 2020 13:57:59 +0800
+Subject: [PATCH] Support host power soft off
+
+---
+ chassishandler.cpp | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/chassishandler.cpp b/chassishandler.cpp
+index f7b299e..f1bd3a5 100644
+--- a/chassishandler.cpp
++++ b/chassishandler.cpp
+@@ -1470,10 +1470,12 @@ ipmi::RspType<> ipmiChassisControl(uint8_t chassisControl)
+             break;
+ 
+         case CMD_SOFT_OFF_VIA_OVER_TEMP:
++        {
+             // Request Host State Manager to do a soft power off
+-            rc = initiate_state_transition(State::Host::Transition::Off);
++            std::string softoffService("host-powersoft.service");
++            rc = startSystemdUnit(softoffService);
+             break;
+-
++        }
+         case CMD_PULSE_DIAGNOSTIC_INTR:
+             rc = setNmiProperty(true);
+             break;
+-- 
+2.28.0
+

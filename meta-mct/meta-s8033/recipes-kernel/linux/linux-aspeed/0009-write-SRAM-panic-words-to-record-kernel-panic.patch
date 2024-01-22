@@ -1,0 +1,31 @@
+From 0eebaba710b9072b6d8ac333ed18fc8493a7a797 Mon Sep 17 00:00:00 2001
+From: Janny Au <janny.au@mic.com.tw>
+Date: Thu, 10 Mar 2022 17:00:29 +0800
+Subject: [PATCH] write-SRAM-panic-words-to-record-kernel-panic
+
+---
+ kernel/panic.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/kernel/panic.c b/kernel/panic.c
+index cefd7d82366f..bf30053d301c 100644
+--- a/kernel/panic.c
++++ b/kernel/panic.c
+@@ -177,6 +177,17 @@ static void panic_print_sys_info(void)
+  */
+ void panic(const char *fmt, ...)
+ {
++	/*write SRAM*/
++	uint32_t SRAMaddress = 0x1e723000;
++	uint32_t write_value1 = 0x50414E49; //ascii "p a n i ""
++	uint32_t write_value2 = 0x43950000; //ascii "c & checksum"
++	
++	void __iomem		*physical_addr;
++	physical_addr = ioremap(SRAMaddress, 4);
++	writel(write_value1, physical_addr);
++	physical_addr = ioremap(SRAMaddress + 4, 4);
++	writel(write_value2, physical_addr);
++
+ 	static char buf[1024];
+ 	va_list args;
+ 	long i, i_next = 0, len;

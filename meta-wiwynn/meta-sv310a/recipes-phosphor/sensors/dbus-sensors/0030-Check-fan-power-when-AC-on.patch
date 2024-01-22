@@ -1,0 +1,60 @@
+From 326e92d86371bc86be47fc439b0fc8db69550f0c Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Thu, 11 Nov 2021 15:30:45 +0800
+Subject: [PATCH] Check fan power when AC on
+
+---
+ src/TachSensor.cpp | 20 +++++++++++++++++++-
+ 1 file changed, 19 insertions(+), 1 deletion(-)
+
+diff --git a/src/TachSensor.cpp b/src/TachSensor.cpp
+index dc70f5c..083e903 100644
+--- a/src/TachSensor.cpp
++++ b/src/TachSensor.cpp
+@@ -42,6 +42,8 @@ using IpmbMethodType =
+ static constexpr unsigned int pwmPollMs = 3000;
+ static constexpr size_t warnAfterErrorCount = 10;
+ static constexpr int fanFailSoftOffTimeLimit = 12;
++static constexpr auto fanPowerEnablePath = "/run/fan-power-enable";
++static bool fanPowerEnable = std::filesystem::exists(fanPowerEnablePath);
+ 
+ TachSensor::TachSensor(const std::string& path, const std::string& objectType,
+                        sdbusplus::asio::object_server& objectServer,
+@@ -105,6 +107,9 @@ TachSensor::TachSensor(const std::string& path, const std::string& objectType,
+     {
+         setInitialProperties(conn, sensor_paths::unitRPMs);
+     }
++
++    // Fan sensors are "Always" sensor, but we need to know host power status.
++    setupPowerMatch(conn);
+ }
+ 
+ TachSensor::~TachSensor()
+@@ -362,10 +367,23 @@ void TachSensor::handleResponse(const boost::system::error_code& err)
+         }
+         itemIface->set_property("Present", !missing);
+     }
++
++    if (!fanPowerEnable)
++    {
++        if (isPowerOn())
++        {
++            fanPowerEnable = true;
++        }
++        else
++        {
++            markAvailable(false);
++        }
++    }
++
+     std::istream responseStream(readBuf.get());
+     if (readingStateGood())
+     {
+-        if (!missing)
++        if (!missing && fanPowerEnable)
+         {
+             if (!err)
+             {
+-- 
+2.32.0
+

@@ -1,0 +1,32 @@
+From 2a13cf653880c9fa2c6699cfd29c293ebb2adffd Mon Sep 17 00:00:00 2001
+From: Janny Au <janny.au@mic.com.tw>
+Date: Thu, 10 Mar 2022 17:26:02 +0800
+Subject: [PATCH] Change-ADM1272-R-sense-to-0.5
+
+---
+ drivers/hwmon/pmbus/adm1275.c | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/hwmon/pmbus/adm1275.c b/drivers/hwmon/pmbus/adm1275.c
+index d311e0557401..0896cf7a87d2 100644
+--- a/drivers/hwmon/pmbus/adm1275.c
++++ b/drivers/hwmon/pmbus/adm1275.c
+@@ -117,12 +117,12 @@ static const struct coefficients adm1075_coefficients[] = {
+ static const struct coefficients adm1272_coefficients[] = {
+ 	[0] = { 6770, 0, -2 },		/* voltage, vrange 60V */
+ 	[1] = { 4062, 0, -2 },		/* voltage, vrange 100V */
+-	[2] = { 1326, 20480, -1 },	/* current, vsense range 15mV */
+-	[3] = { 663, 20480, -1 },	/* current, vsense range 30mV */
+-	[4] = { 3512, 0, -2 },		/* power, vrange 60V, irange 15mV */
+-	[5] = { 21071, 0, -3 },		/* power, vrange 100V, irange 15mV */
+-	[6] = { 17561, 0, -3 },		/* power, vrange 60V, irange 30mV */
+-	[7] = { 10535, 0, -3 },		/* power, vrange 100V, irange 30mV */
++	[2] = { 663, 20480, -1 },	/* current, vsense range 15mV */
++	[3] = { 332, 20480, -1 },	/* current, vsense range 30mV */
++	[4] = { 1756, 0, -2 },		/* power, vrange 60V, irange 15mV */
++	[5] = { 10536, 0, -3 },		/* power, vrange 100V, irange 15mV */
++	[6] = { 8781, 0, -3 },		/* power, vrange 60V, irange 30mV */
++	[7] = { 5268, 0, -3 },		/* power, vrange 100V, irange 30mV */
+ 	[8] = { 42, 31871, -1 },	/* temperature */
+ 
+ };

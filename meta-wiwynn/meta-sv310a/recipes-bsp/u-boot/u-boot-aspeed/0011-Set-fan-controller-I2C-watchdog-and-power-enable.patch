@@ -1,0 +1,227 @@
+From f0df2dc1d6fd10e3154b1920bd61db8f05a4d2b6 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Thu, 30 Sep 2021 16:39:28 +0800
+Subject: [PATCH] Set fan controller I2C watchdog and power enable
+
+---
+ board/aspeed/ast-g5/ast-g5.c | 183 +++++++++++++++++++++++++++++++++++
+ 1 file changed, 183 insertions(+)
+
+diff --git a/board/aspeed/ast-g5/ast-g5.c b/board/aspeed/ast-g5/ast-g5.c
+index 279a0f7303..8aea5053e9 100644
+--- a/board/aspeed/ast-g5/ast-g5.c
++++ b/board/aspeed/ast-g5/ast-g5.c
+@@ -8,6 +8,7 @@
+  */
+ 
+ #include <common.h>
++#include <i2c.h>
+ #include <netdev.h>
+ 
+ #include <asm/arch/ast_scu.h>
+@@ -31,6 +32,7 @@ DECLARE_GLOBAL_DATA_PTR;
+ #define GPIO_MNOP_VALUE           0x78
+ #define GPIO_MNOP_DIR             0x7c
+ #define AMBER_LED                 BIT(5)
++#define SLOT_ID_1                 BIT(27)
+ #define POWER_LED                 BIT(31)
+ 
+ #define SRAM_FAIL_OVER_STR_BASE   0x1e723000
+@@ -45,6 +47,185 @@ DECLARE_GLOBAL_DATA_PTR;
+ #define WDT_RESTART_OFFSET        0x8
+ #define WDT_CONTROL_OFFSET        0xc
+ 
++#define PCA9641_ARBITER_BUS       10
++#define PCA9641_ARBITER_ADDRESS   0x70
++#define FAN_CTL_ADDR_RIGHT        0x20
++#define FAN_CTL_ADDR_LEFT         0x23
++#define FAN_CTL_LED_ADDR_LEFT     0x27
++#define FAN_CTL_GLOBAL_CONFIG_REG 0x00
++#define FAN_CTL_IO0_DIR_REG       0x02
++#define FAN_CTL_IO0_VAL_REG       0x06
++
++#define PCA9641_RESET_REG         0x00
++#define PCA9641_CONTROL           0x01
++#define PCA9641_STATUS            0x02
++
++#define PCA9641_RESET_DATA        0x06
++
++#define PCA9641_CTL_LOCK_REQ      BIT(0)
++#define PCA9641_CTL_LOCK_GRANT    BIT(1)
++#define PCA9641_CTL_BUS_CONNECT   BIT(2)
++
++#define PCA9641_STS_OTHER_LOCK    BIT(0)
++
++// Time definition in us
++#define SELECT_DELAY_SHORT        50
++#define SELECT_DELAY_LONG         1000
++#define GIVE_UP_TIMEOUT           250000
++#define RESET_BUS_TIMEOUT         125000
++#define RESET_DELAY               35000
++
++#define BUSOFF(x, y)   (!(x & PCA9641_CTL_LOCK_GRANT) && \
++                        !(y & PCA9641_STS_OTHER_LOCK))
++#define other_lock(x)  (x & PCA9641_STS_OTHER_LOCK)
++#define lock_grant(x)  (x & PCA9641_CTL_LOCK_GRANT)
++
++int pca9641_arbitrate(int* select_timeout)
++{
++    int ret, reg_ctl, reg_sts;
++
++    ret = i2c_read(PCA9641_ARBITER_ADDRESS, PCA9641_CONTROL, 1, &reg_ctl, 1);
++    if (ret)
++    {
++        *select_timeout = SELECT_DELAY_SHORT;
++        return 0;
++    }
++
++    ret = i2c_read(PCA9641_ARBITER_ADDRESS, PCA9641_STATUS, 1, &reg_sts, 1);
++    if (ret)
++    {
++        *select_timeout = SELECT_DELAY_SHORT;
++        return 0;
++    }
++
++    if (BUSOFF(reg_ctl, reg_sts))
++    {
++        /*
++         * Bus is off. Request ownership or turn it on unless
++         * other master requested ownership.
++         */
++        reg_ctl |= PCA9641_CTL_LOCK_REQ;
++        i2c_reg_write(PCA9641_ARBITER_ADDRESS, PCA9641_CONTROL, reg_ctl);
++        reg_ctl = i2c_reg_read(PCA9641_ARBITER_ADDRESS, PCA9641_CONTROL);
++        if (lock_grant(reg_ctl))
++        {
++            /*
++             * Other master did not request ownership,
++             * or arbitration timeout expired. Take the bus.
++             */
++            reg_ctl |= PCA9641_CTL_BUS_CONNECT | PCA9641_CTL_LOCK_REQ;
++            i2c_reg_write(PCA9641_ARBITER_ADDRESS, PCA9641_CONTROL, reg_ctl);
++            *select_timeout = SELECT_DELAY_SHORT;
++        }
++        else
++        {
++            /*
++             * Other master requested ownership.
++             * Set extra long timeout to give it time to acquire it.
++             */
++            *select_timeout = SELECT_DELAY_LONG * 2;
++        }
++    }
++    else if (lock_grant(reg_ctl))
++    {
++        /*
++         * Bus is on, and we own it. We are done with acquisition.
++         */
++        reg_ctl |= PCA9641_CTL_BUS_CONNECT | PCA9641_CTL_LOCK_REQ;
++        i2c_reg_write(PCA9641_ARBITER_ADDRESS, PCA9641_CONTROL, reg_ctl);
++
++        return 1;
++    }
++    else if (other_lock(reg_sts))
++    {
++        /*
++         * Other master owns the bus.
++         * If arbitration timeout has expired, force ownership.
++         * Otherwise request it.
++         */
++        *select_timeout = SELECT_DELAY_LONG;
++        reg_ctl |= PCA9641_CTL_LOCK_REQ;
++        i2c_reg_write(PCA9641_ARBITER_ADDRESS, PCA9641_CONTROL, reg_ctl);
++    }
++
++    return 0;
++}
++
++int requestArbiter(void)
++{
++    int ret, select_timeout;
++    int timeoutUs = GIVE_UP_TIMEOUT;
++
++    do
++    {
++        ret = pca9641_arbitrate(&select_timeout);
++        if (ret)
++        {
++            return ret < 0 ? ret : 0;
++        }
++
++        // Reset bus after this time
++        if (timeoutUs <= RESET_BUS_TIMEOUT)
++        {
++            printf("Reset arbiter\n");
++            i2c_reg_write(PCA9641_ARBITER_ADDRESS, PCA9641_RESET_REG, PCA9641_RESET_DATA);
++            select_timeout = RESET_DELAY;
++        }
++
++        udelay(select_timeout);
++        timeoutUs -= select_timeout;
++    } while (timeoutUs > 0);
++
++    return -ETIMEDOUT;
++}
++
++void Set_Fan_Controller_I2C_Watchdog(void)
++{
++    puts("Set Default I2C Watchdog timeout to 5 seconds\n");
++
++    int ret;
++
++    // Set arbiter i2c bus number.
++    ret = i2c_set_bus_num(PCA9641_ARBITER_BUS);
++    if (ret < 0)
++    {
++        printf("Failed to set bus number\n");
++        return;
++    }
++
++    ret = i2c_probe(PCA9641_ARBITER_ADDRESS);
++    if (ret != 0)
++    {
++        printf("Arbiter is not present\n");
++        return;
++    }
++
++    ret = requestArbiter();
++    if (ret < 0)
++    {
++        printf("Failed to request arbiter. errno = %d\n", ret);
++        return;
++    }
++
++    // Get we are left node or right node.
++    int slot_id_1 = readl(GPIO_REG_BASE + GPIO_MNOP_VALUE) & SLOT_ID_1;
++
++    // Set fan controller i2c watchdog
++    uint8_t fanControllerAddress =
++        slot_id_1 ? FAN_CTL_ADDR_RIGHT : FAN_CTL_ADDR_LEFT;
++    i2c_reg_write(fanControllerAddress, FAN_CTL_GLOBAL_CONFIG_REG, 0x22);
++
++    // Set left node fan power enable direction to output (IO3)
++    uint8_t dir = i2c_reg_read(FAN_CTL_LED_ADDR_LEFT, FAN_CTL_IO0_DIR_REG);
++    i2c_reg_write(FAN_CTL_LED_ADDR_LEFT, FAN_CTL_IO0_DIR_REG, dir & 0xF7);
++    // Set left node fan power enable value to low (IO3)
++    uint8_t val = i2c_reg_read(FAN_CTL_LED_ADDR_LEFT, FAN_CTL_IO0_VAL_REG);
++    i2c_reg_write(FAN_CTL_LED_ADDR_LEFT, FAN_CTL_IO0_VAL_REG, val & 0xF7);
++
++    // Release arbiter
++    i2c_reg_write(PCA9641_ARBITER_ADDRESS, PCA9641_CONTROL, 0);
++}
++
+ /* --------------------------------------------------------------------
+  * @fn Chip_Register_Init
+  * @brief Initialize the BMC chip registers if needed
+@@ -239,6 +420,8 @@ int board_init(void)
+ 	SCU_Init();
+ 	LED_Init();
+ 	Set_Failover_WDT();
++	i2c_init(CONFIG_SYS_I2C_SPEED, CONFIG_SYS_I2C_SLAVE);
++	Set_Fan_Controller_I2C_Watchdog();
+ 
+ 	return 0;
+ }
+-- 
+2.32.0
+

@@ -1,0 +1,26 @@
+From 05856b09e145d1488ffe9025ec07c8171ceae666 Mon Sep 17 00:00:00 2001
+From: Nik Johnson <nik@nikjohnson.net>
+Date: Fri, 13 Nov 2020 19:24:32 -0500
+Subject: [PATCH] Disable OEM command special handling
+
+---
+ ipmid-new.cpp | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/ipmid-new.cpp b/ipmid-new.cpp
+index 73945f4..8395115 100644
+--- a/ipmid-new.cpp
++++ b/ipmid-new.cpp
+@@ -316,10 +316,12 @@ message::Response::ptr executeIpmiCommand(message::Request::ptr request)
+     {
+         return executeIpmiGroupCommand(request);
+     }
++#if 0
+     else if (netFnOem == netFn)
+     {
+         return executeIpmiOemCommand(request);
+     }
++#endif
+     return executeIpmiCommandCommon(handlerMap, netFn, request);
+ }
+ 

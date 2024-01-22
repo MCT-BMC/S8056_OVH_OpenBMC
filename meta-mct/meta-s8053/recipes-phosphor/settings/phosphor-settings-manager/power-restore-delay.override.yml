@@ -1,0 +1,8 @@
+---
+/xyz/openbmc_project/control/power_restore_delay:
+    - Interface: xyz.openbmc_project.Control.Power.RestoreDelay
+      Properties:
+          PowerRestoreDelay:
+              Default: 0
+          PowerRestoreAlwaysOnPolicy:
+              Default: RestoreDelay::AlwaysOnPolicy::Immediately

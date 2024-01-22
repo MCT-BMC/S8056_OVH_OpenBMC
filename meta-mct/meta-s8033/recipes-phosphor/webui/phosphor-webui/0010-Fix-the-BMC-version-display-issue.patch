@@ -1,0 +1,40 @@
+From 712a8baaa9c4c1f851128b0f10c27febd5436feb Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Thu, 12 Nov 2020 20:01:28 +0800
+Subject: [PATCH] Fix the BMC version display issue
+
+Modify the display function for restructuring the getting version string.
+---
+ app/overview/controllers/system-overview-controller.js | 13 ++++++++++++-
+ 1 file changed, 12 insertions(+), 1 deletion(-)
+ mode change 100644 => 100755 app/overview/controllers/system-overview-controller.js
+
+diff --git a/app/overview/controllers/system-overview-controller.js b/app/overview/controllers/system-overview-controller.js
+old mode 100644
+new mode 100755
+index 8d43613..fe0f6e0
+--- a/app/overview/controllers/system-overview-controller.js
++++ b/app/overview/controllers/system-overview-controller.js
+@@ -43,7 +43,18 @@ window.angular && (function(angular) {
+ 
+         var getFirmwaresPromise = APIUtils.getFirmwares().then(
+             function(data) {
+-              $scope.bmc_firmware = data.bmcActiveVersion;
++
++              var versionTile = data.bmcActiveVersion.slice(0,1)
++              var version = data.bmcActiveVersion.slice(1);
++
++              var versionSplite= version.split('-');
++              var mainVersionSplite= versionSplite[0].split('.');
++
++              var major = parseInt(mainVersionSplite[0], 16).toString(10);
++              var minor = parseInt(mainVersionSplite[1], 16).toString(10);
++              var build = parseInt(versionSplite[1], 16).toString(10);
++
++              $scope.bmc_firmware = versionTile + major + '.' + minor + '.' + build;
+               $scope.server_firmware = data.hostActiveVersion;
+             },
+             function(error) {
+-- 
+2.7.4
+

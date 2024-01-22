@@ -1,0 +1,87 @@
+From 981870b4a748a589c937d9b77dc3e101e24810c8 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Mon, 20 Apr 2020 11:07:05 +0800
+Subject: [PATCH 09/11] Change to steady_timer used in FanTach sensor
+
+---
+ include/TachSensor.hpp | 3 ++-
+ src/FanMain.cpp        | 4 ++--
+ src/TachSensor.cpp     | 5 ++---
+ 3 files changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/include/TachSensor.hpp b/include/TachSensor.hpp
+index 9ae04e1..16aa1a4 100644
+--- a/include/TachSensor.hpp
++++ b/include/TachSensor.hpp
+@@ -13,6 +13,7 @@
+ #include <string>
+ #include <utility>
+ #include <vector>
++#include <boost/asio/steady_timer.hpp>
+ 
+ class PresenceSensor
+ {
+@@ -80,7 +81,7 @@ class TachSensor : public Sensor
+     std::shared_ptr<sdbusplus::asio::dbus_interface> itemIface;
+     std::shared_ptr<sdbusplus::asio::dbus_interface> itemAssoc;
+     boost::asio::posix::stream_descriptor inputDev;
+-    boost::asio::deadline_timer waitTimer;
++    boost::asio::steady_timer waitTimer;
+     boost::asio::streambuf readBuf;
+     std::string path;
+     size_t errCount;
+diff --git a/src/FanMain.cpp b/src/FanMain.cpp
+index 37a4e63..6d9ca46 100644
+--- a/src/FanMain.cpp
++++ b/src/FanMain.cpp
+@@ -435,7 +435,7 @@ int main()
+         createRedundancySensor(tachSensors, systemBus, objectServer);
+     });
+ 
+-    boost::asio::deadline_timer filterTimer(io);
++    boost::asio::steady_timer filterTimer(io);
+     std::function<void(sdbusplus::message::message&)> eventHandler =
+         [&](sdbusplus::message::message& message) {
+             if (message.is_method_error())
+@@ -445,7 +445,7 @@ int main()
+             }
+             sensorsChanged->insert(message.get_path());
+             // this implicitly cancels the timer
+-            filterTimer.expires_from_now(boost::posix_time::seconds(1));
++            filterTimer.expires_from_now(boost::asio::chrono::seconds(1));
+ 
+             filterTimer.async_wait([&](const boost::system::error_code& ec) {
+                 if (ec == boost::asio::error::operation_aborted)
+diff --git a/src/TachSensor.cpp b/src/TachSensor.cpp
+index a921a75..4ced919 100644
+--- a/src/TachSensor.cpp
++++ b/src/TachSensor.cpp
+@@ -22,7 +22,6 @@
+ 
+ #include <boost/algorithm/string/predicate.hpp>
+ #include <boost/algorithm/string/replace.hpp>
+-#include <boost/date_time/posix_time/posix_time.hpp>
+ #include <fstream>
+ #include <gpiod.hpp>
+ #include <iostream>
+@@ -150,7 +149,7 @@ void TachSensor::handleResponse(const boost::system::error_code& err)
+             return;
+         }
+         inputDev.assign(fd);
+-        waitTimer.expires_from_now(boost::posix_time::milliseconds(pollTime));
++        waitTimer.expires_from_now(boost::asio::chrono::milliseconds(pollTime));
+         waitTimer.async_wait([&](const boost::system::error_code& ec) {
+             if (ec == boost::asio::error::operation_aborted)
+             {
+@@ -229,7 +228,7 @@ void TachSensor::handleResponse(const boost::system::error_code& err)
+         return; // we're no longer valid
+     }
+     inputDev.assign(fd);
+-    waitTimer.expires_from_now(boost::posix_time::milliseconds(pollTime));
++    waitTimer.expires_from_now(boost::asio::chrono::milliseconds(pollTime));
+     waitTimer.async_wait([&](const boost::system::error_code& ec) {
+         if (ec == boost::asio::error::operation_aborted)
+         {
+-- 
+2.24.1
+

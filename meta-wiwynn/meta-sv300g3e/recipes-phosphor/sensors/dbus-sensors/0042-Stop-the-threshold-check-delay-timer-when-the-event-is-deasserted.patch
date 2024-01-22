@@ -1,0 +1,142 @@
+From a3c4f9c6e570b5d65c5394885c3687fcd65d9d2e Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Sun, 14 Jun 2020 21:27:50 +0800
+Subject: [PATCH] Stop the threshold check delay timer when the event is
+ deasserted
+
+---
+ include/Thresholds.hpp | 50 +++++++++++++++++++++++++++++++++++++-----
+ include/sensor.hpp     |  1 +
+ src/Thresholds.cpp     |  7 ++++++
+ 3 files changed, 53 insertions(+), 5 deletions(-)
+
+diff --git a/include/Thresholds.hpp b/include/Thresholds.hpp
+index 42781c0..d13207d 100644
+--- a/include/Thresholds.hpp
++++ b/include/Thresholds.hpp
+@@ -46,7 +46,14 @@ struct Threshold
+ void assertThresholds(Sensor* sensor, thresholds::Level level,
+                       thresholds::Direction direction, bool assert);
+ 
+-using TimerPair = std::pair<bool, boost::asio::steady_timer>;
++struct TimerUsed
++{
++    bool used;
++    Level level;
++    Direction direction;
++};
++
++using TimerPair = std::pair<TimerUsed, boost::asio::steady_timer>;
+ 
+ struct ThresholdTimer
+ {
+@@ -56,14 +63,44 @@ struct ThresholdTimer
+     {
+     }
+ 
++    void stopTimer(const Threshold& threshold)
++    {
++        struct TimerUsed timerUsed = {};
++        bool isTimerCancel = false;
++
++        for (TimerPair& timer : timers)
++        {
++            timerUsed = timer.first;
++            if (timerUsed.used)
++            {
++                if ((timerUsed.level == threshold.level) &&
++                    (timerUsed.direction == threshold.direction))
++                {
++                    timer.second.cancel();
++                    isTimerCancel = true;
++                }
++            }
++        }
++
++        if (isTimerCancel == true)
++        {
++            if (isPowerOn())
++            {
++                assertThresholds(sensor, threshold.level,
++                                threshold.direction, true);
++            }
++        }
++    }
++
+     void startTimer(const Threshold& threshold)
+     {
++        struct TimerUsed timerUsed = {};
+         constexpr const size_t waitTime = 5;
+         TimerPair* pair = nullptr;
+ 
+         for (TimerPair& timer : timers)
+         {
+-            if (!timer.first)
++            if (!timer.first.used)
+             {
+                 pair = &timer;
+                 break;
+@@ -71,13 +108,16 @@ struct ThresholdTimer
+         }
+         if (pair == nullptr)
+         {
+-            pair = &timers.emplace_back(false, boost::asio::steady_timer(io));
++            pair = &timers.emplace_back(timerUsed,
++                                        boost::asio::steady_timer(io));
+         }
+-        pair->first = true;
++        pair->first.used = true;
++        pair->first.level = threshold.level;
++        pair->first.direction = threshold.direction;
+         pair->second.expires_from_now(boost::asio::chrono::seconds(waitTime));
+         pair->second.async_wait(
+             [this, pair, threshold](boost::system::error_code ec) {
+-                pair->first = false;
++                pair->first.used = false;
+ 
+                 if (ec == boost::asio::error::operation_aborted)
+                 {
+diff --git a/include/sensor.hpp b/include/sensor.hpp
+index 765f193..275499f 100644
+--- a/include/sensor.hpp
++++ b/include/sensor.hpp
+@@ -83,6 +83,7 @@ struct Sensor
+             "InvalidValue", invalidValue, [&](const bool& newState, bool& oldState) {
+                 return setSensorValueInvalid(newState, oldState);
+             });
++        sensorInterface->register_property("AssertValue", value);
+         for (auto& threshold : thresholds)
+         {
+             std::shared_ptr<sdbusplus::asio::dbus_interface> iface;
+diff --git a/src/Thresholds.cpp b/src/Thresholds.cpp
+index 0b33829..cfaee9e 100644
+--- a/src/Thresholds.cpp
++++ b/src/Thresholds.cpp
+@@ -309,6 +309,11 @@ bool checkThresholds(Sensor* sensor)
+     {
+         assertThresholds(sensor, threshold.level, threshold.direction,
+                          asserted);
++        if(asserted)
++        {
++            (sensor->sensorInterface)->set_property("AssertValue", sensor->value);
++        }
++
+         if (threshold.level == thresholds::Level::CRITICAL && asserted)
+         {
+             status = false;
+@@ -327,10 +332,12 @@ void checkThresholdsPowerDelay(Sensor* sensor, ThresholdTimer& thresholdTimer)
+     {
+         if (asserted)
+         {
++            (sensor->sensorInterface)->set_property("AssertValue", sensor->value);
+             thresholdTimer.startTimer(threshold);
+         }
+         else
+         {
++            thresholdTimer.stopTimer(threshold);
+             assertThresholds(sensor, threshold.level, threshold.direction,
+                              false);
+         }
+-- 
+2.24.1
+

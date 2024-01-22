@@ -1,0 +1,58 @@
+From 61c35b8a4ad48bbc2e203b46502028caeb4ec617 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Wed, 1 Dec 2021 10:14:44 +0800
+Subject: [PATCH] Support latest host tool and fix tool interrupt issue
+
+---
+ bmc/firmware-handler/config-static-bmc-reboot.json.in | 3 ++-
+ bmc/firmware-handler/firmware_handler.cpp             | 7 +++++--
+ 2 files changed, 7 insertions(+), 3 deletions(-)
+ mode change 100644 => 100755 bmc/firmware-handler/config-static-bmc-reboot.json.in
+ mode change 100644 => 100755 bmc/firmware-handler/firmware_handler.cpp
+
+diff --git a/bmc/firmware-handler/config-static-bmc-reboot.json.in b/bmc/firmware-handler/config-static-bmc-reboot.json.in
+old mode 100644
+new mode 100755
+index e2618e8..55fe4fc
+--- a/bmc/firmware-handler/config-static-bmc-reboot.json.in
++++ b/bmc/firmware-handler/config-static-bmc-reboot.json.in
+@@ -14,7 +14,8 @@
+ 			"unit": "@VERIFY_DBUS_SERVICE@"
+ 		},
+ 		"update": {
+-			"type": "reboot"
++			"type": "systemd",
++			"unit": "bmc-reboot.service"
+ 		}
+ 	}
+ }]
+diff --git a/bmc/firmware-handler/firmware_handler.cpp b/bmc/firmware-handler/firmware_handler.cpp
+old mode 100644
+new mode 100755
+index afcfc81..0c2f2a3
+--- a/bmc/firmware-handler/firmware_handler.cpp
++++ b/bmc/firmware-handler/firmware_handler.cpp
+@@ -102,7 +102,7 @@ bool FirmwareBlobHandler::deleteBlob(const std::string&)
+             /* Trying to delete anything at this point has no effect and returns
+              * false.
+              */
+-            return false;
++            break;
+         case UpdateState::verificationPending:
+             abortProcess();
+             return true;
+@@ -113,7 +113,10 @@ bool FirmwareBlobHandler::deleteBlob(const std::string&)
+             break;
+     }
+ 
+-    return false;
++    abortUpdate();
++    abortVerification();
++    abortProcess();
++    return true;
+ }
+ 
+ /*
+-- 
+2.7.4
+

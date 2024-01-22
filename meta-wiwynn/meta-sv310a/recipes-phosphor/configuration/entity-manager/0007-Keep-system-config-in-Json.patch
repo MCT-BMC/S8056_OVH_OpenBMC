@@ -1,0 +1,38 @@
+From 513593a4c49c553e28221ed740a9b172dec3f028 Mon Sep 17 00:00:00 2001
+From: Eli Huang <Eli_Huang@wiwynn.com>
+Date: Mon, 12 Jul 2021 12:14:17 +0800
+Subject: [PATCH] Keep system config in Json
+
+---
+ src/EntityManager.cpp | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/src/EntityManager.cpp b/src/EntityManager.cpp
+index 436a7d4..891d70b 100644
+--- a/src/EntityManager.cpp
++++ b/src/EntityManager.cpp
+@@ -506,10 +506,21 @@ bool writeJsonFiles(const nlohmann::json& systemConfiguration)
+     std::ofstream output(currentConfiguration);
+     if (!output.good())
+     {
++        std::cerr << "Failed to open system.json\n";
+         return false;
+     }
+     output << systemConfiguration.dump(4);
++    if (!output.good())
++    {
++        std::cerr << "Failed to write system.json\n";
++        output.close();
++        return false;
++    }
++
+     output.close();
++
++    // Update last json to keep the system configuration after BMC reboot
++    lastJson = systemConfiguration;
+     return true;
+ }
+ 
+-- 
+2.28.0
+

@@ -1,0 +1,7 @@
+[Unit]
+Description=End-of-Post Event Log Service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env end-of-post-event.sh
+SyslogIdentifier=end-of-post-event

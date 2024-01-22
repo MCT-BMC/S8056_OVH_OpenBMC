@@ -1,0 +1,164 @@
+From 19cacfb467a19b165606b5d1096292e36eabcc90 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Thu, 7 Oct 2021 19:27:50 +0800
+Subject: [PATCH] Add specified sensor event to trigger prochot related service
+
+---
+ include/filterutils.hpp             | 113 +++++++++++++++++++++++++++++++++++-
+ include/threshold_event_monitor.hpp |   2 +-
+ 2 files changed, 113 insertions(+), 2 deletions(-)
+
+diff --git a/include/filterutils.hpp b/include/filterutils.hpp
+index 006ab32..f03d511 100755
+--- a/include/filterutils.hpp
++++ b/include/filterutils.hpp
+@@ -1,5 +1,7 @@
+ #include <iostream>
+ 
++#include <sdbusplus/bus.hpp>
++
+ extern "C" {
+     #include <linux/i2c-dev.h>
+     #include <i2c/smbus.h>
+@@ -52,7 +54,60 @@ int getRegsInfoWord(uint8_t busId, uint8_t address, uint8_t regs, int16_t* pu16d
+     return 0;
+ }
+ 
+-bool filterSensor(std::string sensorName)
++int setBmcService(std::string service,std::string status, std::string setting)
++{
++    constexpr auto SYSTEMD_SERVICE = "org.freedesktop.systemd1";
++    constexpr auto SYSTEMD_OBJ_PATH = "/org/freedesktop/systemd1";
++    constexpr auto SYSTEMD_INTERFACE = "org.freedesktop.systemd1.Manager";
++
++    auto bus = sdbusplus::bus::new_default();
++
++    // start/stop servcie
++    if(status != "Null"){
++        auto method = bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH, SYSTEMD_INTERFACE, status.c_str());
++        method.append(service, "replace");
++
++        try
++        {
++            auto reply = bus.call(method);
++        }
++        catch (const sdbusplus::exception::SdBusError& e)
++        {
++            std::cerr << "Error in start/stop servcie. ERROR=" << e.what();
++            return -1;
++        }
++    }
++
++    // enable/disable service
++    if(setting != "Null"){
++        auto method = bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_OBJ_PATH, SYSTEMD_INTERFACE,setting.c_str());
++
++        std::array<std::string, 1> appendMessage = {service};
++
++        if(setting == "EnableUnitFiles")
++        {
++            method.append(appendMessage, false, true);
++        }
++        else
++        {
++            method.append(appendMessage, false);
++        }
++
++        try
++        {
++            auto reply = bus.call(method);
++        }
++        catch (const sdbusplus::exception::SdBusError& e)
++        {
++            std::cerr << "Error in enable/disable service. ERROR=" << e.what();
++            return -1;
++        }
++    }
++
++     return 0;
++}
++
++bool filterSensor(std::string sensorName, bool assert)
+ {
+     if (DEBUG)
+     {
+@@ -84,6 +139,62 @@ bool filterSensor(std::string sensorName)
+             return true;
+         }
+     }
++    else if(sensorName == "CPU_Temp")
++    {
++        if(assert)
++        {
++            setBmcService("gpio-prochot-thermtrip-assert@prochot.service","RestartUnit","Null");
++        }
++        else
++        {
++            setBmcService("gpio-prochot-thermtrip-deassert@prochot.service","RestartUnit","Null");
++        }
++    }
++    else if(sensorName == "CPU_CORE_MOSFET")
++    {
++        if(assert)
++        {
++            setBmcService("gpio-vr-hot-assert@CPU_VRHOT.service","RestartUnit","Null");
++        }
++        else
++        {
++            setBmcService("gpio-vr-hot-deassert@CPU_VRHOT.service","RestartUnit","Null");
++        }
++    }
++    else if(sensorName == "CPU_SOC_MOSFET")
++    {
++        if(assert)
++        {
++            setBmcService("gpio-vr-hot-assert@SOC_VRHOT.service","RestartUnit","Null");
++        }
++        else
++        {
++            setBmcService("gpio-vr-hot-deassert@SOC_VRHOT.service","RestartUnit","Null");
++        }
++    }
++    else if(sensorName == "DIMM_MOSFET_1")
++    {
++        if(assert)
++        {
++            setBmcService("gpio-vr-hot-assert@MEM_ABCD_VRHOT.service","RestartUnit","Null");
++        }
++        else
++        {
++            setBmcService("gpio-vr-hot-deassert@MEM_ABCD_VRHOT.service","RestartUnit","Null");
++        }
++    }
++    else if(sensorName == "DIMM_MOSFET_2")
++    {
++        if(assert)
++        {
++            setBmcService("gpio-vr-hot-assert@MEM_EFGH_VRHOT.service","RestartUnit","Null");
++        }
++        else
++        {
++            setBmcService("gpio-vr-hot-deassert@MEM_EFGH_VRHOT.service","RestartUnit","Null");
++        }
++    }
++
+ 
+     return false;
+ }
+\ No newline at end of file
+diff --git a/include/threshold_event_monitor.hpp b/include/threshold_event_monitor.hpp
+index 732411a..feda347 100755
+--- a/include/threshold_event_monitor.hpp
++++ b/include/threshold_event_monitor.hpp
+@@ -277,7 +277,7 @@ inline static sdbusplus::bus::match::match startThresholdAssertMonitor(
+             }
+         }
+ 
+-        if(filterSensor(sensorName))
++        if(filterSensor(sensorName,assert))
+         {
+             std::cerr << "Sensor filter : " << sensorName << std::endl;
+             return;
+-- 
+2.7.4
+

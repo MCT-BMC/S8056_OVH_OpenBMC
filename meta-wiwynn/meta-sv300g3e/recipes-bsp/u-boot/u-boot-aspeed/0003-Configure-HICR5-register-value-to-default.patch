@@ -1,0 +1,54 @@
+From fbe67d4af347be13f951f2e7d4304a6cad538827 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Tue, 18 Feb 2020 13:44:59 +0800
+Subject: [PATCH] Configure HICR5 register value to default
+
+---
+ board/aspeed/ast-g5/ast-g5.c | 24 ++++++++++++++++++++++--
+ 1 file changed, 22 insertions(+), 2 deletions(-)
+
+diff --git a/board/aspeed/ast-g5/ast-g5.c b/board/aspeed/ast-g5/ast-g5.c
+index 40acde422c..3dc78d8229 100644
+--- a/board/aspeed/ast-g5/ast-g5.c
++++ b/board/aspeed/ast-g5/ast-g5.c
+@@ -40,6 +40,25 @@ DECLARE_GLOBAL_DATA_PTR;
+ #define PWM_TACH_TYPE_N1          0x1c
+ #define PWM_TACH_SRC              0x20
+ 
++#define LPC_REG_BASE              0x1e789000
++#define HOST_INTERFACE_CTL_5      0x80
++
++/* --------------------------------------------------------------------
++ * @fn Chip_Register_Init
++ * @brief Initialize the BMC chip registers if needed
++ *
++ *--------------------------------------------------------------------*/
++void Chip_Register_Init()
++{
++    ulong reg_addr = 0;
++
++    // printf("Initialize the BMC chip registers\n");
++
++    /*  Set HICR5 to 0x00000400 as default */
++    reg_addr = LPC_REG_BASE + HOST_INTERFACE_CTL_5;
++    *((volatile ulong *) reg_addr) = 0x00000400;
++}
++
+ /*--------------------------------------------------------------------
+  * @fn Set_Default_Fan_PWM
+  * @brief Set default fan PWM
+@@ -161,8 +180,9 @@ int board_init(void)
+ 	gd->bd->bi_boot_params = CONFIG_SYS_SDRAM_BASE + 0x100;
+ 	gd->flags = 0;
+ 
+-	Set_Default_Fan_PWM(DEFAULT_PWM);
+-	Set_Default_UART_Route();
++    Chip_Register_Init();
++    Set_Default_Fan_PWM(DEFAULT_PWM);
++    Set_Default_UART_Route();
+ 
+ 	return 0;
+ }
+-- 
+2.24.1
+

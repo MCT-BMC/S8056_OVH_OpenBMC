@@ -1,0 +1,667 @@
+From 1421949c4198c0c0260c10f932cd5b1f643dc688 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Wed, 1 Apr 2020 21:56:06 +0800
+Subject: [PATCH] Add to support Fan power sensor - Power monitor IC: INA219 -
+ Fan power/current/voltage
+
+---
+ CMakeLists.txt                                |  17 +
+ include/FanExtSensor.hpp                      |  33 ++
+ .../xyz.openbmc_project.fanextsensor.service  |  13 +
+ src/FanExtSensor.cpp                          | 191 ++++++++++
+ src/FanExtSensorMain.cpp                      | 329 ++++++++++++++++++
+ 5 files changed, 583 insertions(+)
+ create mode 100644 include/FanExtSensor.hpp
+ create mode 100644 service_files/xyz.openbmc_project.fanextsensor.service
+ create mode 100644 src/FanExtSensor.cpp
+ create mode 100644 src/FanExtSensorMain.cpp
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 4e94102..2b4e942 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -40,6 +40,7 @@ option (DISABLE_ADC "Disable installing ADC sensor" OFF)
+ option (DISBALE_CPU "Disable installing CPU sensor" OFF)
+ option (DISABLE_EXIT_AIR "Disable installing Exit Air Temp sensor" OFF)
+ option (DISABLE_FAN "Disable installing fan sensor" OFF)
++option (DISABLE_FANEXT "Disable installing extened fan sensor" OFF)
+ option (DISABLE_HWMON_TEMP "Disable installing hwmon temp sensor" OFF)
+ option (DISABLE_VR "Disable installing VR sensor" OFF)
+ option (DISABLE_EVENT "Disable installing EVENT sensor" OFF)
+@@ -67,6 +68,8 @@ set (EXIT_AIR_SRC_FILES src/Utils.cpp src/Thresholds.cpp)
+ set (FAN_SRC_FILES src/TachSensor.cpp src/PwmSensor.cpp src/Utils.cpp
+      src/Thresholds.cpp)
+ 
++set (FANEXT_SRC_FILES src/FanExtSensor.cpp src/Thresholds.cpp src/Utils.cpp)
++
+ set (HWMON_TEMP_SRC_FILES src/Utils.cpp src/HwmonTempSensor.cpp
+      src/Thresholds.cpp)
+ 
+@@ -186,6 +189,10 @@ add_dependencies (fansensor sdbusplus-project)
+ target_link_libraries (fansensor ${SENSOR_LINK_LIBS})
+ target_link_libraries (fansensor gpiodcxx)
+ 
++add_executable (fanextsensor src/FanExtSensorMain.cpp ${FANEXT_SRC_FILES})
++add_dependencies (fanextsensor sdbusplus-project)
++target_link_libraries (fanextsensor ${SENSOR_LINK_LIBS})
++
+ add_executable (hwmontempsensor src/HwmonTempMain.cpp ${HWMON_TEMP_SRC_FILES})
+ add_dependencies (hwmontempsensor sdbusplus-project)
+ target_link_libraries (hwmontempsensor ${SENSOR_LINK_LIBS})
+@@ -231,6 +238,7 @@ if (NOT YOCTO)
+     add_dependencies (cpusensor ${EXTERNAL_PACKAGES})
+     add_dependencies (exitairtempsensor ${EXTERNAL_PACKAGES})
+     add_dependencies (fansensor ${EXTERNAL_PACKAGES})
++    add_dependencies (fanextsensor ${EXTERNAL_PACKAGES})
+     add_dependencies (hwmontempsensor ${EXTERNAL_PACKAGES})
+     add_dependencies (vrsensor ${EXTERNAL_PACKAGES})
+     add_dependencies (eventsensor ${EXTERNAL_PACKAGES})
+@@ -274,6 +282,15 @@ if (NOT DISABLE_FAN)
+                  DESTINATION ${SERVICE_FILE_INSTALL_DIR})
+ endif ()
+ 
++if (NOT DISABLE_FANEXT)
++    install (TARGETS fanextsensor DESTINATION bin)
++    install (
++        FILES
++            ${SERVICE_FILE_SRC_DIR}/xyz.openbmc_project.fanextsensor.service
++            DESTINATION ${SERVICE_FILE_INSTALL_DIR}
++    )
++endif ()
++
+ if (NOT DISABLE_HWMON_TEMP)
+     install (TARGETS hwmontempsensor DESTINATION bin)
+     install (
+diff --git a/include/FanExtSensor.hpp b/include/FanExtSensor.hpp
+new file mode 100644
+index 0000000..4d230c2
+--- /dev/null
++++ b/include/FanExtSensor.hpp
+@@ -0,0 +1,33 @@
++#pragma once
++
++#include <Thresholds.hpp>
++#include <sdbusplus/asio/object_server.hpp>
++#include <sensor.hpp>
++#include <boost/chrono/chrono_io.hpp>
++
++class FanExtSensor : public Sensor
++{
++public:
++    FanExtSensor(const std::string& path, const std::string& objectType,
++               sdbusplus::asio::object_server& objectServer,
++               std::shared_ptr<sdbusplus::asio::connection>& conn,
++               boost::asio::io_service& io, const std::string& sensorName,
++               std::vector<thresholds::Threshold>&& thresholds,
++               const std::string& sensorConfiguration,
++               const std::string& sensorTypeName,
++               const double MaxValue, const double MinValue, const uint32_t scaleValue);
++    ~FanExtSensor();
++
++private:
++    sdbusplus::asio::object_server& objServer;
++    boost::asio::posix::stream_descriptor inputDev;
++    boost::asio::steady_timer waitTimer;
++    boost::asio::streambuf readBuf;
++    thresholds::ThresholdTimer thresholdTimer;
++    std::string path;
++    uint32_t sensorScaleFactor;
++    int errCount;
++    void setupRead(void);
++    void handleResponse(const boost::system::error_code& err);
++    void checkThresholds(void) override;
++};
+diff --git a/service_files/xyz.openbmc_project.fanextsensor.service b/service_files/xyz.openbmc_project.fanextsensor.service
+new file mode 100644
+index 0000000..508dfe5
+--- /dev/null
++++ b/service_files/xyz.openbmc_project.fanextsensor.service
+@@ -0,0 +1,13 @@
++[Unit]
++Description=Extended Fan Sensor
++StopWhenUnneeded=false
++Requires=xyz.openbmc_project.EntityManager.service
++After=xyz.openbmc_project.EntityManager.service
++
++[Service]
++Restart=always
++RestartSec=5
++ExecStart=/usr/bin/fanextsensor
++
++[Install]
++WantedBy=multi-user.target
+diff --git a/src/FanExtSensor.cpp b/src/FanExtSensor.cpp
+new file mode 100644
+index 0000000..e7bfbd6
+--- /dev/null
++++ b/src/FanExtSensor.cpp
+@@ -0,0 +1,191 @@
++/*
++// Copyright (c) 2020 Wiwynn Corporation
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//      http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++*/
++
++#include "FanExtSensor.hpp"
++
++#include <unistd.h>
++#include <boost/algorithm/string/predicate.hpp>
++#include <boost/algorithm/string/replace.hpp>
++#include <boost/date_time/posix_time/posix_time.hpp>
++#include <iostream>
++#include <limits>
++#include <sdbusplus/asio/connection.hpp>
++#include <sdbusplus/asio/object_server.hpp>
++#include <string>
++
++static constexpr const char* sensorPathPrefix = "/xyz/openbmc_project/sensors/";
++
++static std::chrono::seconds sensorPollSec(1);
++static constexpr size_t warnAfterErrorCount = 10;
++
++FanExtSensor::FanExtSensor(
++    const std::string& path, const std::string& objectType,
++    sdbusplus::asio::object_server& objectServer,
++    std::shared_ptr<sdbusplus::asio::connection>& conn,
++    boost::asio::io_service& io, const std::string& sensorName,
++    std::vector<thresholds::Threshold>&& _thresholds,
++    const std::string& sensorConfiguration,
++    const std::string& sensorTypeName,
++    const double MaxValue, const double MinValue, const uint32_t scaleValue) :
++    Sensor(boost::replace_all_copy(sensorName, " ", "_"),
++           std::move(_thresholds), sensorConfiguration, objectType, MaxValue,
++           MinValue), inputDev(io, open(path.c_str(), O_RDONLY)),
++    objServer(objectServer), waitTimer(io), errCount(0), path(path),
++    thresholdTimer(io, this), sensorScaleFactor(scaleValue)
++{
++    std::string dbusPath = sensorPathPrefix + sensorTypeName + name;
++
++    sensorInterface = objectServer.add_interface(
++                          dbusPath, "xyz.openbmc_project.Sensor.Value");
++
++    if (thresholds::hasWarningInterface(thresholds))
++    {
++        thresholdInterfaceWarning = objectServer.add_interface(
++            dbusPath, "xyz.openbmc_project.Sensor.Threshold.Warning");
++    }
++
++    if (thresholds::hasCriticalInterface(thresholds))
++    {
++        thresholdInterfaceCritical = objectServer.add_interface(
++            dbusPath, "xyz.openbmc_project.Sensor.Threshold.Critical");
++    }
++
++    association =
++        objectServer.add_interface(dbusPath, "org.openbmc.Associations");
++
++    setInitialProperties(conn);
++    setupPowerMatch(conn);
++    setupRead();
++}
++
++FanExtSensor::~FanExtSensor()
++{
++    // close the Timer to cancel async operations
++    waitTimer.cancel();
++    objServer.remove_interface(thresholdInterfaceWarning);
++    objServer.remove_interface(thresholdInterfaceCritical);
++    objServer.remove_interface(sensorInterface);
++    objServer.remove_interface(association);
++}
++
++void FanExtSensor::setupRead(void)
++{
++    boost::asio::async_read_until(
++        inputDev, readBuf, '\n',
++        [&](const boost::system::error_code& ec,
++            std::size_t /*bytes_transfered*/) { handleResponse(ec); });
++}
++
++void FanExtSensor::handleResponse(const boost::system::error_code& err)
++{
++    if (err == boost::system::errc::bad_file_descriptor)
++    {
++        return; // we're being destroyed
++    }
++
++    // Set as sensor reading invalid for power-on type sensor
++    if (!isPowerOn())
++    {
++        updateValueInvalid(true);
++        // updateValue(0);
++        errCount = 0;
++
++        // clear response buffer reading
++        std::istream invalidResponseStream(&readBuf);
++        std::string invalidResponse;
++        std::getline(invalidResponseStream, invalidResponse);
++        invalidResponseStream.clear();
++
++        inputDev.close();
++        int fd = open(path.c_str(), O_RDONLY);
++        if (fd <= 0)
++        {
++            return;
++        }
++        inputDev.assign(fd);
++        waitTimer.expires_from_now(std::chrono::steady_clock::duration(sensorPollSec));
++        waitTimer.async_wait([&](const boost::system::error_code& ec) {
++            if (ec == boost::asio::error::operation_aborted)
++            {
++                return;
++            }
++            setupRead();
++        });
++
++        return;
++    }
++
++    std::istream responseStream(&readBuf);
++
++    if (!err)
++    {
++        std::string response;
++        try
++        {
++            std::getline(responseStream, response);
++            float nvalue = std::stof(response);
++            nvalue /= sensorScaleFactor;
++            if (static_cast<double>(nvalue) != value)
++            {
++                updateValue(nvalue);
++            }
++            errCount = 0;
++            updateValueInvalid(false);
++        }
++        catch (const std::invalid_argument&)
++        {
++            errCount++;
++        }
++    }
++    else
++    {
++        errCount++;
++    }
++
++    if (errCount >= warnAfterErrorCount)
++    {
++        updateValueInvalid(true);
++        // updateValue(0);
++    }
++
++    responseStream.clear();
++    inputDev.close();
++    int fd = open(path.c_str(), O_RDONLY);
++    if (fd < 0)
++    {
++        return; // we're no longer valid
++    }
++    inputDev.assign(fd);
++    waitTimer.expires_from_now(std::chrono::steady_clock::duration(sensorPollSec));
++    waitTimer.async_wait([&](const boost::system::error_code& ec) {
++        if (ec == boost::asio::error::operation_aborted)
++        {
++            return; // we're being canceled
++        }
++        setupRead();
++    });
++}
++
++void FanExtSensor::checkThresholds(void)
++{
++    if (!isPowerOn())
++    {
++        return;
++    }
++
++    thresholds::checkThresholdsPowerDelay(this, thresholdTimer);
++}
++
+diff --git a/src/FanExtSensorMain.cpp b/src/FanExtSensorMain.cpp
+new file mode 100644
+index 0000000..31418ce
+--- /dev/null
++++ b/src/FanExtSensorMain.cpp
+@@ -0,0 +1,329 @@
++/*
++// Copyright (c) 2020 Wiwynn Corporation
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//      http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++*/
++
++#include "FanExtSensor.hpp"
++
++#include <Utils.hpp>
++#include <boost/algorithm/string/predicate.hpp>
++#include <boost/algorithm/string/replace.hpp>
++#include <boost/container/flat_set.hpp>
++#include <boost/filesystem.hpp>
++#include <filesystem>
++#include <fstream>
++#include <regex>
++#include <sdbusplus/asio/connection.hpp>
++#include <sdbusplus/asio/object_server.hpp>
++
++namespace fs = std::filesystem;
++static std::chrono::seconds interval(1);
++
++static constexpr std::array<const char*, 1> sensorTypes =
++{
++    "xyz.openbmc_project.Configuration.INA219"
++};
++
++static std::vector<std::string> fanPwrDevNames = {"ina219"};
++
++static boost::container::flat_map<std::string, std::string> sensorTable;
++static boost::container::flat_map<std::string, std::string> deviceTable;
++static boost::container::flat_map<std::string, uint32_t> scaleTable;
++
++void createSensors(
++    boost::asio::io_service& io, sdbusplus::asio::object_server& objectServer,
++    boost::container::flat_map<std::string, std::unique_ptr<FanExtSensor>>& sensors,
++    std::shared_ptr<sdbusplus::asio::connection>& dbusConnection,
++    const std::unique_ptr<boost::container::flat_set<std::string>>&
++    sensorsChanged)
++{
++    // TODO: Only modify the ones that need to be changed.
++    sensors.clear();
++
++    ManagedObjectType sensorConfigurations;
++    bool useCache = false;
++    for (const char* type : sensorTypes)
++    {
++        if (!getSensorConfiguration(type, dbusConnection, sensorConfigurations,
++                                    useCache))
++        {
++            std::cerr << "error communicating to entity manager\n";
++            return;
++        }
++        useCache = true;
++    }
++
++    std::vector<fs::path> extFanPaths;
++    if (!findFiles(fs::path("/sys/class/hwmon"), "name", extFanPaths))
++    {
++        std::cerr << "No Extended Fan sensors in system\n";
++        return;
++    }
++
++    boost::container::flat_set<std::string> directories;
++    for (const auto& extFanPath : extFanPaths)
++    {
++        std::ifstream nameFile(extFanPath);
++        if (!nameFile.good())
++        {
++            std::cerr << "Failure finding fan power path " << extFanPath << "\n";
++            continue;
++        }
++
++        std::string fanPwrDevName;
++        std::getline(nameFile, fanPwrDevName);
++        nameFile.close();
++
++        // fanPwrDevNames: "ina219", "ina226"
++        if (std::find(fanPwrDevNames.begin(), fanPwrDevNames.end(), fanPwrDevName) ==
++            fanPwrDevNames.end())
++        {
++            // To avoid this error message, add your driver name to
++            // the pmbusNames vector at the top of this file.
++            continue;
++        }
++
++        auto directory = extFanPath.parent_path();
++        auto ret = directories.insert(directory.string());
++
++        if (!ret.second)
++        {
++            std::cerr << "Duplicate path " << directory.string() << "\n";
++            continue; // check if path has already been searched
++        }
++
++        fs::path device = directory / "device";
++        std::string deviceName = fs::canonical(device).stem();
++        auto findHyphen = deviceName.find("-");
++        if (findHyphen == std::string::npos)
++        {
++            std::cerr << "found bad device" << deviceName << "\n";
++            continue;
++        }
++        std::string busStr = deviceName.substr(0, findHyphen);
++        std::string addrStr = deviceName.substr(findHyphen + 1);
++
++        size_t bus = 0;
++        size_t addr = 0;
++
++        try
++        {
++            bus = std::stoi(busStr);
++            addr = std::stoi(addrStr, 0, 16);
++        }
++        catch (std::invalid_argument&)
++        {
++            std::cerr << "Error parsing bus " << busStr << " addr " << addrStr
++                      << "\n";
++            continue;
++        }
++
++
++        for (const std::pair<sdbusplus::message::object_path, SensorData>&
++                sensor : sensorConfigurations)
++        {
++            const SensorData* sensorData = nullptr;
++            const std::string* interfacePath = nullptr;
++            const char* sensorType = nullptr;
++            const std::pair<std::string, boost::container::flat_map<
++                                         std::string, BasicVariantType>>*
++            baseConfiguration = nullptr;
++
++            sensorData = &(sensor.second);
++            for (const char* type : sensorTypes)
++            {
++                auto sensorBase = sensorData->find(type);
++                if (sensorBase != sensorData->end())
++                {
++                    baseConfiguration = &(*sensorBase);
++                    sensorType = type;
++                    break;
++                }
++            }
++
++            if (baseConfiguration == nullptr)
++            {
++                std::cerr << "error finding base configuration for extended Fan sensor \n";
++                continue;
++            }
++
++            auto configurationBus = baseConfiguration->second.find("Bus");
++            auto configurationAddress = baseConfiguration->second.find("Address");
++
++            if ( configurationBus == baseConfiguration->second.end() ||
++                 configurationAddress == baseConfiguration->second.end())
++            {
++                std::cerr << "failed to find the bus, addr in configuration\n";
++                continue;
++            }
++
++            if (std::get<uint64_t>(configurationBus->second) != bus ||
++                std::get<uint64_t>(configurationAddress->second) != addr)
++            {
++                continue;
++            }
++
++            interfacePath = &(sensor.first.str);
++            if (interfacePath == nullptr)
++            {
++                std::cerr << " invalid sensor interface path\n";
++                continue;
++            }
++
++            auto findSensorName = baseConfiguration->second.find("Name");
++            if (findSensorName == baseConfiguration->second.end())
++            {
++                std::cerr << "fail to find sensor name in configuration\n";
++                continue;
++            }
++            std::string sensorName = std::get<std::string>(findSensorName->second);
++
++            /* Sensor Type: power, curr, volt */
++            auto findSensorTypeJson = baseConfiguration->second.find("SensorType");
++            if (findSensorTypeJson == baseConfiguration->second.end())
++            {
++                std::cerr << "fail to find sensor type in JSON\n";
++                continue;
++            }
++            std::string SensorTypeJson = std::get<std::string>(findSensorTypeJson->second);
++
++            // Sensor Type path: power/, current/, voltage/
++            auto findSensorType = sensorTable.find(SensorTypeJson);
++            if (findSensorType == sensorTable.end())
++            {
++                continue;
++            }
++
++            // Sensor device: power1_input, curr1_input, in1_input
++            auto findSensorDevice = deviceTable.find(SensorTypeJson);
++            if (findSensorDevice == deviceTable.end())
++            {
++                continue;
++            }
++            std::string sensorDevPath = directory.string() + findSensorDevice->second;
++
++            // Sensor scale: 1000000 or 1000
++            auto findSensorScale = scaleTable.find(SensorTypeJson);
++            if (findSensorScale == scaleTable.end())
++            {
++                continue;
++            }
++
++            std::vector<thresholds::Threshold> sensorThresholds;
++            if (!parseThresholdsFromConfig(*sensorData, sensorThresholds))
++            {
++                std::cerr << "error populating thresholds for " << sensorName << "\n";
++            }
++
++            // Read the MaxValue from JSON.
++            auto findMaxValue = baseConfiguration->second.find("MaxValue");
++            double MaxValue = 255;
++            if (findMaxValue != baseConfiguration->second.end())
++            {
++                MaxValue =
++                    std::visit(VariantToDoubleVisitor(), findMaxValue->second);
++            }
++
++            // Read the MinValue from JSON.
++            auto findMinValue = baseConfiguration->second.find("MinValue");
++            double MinValue = 0;
++            if (findMinValue != baseConfiguration->second.end())
++            {
++                MinValue =
++                    std::visit(VariantToDoubleVisitor(), findMinValue->second);
++            }
++
++            sensors[sensorName] = std::make_unique<FanExtSensor>(
++                sensorDevPath, sensorType, objectServer, dbusConnection, io,
++                sensorName, std::move(sensorThresholds), *interfacePath,
++                findSensorType->second, MaxValue, MinValue, findSensorScale->second);
++        }
++    }
++}
++
++void propertyInitialize(void)
++{
++    sensorTable = {{"power", "power/"},
++        {"curr", "current/"},
++        {"volt", "voltage/"}
++    };
++
++    deviceTable = {{"power", "/power1_input"},
++        {"curr", "/curr1_input"},
++        {"volt", "/in1_input"}
++    };
++
++    scaleTable = {{"power", 1000000},
++        {"curr", 1000},
++        {"volt", 1000}
++    };
++}
++
++int main()
++{
++    boost::asio::io_service io;
++    auto systemBus = std::make_shared<sdbusplus::asio::connection>(io);
++    systemBus->request_name("xyz.openbmc_project.FanExtSensor");
++    sdbusplus::asio::object_server objectServer(systemBus);
++    boost::container::flat_map<std::string, std::unique_ptr<FanExtSensor>> sensors;
++    std::vector<std::unique_ptr<sdbusplus::bus::match::match>> matches;
++    std::unique_ptr<boost::container::flat_set<std::string>> sensorsChanged =
++                std::make_unique<boost::container::flat_set<std::string>>();
++
++    propertyInitialize();
++
++    io.post([&]() {
++        createSensors(io, objectServer, sensors, systemBus, nullptr);
++    });
++
++    boost::asio::steady_timer filterTimer(io);
++    std::function<void(sdbusplus::message::message&)> eventHandler =
++    [&](sdbusplus::message::message & message) {
++        if (message.is_method_error())
++        {
++            std::cerr << "callback method error\n";
++            return;
++        }
++        sensorsChanged->insert(message.get_path());
++        // this implicitly cancels the timer
++        filterTimer.expires_from_now(std::chrono::steady_clock::duration(interval));
++        filterTimer.async_wait([&](const boost::system::error_code & ec) {
++            if (ec == boost::asio::error::operation_aborted)
++            {
++                /* we were canceled*/
++                return;
++            }
++            else if (ec)
++            {
++                std::cerr << "timer error\n";
++                return;
++            }
++            createSensors(io, objectServer, sensors, systemBus,
++                          sensorsChanged);
++        });
++    };
++
++    for (const char* type : sensorTypes)
++    {
++        auto match = std::make_unique<sdbusplus::bus::match::match>(
++                         static_cast<sdbusplus::bus::bus&>(*systemBus),
++                         "type='signal',member='PropertiesChanged',path_namespace='" +
++                         std::string(inventoryPath) + "',arg0namespace='" + type + "'",
++                         eventHandler);
++        matches.emplace_back(std::move(match));
++    }
++
++    io.run();
++}
++
+-- 
+2.24.1
+

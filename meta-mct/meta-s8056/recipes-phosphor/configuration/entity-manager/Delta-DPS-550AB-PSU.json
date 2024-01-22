@@ -1,0 +1,44 @@
+[
+     {
+        "Exposes": [
+            {
+                "Address": "$address + 8",
+                "Bus": "$bus",
+                "Name": "PSU$bus + 79 - $address",
+                "Labels": ["pin", "pout1", "vin", "vout1", "iin", "iout1", "temp1", "fan1"],
+                "pin_Name": "PSU$bus + 79 - $address Input Power",
+                "pout1_Name": "PSU$bus + 79 - $address Out Power",
+                "vin_Name": "PSU$bus + 79 - $address In Voltage",
+                "vout1_Name": "PSU$bus + 79 - $address Out Voltage",
+                "iin_Name": "PSU$bus + 79 - $address In Current",
+                "iout1_Name": "PSU$bus + 79 - $address Out Current",
+                "temp1_Name": "PSU$bus + 79 - $address Temperature",
+                "fan1_Name": "PSU$bus + 79 - $address Fan Speed 1",
+                "pin_PowerState": "On",
+                "pout1_PowerState": "On",
+                "vin_PowerState": "Always",
+                "vout1_PowerState": "On",
+                "iin_PowerState": "On",
+                "iout1_PowerState": "On",
+                "temp1_PowerState": "Always",
+                "fan1_PowerState": "Always",
+                "Type": "pmbus"
+            },
+            {
+                "Address": "$address",
+                "Bus": "$bus",
+                "Name": "Delta DPS-550AB PSU-$bus + 79 - $address FRU",
+                "Type": "EEPROM_24C02"
+            }
+        ],
+        "Name": "Delta DPS-550AB PSU $bus + 79 - $address",
+        "Probe": "xyz.openbmc_project.FruDevice({'PRODUCT_PRODUCT_NAME': '.*DPS-550*'})",
+        "Type": "PowerSupply",
+        "xyz.openbmc_project.Inventory.Decorator.Asset": {
+            "Manufacturer": "$BOARD_MANUFACTURER",
+            "Model": "$BOARD_PRODUCT_NAME",
+            "PartNumber": "$BOARD_PART_NUMBER",
+            "SerialNumber": "$BOARD_SERIAL_NUMBER"
+        }
+    }
+]

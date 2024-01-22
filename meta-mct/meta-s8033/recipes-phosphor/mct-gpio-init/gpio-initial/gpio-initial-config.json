@@ -1,0 +1,56 @@
+[
+    {
+        "LineName": "CLR_CMOS",
+        "Direction": "Output",
+        "Value":1,
+        "PIN":"GPIOF1"
+    },
+    {
+        "LineName": "BUTTON_LOCK",
+        "Direction": "Output",
+        "Value":0,
+        "PIN":"GPIOF2"
+    },
+    {
+        "LineName": "JTAG_MUX_S",
+        "Direction": "Output",
+        "Value":0,
+        "PIN":"GPIOG0"
+    },
+    {
+        "LineName": "JTAG_MUX_OE",
+        "Direction": "Output",
+        "Value":0,
+        "PIN":"GPIOG1"
+    },
+    {
+        "LineName": "HDT_SEL",
+        "Direction": "Output",
+        "Value":0,
+        "PIN":"GPIOG2"
+    },
+    {
+        "LineName": "JTAG_OE_N",
+        "Direction": "Output",
+        "Value":1,
+        "PIN":"GPIOG3"
+    },
+    {
+        "LineName": "JTAG_HDR_N_S",
+        "Direction": "Output",
+        "Value":0,
+        "PIN":"GPIOG6"
+    },
+    {
+        "LineName": "ASSERT_PROCHOT",
+        "Direction": "Output",
+        "Value":0,
+        "PIN":"GPIOAA5"
+    },
+    {
+        "LineName": "BMC_READY",
+        "Direction": "Output",
+        "Value":1,
+        "PIN":"GPIOAA7"
+    }
+]

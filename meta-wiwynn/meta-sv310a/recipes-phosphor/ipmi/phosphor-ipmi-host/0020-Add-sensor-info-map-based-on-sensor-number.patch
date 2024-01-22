@@ -1,0 +1,91 @@
+From d994d39ce24f300f278ccf0e3c204074f98b9882 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Thu, 2 Dec 2021 09:10:33 +0800
+Subject: [PATCH] Add sensor info map based on sensor number
+
+---
+ scripts/writesensor_extra.mako.cpp | 52 +++++++++++++++++++++++++++++-
+ 1 file changed, 51 insertions(+), 1 deletion(-)
+
+diff --git a/scripts/writesensor_extra.mako.cpp b/scripts/writesensor_extra.mako.cpp
+index 9ad75e4..37b6df5 100644
+--- a/scripts/writesensor_extra.mako.cpp
++++ b/scripts/writesensor_extra.mako.cpp
+@@ -18,9 +18,15 @@ struct SensorInfo
+   int8_t exponentR;
+   bool hasScale;
+   int16_t scale;
++  uint16_t ownerID;
++  uint8_t entityID;
++  uint8_t entityInstance;
++  std::string sensorName;
++  std::string path;
+ };
+ 
+ using extraIdInfoMap = std::multimap<std::string, SensorInfo>;
++using extraIdInfoMapNum = std::multimap<uint8_t, SensorInfo>;
+ 
+ namespace ipmi {
+ namespace sensor {
+@@ -45,13 +51,57 @@ inline const extraIdInfoMap sensorsInfo = {
+             rExp = sensor.get("rExp", 0)
+             scale = sensor.get("scale", 0)
+             hasScale = "true" if "scale" in sensor.keys() else "false"
++            entityID = sensor.get("entityID", 0)
++            entityInstance = sensor.get("entityInstance", 0)
++            sensorName = sensor.get("sensorName", "")
++            ownerID = sensor.get("ownerID", 32)
+ %>
+             {
+                "${path}",
+                {
+                    ${key}, ${sensorType}, ${sensorReadingType}, ${multiplier},
+                    ${offsetB}, ${bExp}, ${offsetB * pow(10,bExp)}, ${rExp},
+-                   ${hasScale}, ${scale}
++                   ${hasScale}, ${scale}, ${ownerID}, ${entityID},
++                   ${entityInstance}, "${sensorName}", "${path}"
++               }
++            },
++        % endfor
++   % endif
++% endfor
++};
++
++inline const extraIdInfoMapNum sensorsInfoByNum = {
++% for key in sensorDict.keys():
++   % if key:
++<%
++        sensors = sensorDict[key]
++        assert isinstance(sensors, list), \
++                "sensor number '%d' is not list" % \
++                (key)
++%>
++        % for sensor in sensors:
++<%
++            path = sensor["path"]
++            sensorType = sensor["sensorType"]
++            sensorReadingType = sensor["sensorReadingType"]
++            multiplier = sensor.get("multiplierM", 1)
++            offsetB = sensor.get("offsetB", 0)
++            bExp = sensor.get("bExp", 0)
++            rExp = sensor.get("rExp", 0)
++            scale = sensor.get("scale", 0)
++            hasScale = "true" if "scale" in sensor.keys() else "false"
++            entityID = sensor.get("entityID", 0)
++            entityInstance = sensor.get("entityInstance", 0)
++            sensorName = sensor.get("sensorName", "")
++            ownerID = sensor.get("ownerID", 32)
++%>
++            {
++               ${key},
++               {
++                   ${key}, ${sensorType}, ${sensorReadingType}, ${multiplier},
++                   ${offsetB}, ${bExp}, ${offsetB * pow(10,bExp)}, ${rExp},
++                   ${hasScale}, ${scale}, ${ownerID}, ${entityID},
++                   ${entityInstance}, "${sensorName}", "${path}"
+                }
+             },
+         % endfor
+-- 
+2.32.0
+

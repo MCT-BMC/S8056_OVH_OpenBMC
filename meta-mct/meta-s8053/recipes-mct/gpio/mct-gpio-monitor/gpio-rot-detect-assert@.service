@@ -1,0 +1,10 @@
+[Unit]
+Description=Assert ROT_DETECT
+StartLimitIntervalSec=6
+StartLimitBurst=1
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env rotDetectHandler assert ROT_DETECT %I
+SyslogIdentifier=gpio-vr-hot
+RemainAfterExit=true

@@ -1,0 +1,21 @@
+From dace17de4c9ee2f7ee11692ae5ef79d0ae4ba231 Mon Sep 17 00:00:00 2001
+From: "wendy.shi" <wendy.shi@mic.com.tw>
+Date: Mon, 12 Oct 2020 09:42:53 +0800
+Subject: [PATCH] ignore power policy when BMC reset
+
+---
+ service_files/phosphor-discover-system-state@.service | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/service_files/phosphor-discover-system-state@.service b/service_files/phosphor-discover-system-state@.service
+index 21554c9..43e314b 100644
+--- a/service_files/phosphor-discover-system-state@.service
++++ b/service_files/phosphor-discover-system-state@.service
+@@ -8,6 +8,7 @@ Wants=mapper-wait@-xyz-openbmc_project-state-chassis%i.service
+ After=mapper-wait@-xyz-openbmc_project-state-chassis%i.service
+ After=op-reset-chassis-on@%i.service
+ ConditionPathExists=!/run/openbmc/chassis@%i-on
++ConditionPathExists=!/run/bmcRebootFlag
+ 
+ [Service]
+ Restart=no

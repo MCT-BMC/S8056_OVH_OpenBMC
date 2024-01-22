@@ -1,0 +1,49 @@
+[
+    {
+        "ServiceName": "org.openbmc.control.Power",
+        "ServiceInfo": [
+            {
+                "ObjPathName": "/org/openbmc/control/power0",
+                "ObjPathInfo": [
+                    {
+                        "InterfaceName": "org.openbmc.control.Power",
+                        "InterfaceInfo": [
+                            {
+                                "Name": "pgood",
+                                "Type": "property",
+                                "Signature": "i",
+                                "ChipId": "gpiochip0",
+                                "GpioNum": 101
+                            },
+                            {
+                                "Name": "state",
+                                "Type": "property",
+                                "Signature": "i",
+                                "ChipId": "gpiochip0",
+                                "GpioNum": 101
+                            },
+                            {
+                                "Name": "pgood_timeout",
+                                "Type": "property",
+                                "Signature": "i",
+                                "Value": 10
+                            }
+                        ]
+                    },
+                    {
+                        "InterfaceName": "org.openbmc.control.PostComplete",
+                        "InterfaceInfo": [
+                            {
+                                "Name": "postcomplete",
+                                "Type": "property",
+                                "Signature": "i",
+                                "ChipId": "gpiochip0",
+                                "GpioNum": 2
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+]

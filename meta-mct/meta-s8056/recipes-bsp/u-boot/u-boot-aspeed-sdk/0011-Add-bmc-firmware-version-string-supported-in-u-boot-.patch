@@ -1,0 +1,25 @@
+From 001a9279812b9ee536046f70d27ddfd326896658 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Fri, 20 Jan 2023 13:31:02 +0800
+Subject: [PATCH] Add bmc firmware version string supported in u-boot
+ environment
+
+---
+ include/configs/evb_ast2600a1_spl.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/include/configs/evb_ast2600a1_spl.h b/include/configs/evb_ast2600a1_spl.h
+index 655896b237..f169d97135 100644
+--- a/include/configs/evb_ast2600a1_spl.h
++++ b/include/configs/evb_ast2600a1_spl.h
+@@ -34,6 +34,7 @@
+ 	"loadaddr=" STR(CONFIG_SYS_LOAD_ADDR) "\0"	\
+ 	"bootspi=fdt addr 20100000 && fdt header get fitsize totalsize && cp.b 20100000 ${loadaddr} ${fitsize} && bootm; echo Error loading kernel FIT image\0"	\
+ 	"verify=yes\0"	\
++	"bmc_version=v0.02-00-s8056\0" \
+ 	""
+ 
+ #ifdef CONFIG_SPL_TINY
+-- 
+2.25.1
+

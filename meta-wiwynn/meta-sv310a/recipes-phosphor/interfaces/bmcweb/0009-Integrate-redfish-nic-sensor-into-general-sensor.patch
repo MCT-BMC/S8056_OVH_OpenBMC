@@ -1,0 +1,154 @@
+From ed91d027e6a000005c1309ab1dc1999f76ee02fa Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Wed, 15 Dec 2021 10:07:00 +0800
+Subject: [PATCH] Integrate redfish nic sensor into general sensor
+
+---
+ redfish-core/lib/sensors.hpp | 113 +++++++++++++++--------------------
+ 1 file changed, 48 insertions(+), 65 deletions(-)
+
+diff --git a/redfish-core/lib/sensors.hpp b/redfish-core/lib/sensors.hpp
+index 8d6e3ba..14f91b2 100644
+--- a/redfish-core/lib/sensors.hpp
++++ b/redfish-core/lib/sensors.hpp
+@@ -538,9 +538,10 @@ void getChassis(const std::shared_ptr<SensorsAsyncResp>& sensorsAsyncResp,
+                 Callback&& callback)
+ {
+     BMCWEB_LOG_DEBUG << "getChassis enter";
+-    const std::array<const char*, 2> interfaces = {
++    const std::array<const char*, 3> interfaces = {
+         "xyz.openbmc_project.Inventory.Item.Board",
+-        "xyz.openbmc_project.Inventory.Item.Chassis"};
++        "xyz.openbmc_project.Inventory.Item.Chassis",
++        "xyz.openbmc_project.Inventory.Item.NIC"};
+     auto respHandler = [callback{std::move(callback)}, sensorsAsyncResp](
+                            const boost::system::error_code ec,
+                            const std::vector<std::string>& chassisPaths) {
+@@ -552,30 +553,6 @@ void getChassis(const std::shared_ptr<SensorsAsyncResp>& sensorsAsyncResp,
+             return;
+         }
+ 
+-        const std::string* chassisPath = nullptr;
+-        std::string chassisName;
+-        for (const std::string& chassis : chassisPaths)
+-        {
+-            sdbusplus::message::object_path path(chassis);
+-            chassisName = path.filename();
+-            if (chassisName.empty())
+-            {
+-                BMCWEB_LOG_ERROR << "Failed to find '/' in " << chassis;
+-                continue;
+-            }
+-            if (chassisName == sensorsAsyncResp->chassisId)
+-            {
+-                chassisPath = &chassis;
+-                break;
+-            }
+-        }
+-        if (chassisPath == nullptr)
+-        {
+-            messages::resourceNotFound(sensorsAsyncResp->asyncResp->res,
+-                                       "Chassis", sensorsAsyncResp->chassisId);
+-            return;
+-        }
+-
+         const std::string& chassisSubNode = sensorsAsyncResp->chassisSubNode;
+         if (chassisSubNode == sensors::node::power)
+         {
+@@ -612,48 +589,54 @@ void getChassis(const std::shared_ptr<SensorsAsyncResp>& sensorsAsyncResp,
+             "/redfish/v1/Chassis/" + sensorsAsyncResp->chassisId + "/" +
+             chassisSubNode;
+         sensorsAsyncResp->asyncResp->res.jsonValue["Name"] = chassisSubNode;
+-        // Get the list of all sensors for this Chassis element
+-        std::string sensorPath = *chassisPath + "/all_sensors";
+-        crow::connections::systemBus->async_method_call(
+-            [sensorsAsyncResp, callback{std::move(callback)}](
+-                const boost::system::error_code& e,
+-                const std::variant<std::vector<std::string>>&
+-                    variantEndpoints) {
+-                if (e)
+-                {
+-                    if (e.value() != EBADR)
++
++        for (const std::string& chassis : chassisPaths)
++        {
++            // Get the list of all sensors for this Chassis element
++            std::string sensorPath = chassis + "/all_sensors";
++            crow::connections::systemBus->async_method_call(
++                [sensorsAsyncResp, callback{std::move(callback)}](
++                    const boost::system::error_code& e,
++                    const std::variant<std::vector<std::string>>&
++                        variantEndpoints) {
++                    if (e)
+                     {
+-                        messages::internalError(
+-                            sensorsAsyncResp->asyncResp->res);
++                        if (e.value() != EBADR)
++                        {
++                            messages::internalError(
++                                sensorsAsyncResp->asyncResp->res);
++                            return;
++                        }
++                    }
++                    const std::vector<std::string>* nodeSensorList =
++                        std::get_if<std::vector<std::string>>(
++                            &(variantEndpoints));
++                    if (nodeSensorList == nullptr)
++                    {
++                        messages::resourceNotFound(
++                            sensorsAsyncResp->asyncResp->res,
++                            sensorsAsyncResp->chassisSubNode,
++                            sensorsAsyncResp->chassisSubNode ==
++                                    sensors::node::thermal
++                                ? "Temperatures"
++                            : sensorsAsyncResp->chassisSubNode ==
++                                    sensors::node::power
++                                ? "Voltages"
++                                : "Sensors");
+                         return;
+                     }
+-                }
+-                const std::vector<std::string>* nodeSensorList =
+-                    std::get_if<std::vector<std::string>>(&(variantEndpoints));
+-                if (nodeSensorList == nullptr)
+-                {
+-                    messages::resourceNotFound(
+-                        sensorsAsyncResp->asyncResp->res,
+-                        sensorsAsyncResp->chassisSubNode,
+-                        sensorsAsyncResp->chassisSubNode ==
+-                                sensors::node::thermal
+-                            ? "Temperatures"
+-                        : sensorsAsyncResp->chassisSubNode ==
+-                                sensors::node::power
+-                            ? "Voltages"
+-                            : "Sensors");
+-                    return;
+-                }
+-                const std::shared_ptr<boost::container::flat_set<std::string>>
+-                    culledSensorList = std::make_shared<
+-                        boost::container::flat_set<std::string>>();
+-                reduceSensorList(sensorsAsyncResp, nodeSensorList,
+-                                 culledSensorList);
+-                callback(culledSensorList);
+-            },
+-            "xyz.openbmc_project.ObjectMapper", sensorPath,
+-            "org.freedesktop.DBus.Properties", "Get",
+-            "xyz.openbmc_project.Association", "endpoints");
++                    const std::shared_ptr<
++                        boost::container::flat_set<std::string>>
++                        culledSensorList = std::make_shared<
++                            boost::container::flat_set<std::string>>();
++                    reduceSensorList(sensorsAsyncResp, nodeSensorList,
++                                     culledSensorList);
++                    callback(culledSensorList);
++                },
++                "xyz.openbmc_project.ObjectMapper", sensorPath,
++                "org.freedesktop.DBus.Properties", "Get",
++                "xyz.openbmc_project.Association", "endpoints");
++        }
+     };
+ 
+     // Get the Chassis Collection
+-- 
+2.32.0
+

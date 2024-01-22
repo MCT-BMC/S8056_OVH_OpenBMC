@@ -1,0 +1,25 @@
+From 3fa9669b3c447ebdff1f5a2524547edf28989a6f Mon Sep 17 00:00:00 2001
+From: Jason <Jason_YX_Chang@wiwynn.com>
+Date: Sun, 12 Jan 2020 11:35:24 +0800
+Subject: [PATCH] Modify WDT2 timeout from 30s to 65s
+
+---
+ drivers/watchdog/aspeed_wdt.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/watchdog/aspeed_wdt.c b/drivers/watchdog/aspeed_wdt.c
+index 7e00960651fa..740d3857d7d3 100644
+--- a/drivers/watchdog/aspeed_wdt.c
++++ b/drivers/watchdog/aspeed_wdt.c
+@@ -93,7 +93,7 @@ MODULE_DEVICE_TABLE(of, aspeed_wdt_of_table);
+ 
+ /* 32 bits at 1MHz, in milliseconds */
+ #define WDT_MAX_TIMEOUT_MS	4294967
+-#define WDT_DEFAULT_TIMEOUT	30
++#define WDT_DEFAULT_TIMEOUT	65
+ #define WDT_RATE_1MHZ		1000000
+ 
+ static struct aspeed_wdt *to_aspeed_wdt(struct watchdog_device *wdd)
+-- 
+2.24.1
+

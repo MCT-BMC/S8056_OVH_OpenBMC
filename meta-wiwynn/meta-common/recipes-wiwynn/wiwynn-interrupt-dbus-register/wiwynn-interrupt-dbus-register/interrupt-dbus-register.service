@@ -1,0 +1,12 @@
+[Unit]
+Description=Register D-bus object for GPIO interrupt
+Before=phosphor-multi-gpio-monitor.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/interruptdbusregister
+SyslogIdentifier=interrupt-dbus-register
+
+[Install]
+WantedBy=multi-user.target
+

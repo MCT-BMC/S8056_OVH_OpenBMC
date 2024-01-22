@@ -1,0 +1,38 @@
+From c1485fcbe3b4f3a826c67a6920b5ca377fa251ac Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Sun, 22 Mar 2020 21:07:54 +0800
+Subject: [PATCH] Export all DIMMs during initialization
+
+---
+ drivers/hwmon/peci-dimmtemp.c | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/hwmon/peci-dimmtemp.c b/drivers/hwmon/peci-dimmtemp.c
+index 45eabd2ec5c8..e9a288b84ac5 100644
+--- a/drivers/hwmon/peci-dimmtemp.c
++++ b/drivers/hwmon/peci-dimmtemp.c
+@@ -227,16 +227,19 @@ static int check_populated_dimms(struct peci_dimmtemp *priv)
+ 		int ret;
+ 
+ 		ret = read_ddr_dimm_temp_config(priv, chan_rank, cfg_data);
++/*
+ 		if (ret) {
+ 			priv->dimm_mask = 0;
+ 			return ret;
+ 		}
+-
++*/
+ 		for (dimm_idx = 0; dimm_idx < dimm_idx_max; dimm_idx++)
+-			if (cfg_data[dimm_idx])
++		{
++			// if (cfg_data[dimm_idx])
+ 				priv->dimm_mask |= BIT(chan_rank *
+ 						       dimm_idx_max +
+ 						       dimm_idx);
++		}
+ 	}
+ 
+ 	if (!priv->dimm_mask)
+-- 
+2.24.1
+

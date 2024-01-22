@@ -1,0 +1,39 @@
+From 02000e6fe29e8be24c19ea007da2845d5505bb02 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Mon, 14 Mar 2022 11:25:30 +0800
+Subject: [PATCH] Add filter function supported for specified sensor
+
+Add specified sensor event to trigger prochot related service
+Change inclube lib of i2c related api
+---
+ include/threshold_event_monitor.hpp | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/include/threshold_event_monitor.hpp b/include/threshold_event_monitor.hpp
+index b3e5f17..61d9537 100755
+--- a/include/threshold_event_monitor.hpp
++++ b/include/threshold_event_monitor.hpp
+@@ -17,6 +17,7 @@
+ #pragma once
+ #include <sel_logger.hpp>
+ #include <sensorutils.hpp>
++#include <filterutils.hpp>
+ 
+ #include <string_view>
+ #include <variant>
+@@ -276,6 +277,12 @@ inline static sdbusplus::bus::match::match startThresholdAssertMonitor(
+             }
+         }
+ 
++        if(filterSensor(sensorName,assert))
++        {
++            std::cerr << "Sensor filter : " << sensorName << std::endl;
++            return;
++        }
++
+         std::string journalMsg(std::string(sensorName) + " sensor crossed a " +
+                                threshold + " threshold going " + direction +
+                                ". Reading=" + std::to_string(assertValue) +
+-- 
+2.25.1
+

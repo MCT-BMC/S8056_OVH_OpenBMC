@@ -1,0 +1,10 @@
+[Unit]
+Description=Deassert %I 
+StartLimitIntervalSec=6
+StartLimitBurst=1
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env vrHotHandler deassert %I %I
+SyslogIdentifier=gpio-vr-hot
+RemainAfterExit=true

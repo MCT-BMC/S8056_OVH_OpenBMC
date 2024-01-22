@@ -1,0 +1,25 @@
+From 80a5ade5e62ff48173369fcdc129c630a656a349 Mon Sep 17 00:00:00 2001
+From: Eli Huang <Eli_Huang@wiwynn.com>
+Date: Tue, 17 Nov 2020 09:12:35 +0800
+Subject: [PATCH] Disable to release IP from DHCP
+
+---
+ src/network/networkd-network.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/network/networkd-network.c b/src/network/networkd-network.c
+index 97f5551ee5..fccaf5abb6 100644
+--- a/src/network/networkd-network.c
++++ b/src/network/networkd-network.c
+@@ -402,7 +402,7 @@ int network_load_one(Manager *manager, OrderedHashmap **networks, const char *fi
+                 .dhcp_use_gateway = -1,
+                 /* NOTE: this var might be overwritten by network_apply_anonymize_if_set */
+                 .dhcp_send_hostname = true,
+-                .dhcp_send_release = true,
++                .dhcp_send_release = false,
+                 /* To enable/disable RFC7844 Anonymity Profiles */
+                 .dhcp_anonymize = false,
+                 .dhcp_route_metric = DHCP_ROUTE_METRIC,
+-- 
+2.28.0
+

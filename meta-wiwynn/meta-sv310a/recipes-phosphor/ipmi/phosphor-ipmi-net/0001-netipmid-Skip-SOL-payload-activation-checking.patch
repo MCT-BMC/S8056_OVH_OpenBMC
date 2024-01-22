@@ -1,0 +1,35 @@
+From 70cd1f7a0af6f76e29c3f1b5058604b22d497bf8 Mon Sep 17 00:00:00 2001
+From: JPChang <JP_Chang@wiwynn.com>
+Date: Thu, 29 Aug 2019 15:15:14 +0800
+Subject: [PATCH] netipmid: Skip SOL payload activation checking
+
+Revise commit 0a269046d0d9fcd690ccbb129ae58a3c1450b04e
+---
+ command/payload_cmds.cpp | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/command/payload_cmds.cpp b/command/payload_cmds.cpp
+index 683d21a..5e322aa 100644
+--- a/command/payload_cmds.cpp
++++ b/command/payload_cmds.cpp
+@@ -55,7 +55,7 @@ std::vector<uint8_t> activatePayload(const std::vector<uint8_t>& inPayload,
+         response->completionCode = IPMI_CC_PAYLOAD_WITHOUT_ENCRYPTION;
+         return outPayload;
+     }
+-
++#if 0
+     // Is SOL Payload enabled for this user & channel.
+     auto userId = ipmi::ipmiUserGetUserId(session->userName);
+     ipmi::PayloadAccess payloadAccess = {};
+@@ -67,7 +67,7 @@ std::vector<uint8_t> activatePayload(const std::vector<uint8_t>& inPayload,
+         response->completionCode = IPMI_CC_PAYLOAD_TYPE_DISABLED;
+         return outPayload;
+     }
+-
++#endif
+     auto status = std::get<sol::Manager&>(singletonPool)
+                       .isPayloadActive(request->payloadInstance);
+     if (status)
+-- 
+1.9.1
+

@@ -1,0 +1,128 @@
+From 339b290017e451958930903995399fd0cf332c5e Mon Sep 17 00:00:00 2001
+From: Eli Huang <Eli_Huang@wiwynn.com>
+Date: Thu, 8 Jul 2021 16:14:16 +0800
+Subject: [PATCH] Add switch mux parameter in DIMM sensor
+
+---
+ include/DIMMSensor.hpp | 10 +++++++++-
+ src/DIMMSensor.cpp     | 22 ++++++++++++++++++++--
+ src/DIMMSensorMain.cpp | 17 ++++++++++++++++-
+ 3 files changed, 45 insertions(+), 4 deletions(-)
+
+diff --git a/include/DIMMSensor.hpp b/include/DIMMSensor.hpp
+index 1e5a0a3..a03ce37 100644
+--- a/include/DIMMSensor.hpp
++++ b/include/DIMMSensor.hpp
+@@ -5,6 +5,13 @@
+ #include <sdbusplus/asio/object_server.hpp>
+ #include <sensor.hpp>
+ 
++struct DimmMux
++{
++    bool isManual;
++    uint64_t addr;
++    uint64_t cmd;
++};
++
+ class DIMMSensor :
+     public Sensor,
+     public std::enable_shared_from_this<DIMMSensor>
+@@ -19,7 +26,7 @@ class DIMMSensor :
+                const std::string& dbusPath, const double maxValue,
+                const double minValue, const PowerState readState,
+                const uint8_t busId, const uint8_t slaveAddr,
+-               const uint8_t dataReg);
++               const uint8_t dataReg, DimmMux muxSetting);
+     ~DIMMSensor();
+     void setupRead(void);
+ 
+@@ -31,6 +38,7 @@ class DIMMSensor :
+     uint8_t slaveAddr;
+     uint8_t dataReg;
+     double senValue;
++    DimmMux muxSetting;
+     bool isVirtualBusReady;
+     thresholds::ThresholdTimer thresholdTimer;
+ 
+diff --git a/src/DIMMSensor.cpp b/src/DIMMSensor.cpp
+index e0b3da0..c721338 100644
+--- a/src/DIMMSensor.cpp
++++ b/src/DIMMSensor.cpp
+@@ -43,12 +43,12 @@ DIMMSensor::DIMMSensor(const std::string& path, const std::string& objectType,
+                        const std::string& dbusPath, const double maxValue,
+                        const double minValue, const PowerState readState,
+                        const uint8_t busId, const uint8_t slaveAddr,
+-                       const uint8_t dataReg) :
++                       const uint8_t dataReg, DimmMux muxSetting) :
+     Sensor(boost::replace_all_copy(sensorName, " ", "_"),
+            std::move(_thresholds), sensorConfiguration, objectType, false,
+            maxValue, minValue, conn, readState, false),
+     objServer(objectServer), waitTimer(io), path(path), busId(busId),
+-    slaveAddr(slaveAddr), dataReg(dataReg), senValue(0),
++    slaveAddr(slaveAddr), dataReg(dataReg), senValue(0), muxSetting(muxSetting),
+     isVirtualBusReady(false), thresholdTimer(io, this)
+ {
+     sensorInterface = objectServer.add_interface(
+@@ -157,6 +157,24 @@ bool DIMMSensor::visitDIMMReg(void)
+         }
+         return false;
+     }
++
++    if (muxSetting.isManual)
++    {
++        std::vector<uint8_t> cmdData = {static_cast<uint8_t>(muxSetting.cmd)};
++
++        res = i2c_master_write(fd, muxSetting.addr, cmdData.size(), cmdData.data());
++        if (res < 0)
++        {
++            if constexpr (DEBUG)
++            {
++                std::cerr << "Fail to r/w I2C device: " << path
++                      << ", Addr: " << unsigned(muxSetting.addr) << "\n";
++                close_i2c_dev(fd);
++            }
++            return false;
++        }
++    }
++
+     std::vector<uint8_t> cmdData;
+     cmdData.assign(1, dataReg);
+     std::vector<uint8_t> readBuf;
+diff --git a/src/DIMMSensorMain.cpp b/src/DIMMSensorMain.cpp
+index b89373b..f970c27 100644
+--- a/src/DIMMSensorMain.cpp
++++ b/src/DIMMSensorMain.cpp
+@@ -94,6 +94,20 @@ void createSensors(
+         }
+         auto dataRegister = std::get<uint64_t>(findRegister->second);
+ 
++        auto findMuxAddr = baseConfigMap->find("MuxAddr");
++        auto findMuxCmd = baseConfigMap->find("MuxCmd");
++        DimmMux muxSetting = {true, 0x0, 0x0};
++        if (findMuxAddr == baseConfigMap->end() ||
++            findMuxCmd == baseConfigMap->end())
++        {
++            muxSetting.isManual = false;
++        }
++        else
++        {
++            muxSetting.addr = std::get<uint64_t>(findMuxAddr->second);
++            muxSetting.cmd = std::get<uint64_t>(findMuxCmd->second);
++        }
++
+         // on rescans, only update sensors we were signaled by
+         auto findSensor = sensors.find(sensorName);
+         if (!firstScan && findSensor != sensors.end())
+@@ -122,7 +136,8 @@ void createSensors(
+         sensors[sensorName] = std::make_shared<DIMMSensor>(
+             i2cPath, objectType, objectServer, dbusConnection, io, sensorName,
+             std::move(sensorThresholds), *interfacePath, dbusPath,
+-            limits.second, limits.first, readState, bus, address, dataRegister);
++            limits.second, limits.first, readState, bus, address, dataRegister,
++            muxSetting);
+         sensors[sensorName]->setupRead();
+     }
+ }
+-- 
+2.28.0
+

@@ -1,0 +1,489 @@
+From e5afd630165053351368dfacc1bdbabe99bdcd81 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Tue, 22 Mar 2022 11:00:19 +0800
+Subject: [PATCH] Add psu sensor supported
+
+[PATCH] Add psu sensor supported
+[PATCH] Add multi-threshold feature supported for PSU sensor
+[PATCH] Add MCT PDB supported in PSU sensors
+[PATCH] Disable PSU sensor auto detect feature
+---
+ include/PSUEvent.hpp                               |  4 +-
+ include/PSUSensor.hpp                              |  8 +-
+ include/Thresholds.hpp                             |  6 ++
+ .../xyz.openbmc_project.psusensor.service          |  1 +
+ src/PSUEvent.cpp                                   |  2 +-
+ src/PSUSensor.cpp                                  | 48 +++++++++--
+ src/PSUSensorMain.cpp                              | 98 +++++++++++++++++++---
+ src/Thresholds.cpp                                 | 60 +++++++++++++
+ 8 files changed, 206 insertions(+), 21 deletions(-)
+ mode change 100644 => 100755 include/PSUEvent.hpp
+ mode change 100644 => 100755 include/PSUSensor.hpp
+ mode change 100644 => 100755 include/Thresholds.hpp
+ mode change 100644 => 100755 service_files/xyz.openbmc_project.psusensor.service
+ mode change 100644 => 100755 src/PSUEvent.cpp
+ mode change 100644 => 100755 src/PSUSensor.cpp
+ mode change 100644 => 100755 src/PSUSensorMain.cpp
+ mode change 100644 => 100755 src/Thresholds.cpp
+
+diff --git a/include/PSUEvent.hpp b/include/PSUEvent.hpp
+old mode 100644
+new mode 100755
+index 3a39164..8fbace1
+--- a/include/PSUEvent.hpp
++++ b/include/PSUEvent.hpp
+@@ -17,7 +17,7 @@
+ #pragma once
+ 
+ #include <Utils.hpp>
+-#include <boost/asio/deadline_timer.hpp>
++#include <boost/asio/steady_timer.hpp>
+ #include <boost/asio/io_service.hpp>
+ #include <boost/asio/streambuf.hpp>
+ #include <boost/container/flat_map.hpp>
+@@ -56,7 +56,7 @@ class PSUSubEvent : public std::enable_shared_from_this<PSUSubEvent>
+     std::string eventName;
+ 
+     PowerState readState;
+-    boost::asio::deadline_timer waitTimer;
++    boost::asio::steady_timer waitTimer;
+     std::shared_ptr<boost::asio::streambuf> readBuf;
+     void restartRead();
+     void handleResponse(const boost::system::error_code& err);
+diff --git a/include/PSUSensor.hpp b/include/PSUSensor.hpp
+old mode 100644
+new mode 100755
+index 523d500..b600e58
+--- a/include/PSUSensor.hpp
++++ b/include/PSUSensor.hpp
+@@ -10,6 +10,9 @@
+ #include <string>
+ #include <utility>
+ 
++constexpr auto MAX_COLLECTION_VALUE_SIZE = 10;
++constexpr auto DEFAULT_TACH_VALUE= 6000;
++
+ class PSUSensor : public Sensor, public std::enable_shared_from_this<PSUSensor>
+ {
+   public:
+@@ -28,8 +31,9 @@ class PSUSensor : public Sensor, public std::enable_shared_from_this<PSUSensor>
+   private:
+     sdbusplus::asio::object_server& objServer;
+     boost::asio::posix::stream_descriptor inputDev;
+-    boost::asio::deadline_timer waitTimer;
++    boost::asio::steady_timer waitTimer;
+     std::string path;
++     std::vector<double> collectedValue;
+     unsigned int sensorFactor;
+     double sensorOffset;
+     thresholds::ThresholdTimer thresholdTimer;
+@@ -40,6 +44,8 @@ class PSUSensor : public Sensor, public std::enable_shared_from_this<PSUSensor>
+ 
+     int fd;
+     static constexpr size_t warnAfterErrorCount = 10;
++    // Power-on sensor
++    const PowerState& powerState;
+ 
+   public:
+     static constexpr double defaultSensorPoll = 1.0;
+diff --git a/include/Thresholds.hpp b/include/Thresholds.hpp
+old mode 100644
+new mode 100755
+index 94480bb..d03994e
+--- a/include/Thresholds.hpp
++++ b/include/Thresholds.hpp
+@@ -118,6 +118,12 @@ bool parseThresholdsFromConfig(
+     std::vector<thresholds::Threshold>& thresholdVector,
+     const std::string* matchLabel = nullptr, const int* sensorIndex = nullptr);
+ 
++bool parseMultiThresholdsFromConfig(
++    const SensorData& sensorData,
++    std::vector<thresholds::Threshold>& thresholdVector,
++    const int  thresholdNumber,
++    const std::string* matchLabel = nullptr);
++
+ bool parseThresholdsFromAttr(std::vector<thresholds::Threshold>& thresholds,
+                              const std::string& inputPath,
+                              const double& scaleFactor,
+diff --git a/service_files/xyz.openbmc_project.psusensor.service b/service_files/xyz.openbmc_project.psusensor.service
+old mode 100644
+new mode 100755
+index 4b22e8c..291c355
+--- a/service_files/xyz.openbmc_project.psusensor.service
++++ b/service_files/xyz.openbmc_project.psusensor.service
+@@ -7,6 +7,7 @@ After=xyz.openbmc_project.EntityManager.service
+ [Service]
+ Restart=always
+ RestartSec=5
++ExecStartPre=/usr/bin/env get-default-psu-voltage.sh
+ ExecStart=/usr/bin/psusensor
+ 
+ [Install]
+diff --git a/src/PSUEvent.cpp b/src/PSUEvent.cpp
+old mode 100644
+new mode 100755
+index 7813741..c5b7c64
+--- a/src/PSUEvent.cpp
++++ b/src/PSUEvent.cpp
+@@ -226,7 +226,7 @@ void PSUSubEvent::setupRead(void)
+ void PSUSubEvent::restartRead()
+ {
+     std::weak_ptr<PSUSubEvent> weakRef = weak_from_this();
+-    waitTimer.expires_from_now(boost::posix_time::milliseconds(eventPollMs));
++    waitTimer.expires_from_now(boost::asio::chrono::milliseconds(eventPollMs));
+     waitTimer.async_wait([weakRef](const boost::system::error_code& ec) {
+         if (ec == boost::asio::error::operation_aborted)
+         {
+diff --git a/src/PSUSensor.cpp b/src/PSUSensor.cpp
+old mode 100644
+new mode 100755
+index bbc0d2f..2217bbe
+--- a/src/PSUSensor.cpp
++++ b/src/PSUSensor.cpp
+@@ -49,7 +49,7 @@ PSUSensor::PSUSensor(const std::string& path, const std::string& objectType,
+            objectType, false, false, max, min, conn, powerState),
+     std::enable_shared_from_this<PSUSensor>(), objServer(objectServer),
+     inputDev(io), waitTimer(io), path(path), sensorFactor(factor),
+-    sensorOffset(offset), thresholdTimer(io)
++    sensorOffset(offset), thresholdTimer(io), powerState(std::move(powerState))
+ {
+     std::string unitPath = sensor_paths::getPathForUnits(sensorUnits);
+     if constexpr (debug)
+@@ -86,6 +86,8 @@ PSUSensor::PSUSensor(const std::string& path, const std::string& objectType,
+             objectServer.add_interface(dbusPath, interface);
+     }
+ 
++    setupPowerMatch(conn);
++
+     // This should be called before initializing association.
+     // createInventoryAssoc() does add more associations before doing
+     // register and initialize "Associations" property.
+@@ -98,6 +100,10 @@ PSUSensor::PSUSensor(const std::string& path, const std::string& objectType,
+         setInitialProperties(sensorUnits, label, tSize);
+     }
+ 
++    if(path.find("fan")!= std::string::npos){
++        collectedValue.assign(MAX_COLLECTION_VALUE_SIZE,DEFAULT_TACH_VALUE);
++    }
++
+     association = objectServer.add_interface(dbusPath, association::interface);
+ 
+     createInventoryAssoc(conn, association, configurationPath);
+@@ -139,7 +145,7 @@ void PSUSensor::setupRead(void)
+ void PSUSensor::restartRead(void)
+ {
+     std::weak_ptr<PSUSensor> weakRef = weak_from_this();
+-    waitTimer.expires_from_now(boost::posix_time::milliseconds(sensorPollMs));
++    waitTimer.expires_from_now(boost::asio::chrono::milliseconds(sensorPollMs));
+     waitTimer.async_wait([weakRef](const boost::system::error_code& ec) {
+         if (ec == boost::asio::error::operation_aborted)
+         {
+@@ -176,11 +182,36 @@ void PSUSensor::handleResponse(const boost::system::error_code& err)
+         try
+         {
+             rawValue = std::stod(buffer);
+-            updateValue((rawValue / sensorFactor) + sensorOffset);
++            if(path.find("fan")!= std::string::npos)
++            {
++                double nvalue = rawValue / sensorFactor;
++                double averageCount = 0;
++                double average =0;
++                if(collectedValue.size() >= MAX_COLLECTION_VALUE_SIZE){
++                    collectedValue.erase(collectedValue.begin());
++                    collectedValue.push_back(nvalue);
++                }
++                else{
++                    collectedValue.push_back(nvalue);
++                }
++                for (auto it = collectedValue.begin(); it != collectedValue.end(); it++)
++                {
++                    average = average + *it;
++                    averageCount++;
++                }
++                if(averageCount){
++                    average = average/averageCount;
++                }
++                updateValue(average);
++            }
++            else
++            {
++                updateValue((rawValue / sensorFactor) + sensorOffset);
++            }
+         }
+         catch (const std::invalid_argument&)
+         {
+-            std::cerr << "Could not parse  input from " << path << "\n";
++            std::cerr << "Could not parse input from " << path << "\n";
+             incrementError();
+         }
+     }
+@@ -204,5 +235,12 @@ void PSUSensor::checkThresholds(void)
+         return;
+     }
+ 
+-    thresholds::checkThresholdsPowerDelay(weak_from_this(), thresholdTimer);
++    if(powerState == PowerState::always)
++    {
++        thresholds::checkThresholds(this);
++    }
++    else
++    {
++        thresholds::checkThresholdsPowerDelay(weak_from_this(), thresholdTimer);
++    }
+ }
+diff --git a/src/PSUSensorMain.cpp b/src/PSUSensorMain.cpp
+old mode 100644
+new mode 100755
+index 1377128..c28b299
+--- a/src/PSUSensorMain.cpp
++++ b/src/PSUSensorMain.cpp
+@@ -71,7 +71,8 @@ static constexpr auto sensorTypes{std::to_array<const char*>(
+      "xyz.openbmc_project.Configuration.RAA228228",
+      "xyz.openbmc_project.Configuration.RAA229004",
+      "xyz.openbmc_project.Configuration.TPS546D24",
+-     "xyz.openbmc_project.Configuration.XDPE12284"})};
++     "xyz.openbmc_project.Configuration.XDPE12284",
++     "xyz.openbmc_project.Configuration.MCTPDB"})};
+ 
+ // clang-format off
+ static constexpr auto pmbusNames{std::to_array<const char*>({
+@@ -105,7 +106,8 @@ static constexpr auto pmbusNames{std::to_array<const char*>({
+     "raa228228",
+     "raa229004",
+     "tps546d24",
+-    "xdpe12284"
++    "xdpe12284",
++    "mct-pdb"
+ })};
+ //clang-format on
+ 
+@@ -247,6 +249,7 @@ void checkEventLimits(
+     }
+ }
+ 
++#if 0
+ static void
+     checkPWMSensor(const fs::path& sensorPath, std::string& labelHead,
+                    const std::string& interfacePath,
+@@ -281,6 +284,23 @@ static void
+             objectServer, interfacePath + "_" + pwmName.second, "PSU");
+     }
+ }
++#endif
++
++int checkMultiThresholds(const size_t addr)
++{
++    int usingThresholds = -1;
++    std::string configName = "/run/psu" + std::to_string(addr%2) + "-config";
++
++    std::ifstream configfile(configName);
++
++    if(configfile.good())
++    {
++        std::string line;
++        std::getline(configfile, line);
++        usingThresholds =  std::stoi(line);
++    }
++    return usingThresholds;
++}
+ 
+ static void createSensorsCallback(
+     boost::asio::io_service& io, sdbusplus::asio::object_server& objectServer,
+@@ -291,6 +311,7 @@ static void createSensorsCallback(
+ {
+     int numCreated = 0;
+     bool firstScan = sensorsChanged == nullptr;
++    size_t usingAddr = 0;
+ 
+     std::vector<fs::path> pmbusPaths;
+     if (!findFiles(fs::path("/sys/class/hwmon"), "name", pmbusPaths))
+@@ -421,11 +442,38 @@ static void createSensorsCallback(
+                 continue;
+             }
+ 
++            usingAddr = addr;
++
+             std::vector<thresholds::Threshold> confThresholds;
+-            if (!parseThresholdsFromConfig(*sensorData, confThresholds))
++            const uint64_t* confMultiThresholds;
++            int thresholdNumber = -1;
++
++            auto findMultiThresholds = baseConfig->second.find("MultiThresholds");
++            if (findMultiThresholds != baseConfig->second.end())
++            {
++                thresholdNumber = checkMultiThresholds(usingAddr);
++            }
++
++            if (!(confMultiThresholds = std::get_if<uint64_t>(&(findMultiThresholds->second))))
++            {
++                thresholdNumber = -1;
++            }
++
++            if(thresholdNumber > 0 && (uint64_t)thresholdNumber <= *confMultiThresholds)
+             {
+-                std::cerr << "error populating totoal thresholds\n";
++                if (!parseMultiThresholdsFromConfig(*sensorData, confThresholds, thresholdNumber))
++                {
++                    std::cerr << "error populating totoal thresholds\n";
++                }
+             }
++            else
++            {
++                if (!parseThresholdsFromConfig(*sensorData, confThresholds))
++                {
++                    std::cerr << "error populating totoal thresholds\n";
++                }
++            }
++
+             thresholdConfSize = confThresholds.size();
+ 
+             interfacePath = &(sensor.first.str);
+@@ -620,10 +668,10 @@ static void createSensorsCallback(
+                 std::cerr << "Sensor type=\"" << sensorNameSubStr
+                           << "\" label=\"" << labelHead << "\"\n";
+             }
+-
++#if 0
+             checkPWMSensor(sensorPath, labelHead, *interfacePath,
+                            dbusConnection, objectServer, psuNames[0]);
+-
++#endif
+             if (!findLabels.empty())
+             {
+                 /* Check if this labelHead is enabled in config file */
+@@ -849,11 +897,37 @@ static void createSensorsCallback(
+             }
+ 
+             std::vector<thresholds::Threshold> sensorThresholds;
+-            if (!parseThresholdsFromConfig(*sensorData, sensorThresholds,
+-                                           &labelHead))
++            const uint64_t* confMultiThresholds;
++            int thresholdNumber = -1;
++
++            auto findMultiThresholds = baseConfig->second.find("MultiThresholds");
++            if (findMultiThresholds != baseConfig->second.end())
+             {
+-                std::cerr << "error populating thresholds for "
+-                          << sensorNameSubStr << "\n";
++                thresholdNumber = checkMultiThresholds(usingAddr);
++            }
++
++            if (!(confMultiThresholds = std::get_if<uint64_t>(&(findMultiThresholds->second))))
++            {
++                thresholdNumber = -1;
++            }
++
++            if(thresholdNumber > 0 && (uint64_t)thresholdNumber <= *confMultiThresholds)
++            {
++                if (!parseMultiThresholdsFromConfig(*sensorData, sensorThresholds, thresholdNumber,
++                                            &labelHead))
++                {
++                    std::cerr << "error populating thresholds for "
++                            << sensorNameSubStr << "\n";
++                }
++            }
++            else
++            {
++                if (!parseThresholdsFromConfig(*sensorData, sensorThresholds,
++                                            &labelHead))
++                {
++                    std::cerr << "error populating thresholds for "
++                            << sensorNameSubStr << "\n";
++                }
+             }
+ 
+             auto findSensorUnit = sensorTable.find(sensorNameSubStr);
+@@ -1062,7 +1136,7 @@ int main()
+     propertyInitialize();
+ 
+     io.post([&]() { createSensors(io, objectServer, systemBus, nullptr); });
+-    boost::asio::deadline_timer filterTimer(io);
++    boost::asio::steady_timer filterTimer(io);
+     std::function<void(sdbusplus::message::message&)> eventHandler =
+         [&](sdbusplus::message::message& message) {
+             if (message.is_method_error())
+@@ -1071,7 +1145,7 @@ int main()
+                 return;
+             }
+             sensorsChanged->insert(message.get_path());
+-            filterTimer.expires_from_now(boost::posix_time::seconds(3));
++            filterTimer.expires_from_now(boost::asio::chrono::seconds(3));
+             filterTimer.async_wait([&](const boost::system::error_code& ec) {
+                 if (ec == boost::asio::error::operation_aborted)
+                 {
+diff --git a/src/Thresholds.cpp b/src/Thresholds.cpp
+old mode 100644
+new mode 100755
+index 5fa82aa..22108ba
+--- a/src/Thresholds.cpp
++++ b/src/Thresholds.cpp
+@@ -126,6 +126,66 @@ bool parseThresholdsFromConfig(
+     return true;
+ }
+ 
++bool parseMultiThresholdsFromConfig(
++    const SensorData& sensorData,
++    std::vector<thresholds::Threshold>& thresholdVector,
++    const int thresholdNumber,
++    const std::string* matchLabel)
++{
++    std::string thresholds = "MultiThreshold" + std::to_string(thresholdNumber);
++
++    for (const auto& item : sensorData)
++    {
++        if (item.first.find(thresholds) == std::string::npos)
++        {
++            continue;
++        }
++        if (matchLabel != nullptr)
++        {
++            auto labelFind = item.second.find("Label");
++            if (labelFind == item.second.end())
++                continue;
++            if (std::visit(VariantToStringVisitor(), labelFind->second) !=
++                *matchLabel)
++                continue;
++        }
++        auto directionFind = item.second.find("Direction");
++        auto severityFind = item.second.find("Severity");
++        auto valueFind = item.second.find("Value");
++        if (valueFind == item.second.end() ||
++            severityFind == item.second.end() ||
++            directionFind == item.second.end())
++        {
++            std::cerr << "Malformed threshold in configuration\n";
++            return false;
++        }
++        Level level;
++        Direction direction;
++        if (std::visit(VariantToUnsignedIntVisitor(), severityFind->second) ==
++            0)
++        {
++            level = Level::WARNING;
++        }
++        else
++        {
++            level = Level::CRITICAL;
++        }
++        if (std::visit(VariantToStringVisitor(), directionFind->second) ==
++            "less than")
++        {
++            direction = Direction::LOW;
++        }
++        else
++        {
++            direction = Direction::HIGH;
++        }
++        double val = std::visit(VariantToDoubleVisitor(), valueFind->second);
++
++        thresholdVector.emplace_back(level, direction, val);
++    }
++    return true;
++}
++
+ void persistThreshold(const std::string& path, const std::string& baseInterface,
+                       const thresholds::Threshold& threshold,
+                       std::shared_ptr<sdbusplus::asio::connection>& conn,
+-- 
+2.7.4
+

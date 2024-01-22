@@ -1,0 +1,10 @@
+[Unit]
+Description=SV300G3-E GPIO Initialization
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/sv300g3e-gpio-init.sh
+SyslogIdentifier=sv300g3e-gpio-init
+
+[Install]
+WantedBy=sysinit.target

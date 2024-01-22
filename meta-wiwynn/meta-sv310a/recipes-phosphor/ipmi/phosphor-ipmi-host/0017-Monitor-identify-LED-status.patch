@@ -1,0 +1,85 @@
+From b16560e2e822280f3c87c51a4d5ef1d12e9259ed Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Fri, 27 Aug 2021 13:05:49 +0800
+Subject: [PATCH] Monitor identify LED status
+
+---
+ chassishandler.cpp | 41 +++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 41 insertions(+)
+
+diff --git a/chassishandler.cpp b/chassishandler.cpp
+index 6457105..51f48ba 100644
+--- a/chassishandler.cpp
++++ b/chassishandler.cpp
+@@ -37,6 +37,7 @@
+ 
+ std::unique_ptr<phosphor::Timer> identifyTimer
+     __attribute__((init_priority(101)));
++std::unique_ptr<sdbusplus::bus::match::match> identifyMatcher;
+ 
+ static ChassisIDState chassisIDState = ChassisIDState::reserved;
+ static constexpr uint8_t setParmVersion = 0x01;
+@@ -1565,6 +1566,12 @@ void enclosureIdentifyLed(bool flag)
+  */
+ void enclosureIdentifyLedOff()
+ {
++    // We don't need to close timer after identify LED turns off.
++    if (identifyMatcher)
++    {
++        identifyMatcher = nullptr;
++    }
++
+     try
+     {
+         chassisIDState = ChassisIDState::off;
+@@ -1587,6 +1594,29 @@ void createIdentifyTimer()
+     }
+ }
+ 
++void identifyChangedHandler(sdbusplus::message::message& msg)
++{
++    if (msg.is_method_error())
++    {
++        return;
++    }
++
++    std::string interface;
++    std::map<std::string, std::variant<bool>> properties;
++    msg.read(interface, properties);
++
++    auto findAsserted = properties.find("Asserted");
++    if (findAsserted == properties.end())
++    {
++        return;
++    }
++
++    if (!std::get<bool>(findAsserted->second))
++    {
++        identifyTimer->stop();
++    }
++}
++
+ ipmi::RspType<> ipmiChassisIdentify(std::optional<uint8_t> interval,
+                                     std::optional<uint8_t> force)
+ {
+@@ -1618,6 +1648,17 @@ ipmi::RspType<> ipmiChassisIdentify(std::optional<uint8_t> interval,
+         auto time = std::chrono::duration_cast<std::chrono::microseconds>(
+             std::chrono::seconds(identifyInterval));
+         identifyTimer->start(time);
++
++        // If timer is running and identify button is pushed, timer should be
++        // stopped.
++        if (!identifyMatcher)
++        {
++            identifyMatcher = std::make_unique<sdbusplus::bus::match::match>(
++                chassis::internal::dbus,
++                sdbusplus::bus::match::rules::propertiesChanged(
++                    identify_led_object_name, "xyz.openbmc_project.Led.Group"),
++                identifyChangedHandler);
++        }
+     }
+     else if (!identifyInterval)
+     {
+-- 
+2.32.0
+

@@ -1,0 +1,32 @@
+From f03e5c417553771692281738d8d2d2d408476dfe Mon Sep 17 00:00:00 2001
+From: Ren_Chen <Ren_Chen@wiwynn.com>
+Date: Tue, 1 Dec 2020 09:21:20 +0800
+Subject: [PATCH 5/6] Revise the start-up time of sel-logger service.
+
+Decription:
+- There are about 10% fail rate of LED property setting fail because the interface of LED controller service is not ready.
+- So revise the start-up time of sel-logger service.
+
+Designed:
+- Revise the start-up time of sel-logger service to wait the interface of LED controller service ready.
+---
+ service_files/xyz.openbmc_project.Logging.IPMI.service | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/service_files/xyz.openbmc_project.Logging.IPMI.service b/service_files/xyz.openbmc_project.Logging.IPMI.service
+index 5f3906b..7ff2755 100644
+--- a/service_files/xyz.openbmc_project.Logging.IPMI.service
++++ b/service_files/xyz.openbmc_project.Logging.IPMI.service
+@@ -1,5 +1,9 @@
+ [Unit]
+ Description=IPMI SEL Logging Service
++Wants=mapper-wait@-xyz-openbmc_project-led-physical-status_amber.service
++After=mapper-wait@-xyz-openbmc_project-led-physical-status_amber.service
++Wants=mapper-wait@-xyz-openbmc_project-led-physical-status_green.service
++After=mapper-wait@-xyz-openbmc_project-led-physical-status_green.service
+ Before=xyz.openbmc_project.EntityManager.service
+ 
+ [Service]
+-- 
+2.28.0
+

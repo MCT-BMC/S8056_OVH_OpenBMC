@@ -1,0 +1,73 @@
+From 2168e7439563278823b8a947782e8cba93d548ab Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Tue, 21 Jan 2020 00:51:18 +0800
+Subject: [PATCH] Reset the SEL ID to 1 after clearing the SEL
+
+---
+ include/sel_logger.hpp |  1 +
+ src/sel_logger.cpp     | 27 +++++++++++++++++++++++++--
+ 2 files changed, 26 insertions(+), 2 deletions(-)
+
+diff --git a/include/sel_logger.hpp b/include/sel_logger.hpp
+index bd40dff..3de9def 100644
+--- a/include/sel_logger.hpp
++++ b/include/sel_logger.hpp
+@@ -34,6 +34,7 @@ static constexpr size_t selEvtDataMaxSize = 3;
+ static constexpr size_t selOemDataMaxSize = 13;
+ 
+ static const std::filesystem::path selLogDir = "/var/log";
++static const std::filesystem::path selLogTargetDir = "/usr/share/sel";
+ static const std::string selLogFilename = "ipmi_sel";
+ 
+ template <typename... T>
+diff --git a/src/sel_logger.cpp b/src/sel_logger.cpp
+index 7fe52fb..4c7fc8a 100644
+--- a/src/sel_logger.cpp
++++ b/src/sel_logger.cpp
+@@ -66,10 +66,32 @@ static bool getSELLogFiles(std::vector<std::filesystem::path> &selLogFiles)
+     return !selLogFiles.empty();
+ }
+ 
++static bool getSELLogTargetFiles(std::vector<std::filesystem::path> &selLogFiles)
++{
++    // Loop through the directory looking for ipmi_sel log files
++    for (const std::filesystem::directory_entry &dirEnt :
++         std::filesystem::directory_iterator(selLogTargetDir))
++    {
++        std::string filename = dirEnt.path().filename();
++        if (boost::starts_with(filename, selLogFilename))
++        {
++            // If we find an ipmi_sel log file, save the path
++            selLogFiles.emplace_back(selLogTargetDir / filename);
++        }
++    }
++    // As the log files rotate, they are appended with a ".#" that is higher for
++    // the older logs. Since we don't expect more than 10 log files, we
++    // can just sort the list to get them in order from newest to oldest
++    std::sort(selLogFiles.begin(), selLogFiles.end());
++
++    return !selLogFiles.empty();
++}
++
+ static unsigned int initializeRecordId(void)
+ {
+     std::vector<std::filesystem::path> selLogFiles;
+-    if (!getSELLogFiles(selLogFiles))
++    // if (!getSELLogFiles(selLogFiles))
++    if (!getSELLogTargetFiles(selLogFiles))
+     {
+         return selInvalidRecID;
+     }
+@@ -102,7 +124,8 @@ static unsigned int getNewRecordId(void)
+ 
+     // If the log has been cleared, also clear the current ID
+     std::vector<std::filesystem::path> selLogFiles;
+-    if (!getSELLogFiles(selLogFiles))
++    // if (!getSELLogFiles(selLogFiles))
++    if (!getSELLogTargetFiles(selLogFiles))
+     {
+         recordId = selInvalidRecID;
+     }
+-- 
+2.24.1
+

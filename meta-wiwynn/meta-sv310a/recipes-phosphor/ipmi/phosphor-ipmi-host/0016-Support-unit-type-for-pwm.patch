@@ -1,0 +1,27 @@
+From d8b7bf7e676e1d0b9971bcb10ae006aeae90f0fe Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Wed, 28 Jul 2021 14:55:46 +0800
+Subject: [PATCH] Support unit type for pwm
+
+---
+ sensorhandler.cpp | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/sensorhandler.cpp b/sensorhandler.cpp
+index cb721f5..d56c234 100644
+--- a/sensorhandler.cpp
++++ b/sensorhandler.cpp
+@@ -743,6 +743,10 @@ void setUnitFieldsForObject(const ipmi::sensor::Info* info,
+             case server::Value::Unit::Hit:
+                 body->sensor_units_2_base = get_sdr::SENSOR_UNIT_HIT;
+                 break;
++            case server::Value::Unit::Percent:
++                // There is no proper unit type for percent, so use unspecified.
++                body->sensor_units_2_base = get_sdr::SENSOR_UNIT_UNSPECIFIED;
++                break;
+             default:
+                 // Cannot be hit.
+                 std::fprintf(stderr, "Unknown value unit type: = %s\n",
+-- 
+2.32.0
+

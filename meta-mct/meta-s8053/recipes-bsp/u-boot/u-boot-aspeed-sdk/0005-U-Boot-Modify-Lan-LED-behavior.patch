@@ -1,0 +1,25 @@
+From 148728232b4d3b3f66f14299852273d4d0790ffd Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Wed, 3 Aug 2022 14:51:13 +0800
+Subject: [PATCH] U-Boot: Modify Lan LED behavior
+
+---
+ drivers/net/phy/realtek.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/net/phy/realtek.c b/drivers/net/phy/realtek.c
+index 87d8448..f14c912 100644
+--- a/drivers/net/phy/realtek.c
++++ b/drivers/net/phy/realtek.c
+@@ -183,7 +183,7 @@ static int rtl8211f_config(struct phy_device *phydev)
+ 	/* Set green LED for Link, yellow LED for Active */
+ 	phy_write(phydev, MDIO_DEVAD_NONE,
+ 		  MIIM_RTL8211F_PAGE_SELECT, 0xd04);
+-	phy_write(phydev, MDIO_DEVAD_NONE, 0x10, 0x617f);
++	phy_write(phydev, MDIO_DEVAD_NONE, 0x10, 0x6d02);
+ 	phy_write(phydev, MDIO_DEVAD_NONE,
+ 		  MIIM_RTL8211F_PAGE_SELECT, 0x0);
+ 
+-- 
+2.7.4
+

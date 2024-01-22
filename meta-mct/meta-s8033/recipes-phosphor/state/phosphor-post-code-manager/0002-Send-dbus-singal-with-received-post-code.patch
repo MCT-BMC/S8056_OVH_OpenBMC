@@ -1,0 +1,30 @@
+From 67112cbe33b2c39e93db976d07a7f4d03f98b1be Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Thu, 19 Aug 2021 13:24:42 +0800
+Subject: [PATCH] Send dbus singal with received post code
+
+---
+ inc/post_code.hpp | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/inc/post_code.hpp b/inc/post_code.hpp
+index 6ded59d..241281f 100755
+--- a/inc/post_code.hpp
++++ b/inc/post_code.hpp
+@@ -113,6 +113,13 @@ struct PostCode : sdbusplus::server::object_t<post_code, delete_all>
+                 {
+                     if (valPropMap != msgData.end())
+                     {
++                        auto bus = sdbusplus::bus::new_default();
++
++                        auto msg = bus.new_signal("/", "org.freedesktop.DBus", "getPostCode");
++                        uint64_t parameter = std::get<0>(std::get<postcode_t>(valPropMap->second));
++                        msg.append(parameter);
++                        msg.signal_send();
++
+                         this->savePostCodes(
+                             std::get<postcode_t>(valPropMap->second));
+                     }
+-- 
+2.7.4
+

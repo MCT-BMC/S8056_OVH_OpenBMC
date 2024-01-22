@@ -1,0 +1,16 @@
+[Unit]
+Description=MiTAC DCMI Power
+Requires=xyz.openbmc_project.psusensor.service
+After=xyz.openbmc_project.psusensor.service
+Requires=xyz.openbmc_project.virtualsensor.service
+After=xyz.openbmc_project.virtualsensor.service
+Conflicts=obmc-chassis-poweroff.target
+
+[Service]
+Restart=always
+ExecStart=/usr/bin/env mct-dcmi-power
+SyslogIdentifier=mct-dcmi-power
+TimeoutSec=infinity
+
+[Install]
+WantedBy=obmc-chassis-poweron.target

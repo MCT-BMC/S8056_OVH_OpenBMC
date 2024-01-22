@@ -1,0 +1,10 @@
+[Unit]
+Description=SV310A BMC Environment Initialization
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/sv310a-bmcenv-init.sh
+SyslogIdentifier=sv310a-bmcenv-init
+
+[Install]
+WantedBy=sysinit.target

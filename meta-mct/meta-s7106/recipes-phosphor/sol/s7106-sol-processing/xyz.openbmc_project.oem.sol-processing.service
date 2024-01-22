@@ -1,0 +1,13 @@
+[Unit]
+Description=SOL Proccising Service
+After=xyz.openbmc-project.Settings.service
+Wants=xyz.openbmc-project.Settings.service
+After=phosphor-ipmi-host.service
+
+[Service]
+Restart=always
+ExecStart=/usr/bin/env sol_processing
+SyslogIdentifier=sol_processing
+
+[Install]
+WantedBy={SYSTEMD_DEFAULT_TARGET}

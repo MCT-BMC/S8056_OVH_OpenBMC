@@ -1,0 +1,15 @@
+[Unit]
+Description=Set Default PWM
+Wants=obmc-chassis-poweron@0.target
+After=obmc-chassis-poweron@0.target
+After=xyz.openbmc_project.Hwmon@-ahb-apb-pwm\x2dtacho\x2dcontroller@1e786000.service
+Conflicts=obmc-power-on@0.target
+[Service]
+RemainAfterExit=no
+Type=simple
+ExecStart=/usr/bin/env default-pwm.sh
+SyslogIdentifier=default-pwm
+
+[Install]
+RequiredBy=obmc-chassis-poweron@0.target
+

@@ -1,0 +1,31 @@
+From 3a90eea9b57bf6b9d2063ac8564a890708b3981f Mon Sep 17 00:00:00 2001
+From: Ren_Chen <Ren_Chen@wiwynn.com>
+Date: Tue, 22 Jun 2021 11:28:55 +0800
+Subject: [PATCH] Add Hit proeprty in Value interface
+
+---
+ yaml/xyz/openbmc_project/Sensor/Value.interface.yaml | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/yaml/xyz/openbmc_project/Sensor/Value.interface.yaml b/yaml/xyz/openbmc_project/Sensor/Value.interface.yaml
+index e825c9a..d2531f3 100644
+--- a/yaml/xyz/openbmc_project/Sensor/Value.interface.yaml
++++ b/yaml/xyz/openbmc_project/Sensor/Value.interface.yaml
+@@ -47,6 +47,7 @@ properties:
+           For objects in the utilization namespace, Unit must be "Percent"
+           For objects in the airflow namespace, Unit must be "CFM"
+           For objects in the pressure namespace, Unit must be "Pascals"
++          For objects in the hit namespace, Unit must be "Count"
+ 
+ enumerations:
+     - name: Unit
+@@ -83,3 +84,6 @@ enumerations:
+         - name: Pascals
+           description: >
+             Pressure as pascal.
++        - name: Hit
++          description: >
++            Hit count.
+-- 
+2.28.0
+

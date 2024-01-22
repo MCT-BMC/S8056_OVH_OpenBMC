@@ -1,0 +1,175 @@
+From 19b92f2af224760a096334333ef49eec62b5a25b Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Wed, 16 Mar 2022 11:08:27 +0800
+Subject: [PATCH] Support setting fan contol mode in manager BMC OEM node
+
+---
+ redfish-core/lib/managers.hpp | 74 ++++++++++++++++++++++++++++++++---
+ 1 file changed, 68 insertions(+), 6 deletions(-)
+
+diff --git a/redfish-core/lib/managers.hpp b/redfish-core/lib/managers.hpp
+index ef60dce8..d23ef9a1 100755
+--- a/redfish-core/lib/managers.hpp
++++ b/redfish-core/lib/managers.hpp
+@@ -254,16 +254,19 @@ static constexpr const char* stepwiseConfigurationIface =
+     "xyz.openbmc_project.Configuration.Stepwise";
+ static constexpr const char* thermalModeIface =
+     "xyz.openbmc_project.Control.ThermalMode";
++static constexpr const char* manualModeIface =
++    "xyz.openbmc_project.Control.Mode";
+ 
+ inline void
+     asyncPopulatePid(const std::string& connection, const std::string& path,
+                      const std::string& currentProfile,
+                      const std::vector<std::string>& supportedProfiles,
++                     const std::string& manualProfile,
+                      const std::shared_ptr<bmcweb::AsyncResp>& asyncResp)
+ {
+ 
+     crow::connections::systemBus->async_method_call(
+-        [asyncResp, currentProfile, supportedProfiles](
++        [asyncResp, currentProfile, supportedProfiles, manualProfile](
+             const boost::system::error_code ec,
+             const dbus::utility::ManagedObjectType& managedObj) {
+             if (ec)
+@@ -305,6 +308,11 @@ inline void
+             }
+             BMCWEB_LOG_ERROR << "profile = " << currentProfile << " !";
+ 
++            if (!manualProfile.empty())
++            {
++                configRoot["ManualMode"] = manualProfile;
++            }
++
+             for (const auto& pathPair : managedObj)
+             {
+                 for (const auto& intfPair : pathPair.second)
+@@ -1185,9 +1193,9 @@ struct GetPIDValues : std::enable_shared_from_this<GetPIDValues>
+             "xyz.openbmc_project.ObjectMapper",
+             "/xyz/openbmc_project/object_mapper",
+             "xyz.openbmc_project.ObjectMapper", "GetSubTree", "/", 0,
+-            std::array<const char*, 4>{
++            std::array<const char*, 5>{
+                 pidConfigurationIface, pidZoneConfigurationIface,
+-                objectManagerIface, stepwiseConfigurationIface});
++                objectManagerIface, stepwiseConfigurationIface, manualModeIface});
+ 
+         // at the same time get the selected profile
+         crow::connections::systemBus->async_method_call(
+@@ -1272,6 +1280,31 @@ struct GetPIDValues : std::enable_shared_from_this<GetPIDValues>
+             "/xyz/openbmc_project/object_mapper",
+             "xyz.openbmc_project.ObjectMapper", "GetSubTree", "/", 0,
+             std::array<const char*, 1>{thermalModeIface});
++
++        std::ifstream fanModeFile("/run/fan-config");
++        uint8_t currentStatus;
++
++        if(fanModeFile.good())
++        {
++            std::string readText;
++            getline(fanModeFile, readText);
++            currentStatus = std::stoi(readText);
++        }
++        else
++        {
++            currentStatus = 0x01;
++        }
++
++        if(currentStatus)
++        {
++            self->manualStatus = false;
++            self->manualProfile = "false";
++        }
++        else
++        {
++            self->manualStatus = true;
++            self->manualProfile = "true";
++        }
+     }
+ 
+     ~GetPIDValues()
+@@ -1303,7 +1336,8 @@ struct GetPIDValues : std::enable_shared_from_this<GetPIDValues>
+                     // should have found the objMgr by now
+                     if (interface == pidConfigurationIface ||
+                         interface == pidZoneConfigurationIface ||
+-                        interface == stepwiseConfigurationIface)
++                        interface == stepwiseConfigurationIface ||
++                        interface == manualModeIface)
+                     {
+                         auto findObjMgr =
+                             objectMgrPaths.find(connectionGroup.first);
+@@ -1317,7 +1351,7 @@ struct GetPIDValues : std::enable_shared_from_this<GetPIDValues>
+                         calledConnections.insert(connectionGroup.first);
+ 
+                         asyncPopulatePid(findObjMgr->first, findObjMgr->second,
+-                                         currentProfile, supportedProfiles,
++                                         currentProfile, supportedProfiles, manualProfile,
+                                          asyncResp);
+                         break;
+                     }
+@@ -1333,6 +1367,8 @@ struct GetPIDValues : std::enable_shared_from_this<GetPIDValues>
+ 
+     std::vector<std::string> supportedProfiles;
+     std::string currentProfile;
++    std::string manualProfile;
++    bool manualStatus;
+     crow::openbmc_mapper::GetSubTreeType subtree;
+     std::shared_ptr<bmcweb::AsyncResp> asyncResp;
+ };
+@@ -1353,7 +1389,8 @@ struct SetPIDValues : std::enable_shared_from_this<SetPIDValues>
+         if (!redfish::json_util::readJson(
+                 data, asyncResp->res, "PidControllers", pidControllers,
+                 "FanControllers", fanControllers, "FanZones", fanZones,
+-                "StepwiseControllers", stepwiseControllers, "Profile", profile))
++                "StepwiseControllers", stepwiseControllers, "Profile", profile,
++                "ManualMode", manual))
+         {
+             BMCWEB_LOG_ERROR
+                 << "Illegal Property "
+@@ -1530,6 +1567,29 @@ struct SetPIDValues : std::enable_shared_from_this<SetPIDValues>
+                 "Current", dbus::utility::DbusVariantType(*profile));
+         }
+ 
++        if (manual)
++        {
++            bool setManual = false;
++
++            if(*manual == "true")
++            {
++                setManual = true;
++                system("/usr/bin/env controlFan.sh manual-mode");
++
++            }
++            else if(*manual == "false")
++            {
++                setManual = false;
++                system("/usr/bin/env controlFan.sh auto-mode");
++            }
++            else
++            {
++                messages::actionParameterUnknown(response->res, "ManualMode",
++                                                 *manual);
++                return;
++            }
++        }
++
+         for (auto& containerPair : configuration)
+         {
+             auto& container = containerPair.second;
+@@ -1723,11 +1783,13 @@ struct SetPIDValues : std::enable_shared_from_this<SetPIDValues>
+     std::vector<std::pair<std::string, std::optional<nlohmann::json>>>
+         configuration;
+     std::optional<std::string> profile;
++    std::optional<std::string> manual;
+     dbus::utility::ManagedObjectType managedObj;
+     std::vector<std::string> supportedProfiles;
+     std::string currentProfile;
+     std::string profileConnection;
+     std::string profilePath;
++    bool manualStatus;
+     size_t objectCount = 0;
+ };
+ 
+-- 
+2.25.1
+

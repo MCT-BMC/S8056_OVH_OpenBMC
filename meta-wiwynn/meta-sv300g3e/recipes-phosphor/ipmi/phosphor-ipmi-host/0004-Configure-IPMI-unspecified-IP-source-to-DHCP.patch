@@ -1,0 +1,31 @@
+From ba46d7fdd6800fc60d6dd9dbe58223d735fe20ed Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Mon, 16 Dec 2019 22:53:59 +0800
+Subject: [PATCH] Configure IPMI unspecified IP source to DHCP in the BMC lan
+ set implementation
+
+---
+ transporthandler.cpp | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/transporthandler.cpp b/transporthandler.cpp
+index 1a06ae5..7500a48 100644
+--- a/transporthandler.cpp
++++ b/transporthandler.cpp
+@@ -1394,11 +1394,12 @@ RspType<> setLan(uint4_t channelBits, uint4_t, uint8_t parameter,
+             switch (static_cast<IPSrc>(static_cast<uint8_t>(flag)))
+             {
+                 case IPSrc::DHCP:
++                case IPSrc::Unspecified:
+                 {
+                     channelCall<setDHCPProperty>(channel, true);
+                     return responseSuccess();
+                 }
+-                case IPSrc::Unspecified:
++
+                 case IPSrc::Static:
+                 case IPSrc::BIOS:
+                 case IPSrc::BMC:
+-- 
+2.24.1
+

@@ -1,0 +1,341 @@
+From fcfc293ba479312267f313332584fc8b6737e6f2 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Fri, 21 Jan 2022 11:44:58 +0800
+Subject: [PATCH] Support different types of CPLD
+
+---
+ activation.cpp    |   2 +
+ image_manager.cpp |  21 ++++++-
+ item_updater.cpp  | 139 +++++++++++++++++++++++++++++++++++++++++++++-
+ item_updater.hpp  |   8 ++-
+ meson.build       |   5 +-
+ utils.cpp         |  32 +++++++++++
+ utils.hpp         |   2 +
+ 7 files changed, 201 insertions(+), 8 deletions(-)
+
+diff --git a/activation.cpp b/activation.cpp
+index 873ee26..1b16170 100644
+--- a/activation.cpp
++++ b/activation.cpp
+@@ -121,6 +121,8 @@ auto Activation::activation(Activations value) -> Activations
+ #ifdef CPLD_UPDATE
+         if (purpose == VersionPurpose::CPLD)
+         {
++            parent.versions.find(versionId)->second->version("UNKNOWN");
++
+             if (!activationProgress)
+             {
+                 activationProgress =
+diff --git a/image_manager.cpp b/image_manager.cpp
+index 73202f7..e62798a 100644
+--- a/image_manager.cpp
++++ b/image_manager.cpp
+@@ -203,9 +203,6 @@ int Manager::processImage(const std::string& tarFilePath)
+ #ifdef CPLD_UPDATE
+     if(purpose == Version::VersionPurpose::CPLD)
+     {
+-       objPath = std::string{SOFTWARE_OBJPATH} + "/CPLD";
+-       imageDirPath /= "CPLD";
+-
+         std::string cpldI2cBus("cpld_i2c_bus");
+         std::string cpldI2cAddr("cpld_i2c_addr");
+         std::string cpldUpdateType("cpld_update_type");
+@@ -228,6 +225,22 @@ int Manager::processImage(const std::string& tarFilePath)
+                 return -1;
+             }
+ 
++            if (busString == "7")
++            {
++                imageDirPath /= "DPB_CPLD";
++                objPath = std::string{SOFTWARE_OBJPATH} + "/DPB_CPLD";
++            }
++            else if (busString == "14")
++            {
++                imageDirPath /= "48V_PDB_CPLD";
++                objPath = std::string{SOFTWARE_OBJPATH} + "/48V_PDB_CPLD";
++            }
++            else
++            {
++                log<level::ERR>("Manifest error : Unknown Bus Number");
++                return -1;
++            }
++
+             //Get Addr
+             auto addrString = Version::getValue(manifestPath.string(), "Addr");
+             if (addrString.empty())
+@@ -244,6 +257,8 @@ int Manager::processImage(const std::string& tarFilePath)
+         }
+         else
+         {
++            imageDirPath /= "MB_CPLD";
++            objPath = std::string{SOFTWARE_OBJPATH} + "/MB_CPLD";
+             cpldUpdateType = cpldUpdateType + "=jtag";
+         }
+ 
+diff --git a/item_updater.cpp b/item_updater.cpp
+index 43b42f5..f3c0c28 100644
+--- a/item_updater.cpp
++++ b/item_updater.cpp
+@@ -8,6 +8,8 @@
+ #include "xyz/openbmc_project/Software/ExtendedVersion/server.hpp"
+ #include "xyz/openbmc_project/Software/Version/server.hpp"
+ 
++#include <gpiod.h>
++#include <openbmc/libobmccpld.hpp>
+ #include <phosphor-logging/elog-errors.hpp>
+ #include <phosphor-logging/elog.hpp>
+ #include <phosphor-logging/log.hpp>
+@@ -592,11 +594,144 @@ void ItemUpdater::setBMCInventoryPath()
+     return;
+ }
+ 
+-void ItemUpdater::processCPLDImage()
++void ItemUpdater::processMBCPLDImage()
+ {
+     using VersionClass = phosphor::software::manager::Version;
+     std::string version = "NULL";
+-    std::string id = "CPLD";
++    constexpr auto gpioJtagBmcOeN = 2;
++    constexpr auto gpioBmcJtagSel = 148;
++    gpiod_ctxless_set_value("gpiochip0", gpioJtagBmcOeN, 0, false,
++                            "JTAG_BMC_OE_N" , NULL, NULL);
++    gpiod_ctxless_set_value("gpiochip0", gpioBmcJtagSel, 1, false,
++                            "BMC_JTAG_SEL", NULL, NULL);
++    uint32_t buf = 0;
++    int ret = getCpldUserCode(LATTICE, &buf);
++    if (ret < 0)
++    {
++        log<level::ERR>("Failed to get MB CPLD version");
++    }
++    else
++    {
++        std::stringstream ss;
++        ss << std::hex << std::setfill('0') << std::uppercase;
++        ss << std::setw(2) << static_cast<int>((buf >> 8) & 0xFF);
++        ss << std::setw(2) << static_cast<int>(buf & 0xFF);
++        version = ss.str();
++    }
++    gpiod_ctxless_set_value("gpiochip0", gpioJtagBmcOeN, 1, false,
++                            "JTAG_BMC_OE_N" , NULL, NULL);
++    gpiod_ctxless_set_value("gpiochip0", gpioBmcJtagSel, 0, false,
++                            "BMC_JTAG_SEL", NULL, NULL);
++
++    std::string id = "MB_CPLD";
++    auto purpose = server::Version::VersionPurpose::CPLD;
++    auto path = fs::path(SOFTWARE_OBJPATH) / id;
++
++    AssociationList associations = {};
++
++    auto activationState = server::Activation::Activations::Active;
++    // Create an association to the BMC inventory item
++    associations.emplace_back(std::make_tuple(
++        ACTIVATION_FWD_ASSOCIATION, ACTIVATION_REV_ASSOCIATION,
++        bmcInventoryPath));
++
++    // Create an active association since this image is active
++    createActiveAssociation(path);
++
++    // All updateable firmware components must expose the updateable
++    // association.
++    createUpdateableAssociation(path);
++
++    // Create Version instance for this version.
++    auto versionPtr = std::make_unique<VersionClass>(
++        bus, path, version, purpose, "", "",
++        std::bind(&ItemUpdater::erase, this, std::placeholders::_1));
++    versionPtr->deleteObject =
++        std::make_unique<phosphor::software::manager::Delete>(
++            bus, path, *versionPtr);
++
++    versions.insert(std::make_pair(id, std::move(versionPtr)));
++
++    // Create Activation instance for this version.
++    activations.insert(std::make_pair(
++        id, std::make_unique<Activation>(
++                bus, path, *this, id, activationState, associations)));
++}
++
++void ItemUpdater::processDPBCPLDImage()
++{
++    using VersionClass = phosphor::software::manager::Version;
++    std::string version = "NULL";
++    std::vector<uint8_t> buf(4, 0);
++    int ret = utils::getCpldFwViaI2c(7, 0x40, buf);
++    if (ret < 0)
++    {
++        log<level::ERR>("Failed to get DPB CPLD version");
++    }
++    else
++    {
++        std::stringstream ss;
++        ss << std::hex << std::setfill('0') << std::uppercase;
++        ss << std::setw(2) << static_cast<int>(buf[2]);
++        ss << std::setw(2) << static_cast<int>(buf[3]);
++        version = ss.str();
++    }
++
++    std::string id = "DPB_CPLD";
++    auto purpose = server::Version::VersionPurpose::CPLD;
++    auto path = fs::path(SOFTWARE_OBJPATH) / id;
++
++    AssociationList associations = {};
++
++    auto activationState = server::Activation::Activations::Active;
++    // Create an association to the BMC inventory item
++    associations.emplace_back(std::make_tuple(
++        ACTIVATION_FWD_ASSOCIATION, ACTIVATION_REV_ASSOCIATION,
++        bmcInventoryPath));
++
++    // Create an active association since this image is active
++    createActiveAssociation(path);
++
++    // All updateable firmware components must expose the updateable
++    // association.
++    createUpdateableAssociation(path);
++
++    // Create Version instance for this version.
++    auto versionPtr = std::make_unique<VersionClass>(
++        bus, path, version, purpose, "", "",
++        std::bind(&ItemUpdater::erase, this, std::placeholders::_1));
++    versionPtr->deleteObject =
++        std::make_unique<phosphor::software::manager::Delete>(
++            bus, path, *versionPtr);
++
++    versions.insert(std::make_pair(id, std::move(versionPtr)));
++
++    // Create Activation instance for this version.
++    activations.insert(std::make_pair(
++        id, std::make_unique<Activation>(
++                bus, path, *this, id, activationState, associations)));
++}
++
++void ItemUpdater::process48VPDBCPLDImage()
++{
++    using VersionClass = phosphor::software::manager::Version;
++    std::string version = "NULL";
++    std::vector<uint8_t> buf(4, 0);
++    int ret = utils::getCpldFwViaI2c(14, 0x40, buf);
++    if (ret < 0)
++    {
++        log<level::ERR>("Failed to get 48V PDB CPLD version");
++    }
++    else
++    {
++        std::stringstream ss;
++        ss << std::hex << std::setfill('0') << std::uppercase;
++        ss << std::setw(2) << static_cast<int>(buf[2]);
++        ss << std::setw(2) << static_cast<int>(buf[3]);
++        version = ss.str();
++    }
++
++    std::string id = "48V_PDB_CPLD";
+     auto purpose = server::Version::VersionPurpose::CPLD;
+     auto path = fs::path(SOFTWARE_OBJPATH) / id;
+ 
+diff --git a/item_updater.hpp b/item_updater.hpp
+index 4b71082..9da5a63 100644
+--- a/item_updater.hpp
++++ b/item_updater.hpp
+@@ -65,7 +65,9 @@ class ItemUpdater : public ItemUpdaterInherit
+         processBIOSImage();
+ #endif
+ #ifdef CPLD_UPDATE
+-        processCPLDImage();
++        processMBCPLDImage();
++        processDPBCPLDImage();
++        process48VPDBCPLDImage();
+ #endif
+         restoreFieldModeStatus();
+         emit_object_added();
+@@ -106,7 +108,9 @@ class ItemUpdater : public ItemUpdaterInherit
+     /**
+      * @brief Get CPLD Version.
+      */
+-    void processCPLDImage();
++    void processMBCPLDImage();
++    void processDPBCPLDImage();
++    void process48VPDBCPLDImage();
+ #endif
+ 
+     /**
+diff --git a/meson.build b/meson.build
+index 55eecdd..4b5517a 100644
+--- a/meson.build
++++ b/meson.build
+@@ -90,7 +90,10 @@ configure_file(output: 'config.h', configuration: conf)
+ deps = [
+     dependency('phosphor-dbus-interfaces'),
+     dependency('phosphor-logging'),
+-    dependency('sdbusplus')
++    dependency('sdbusplus'),
++    dependency('libgpiod'),
++    declare_dependency(link_args : '-lobmcjtag'),
++    declare_dependency(link_args : '-lobmci2c')
+ ]
+ 
+ ssl = dependency('openssl')
+diff --git a/utils.cpp b/utils.cpp
+index f392983..b3961de 100644
+--- a/utils.cpp
++++ b/utils.cpp
+@@ -1,5 +1,6 @@
+ #include "utils.hpp"
+ 
++#include <openbmc/libobmci2c.h>
+ #include <unistd.h>
+ 
+ #include <phosphor-logging/log.hpp>
+@@ -68,6 +69,37 @@ void mergeFiles(std::vector<std::string>& srcFiles, std::string& dstFile)
+     outFile.close();
+ }
+ 
++int getCpldFwViaI2c(int bus, int addr, std::vector<uint8_t>& data)
++{
++    if (data.size() != 4)
++    {
++        data.resize(4);
++    }
++
++    std::vector<char> filename(20, 0);
++    int fd = open_i2c_dev(bus, filename.data(), filename.size(), 0);
++    if (fd < 0)
++    {
++        log<level::ERR>("Fail to open I2C device", entry("BUS=%d", bus));
++        return -1;
++    }
++
++    std::vector<uint8_t> cmdData = {0xc0, 0x0, 0x0, 0x0};
++    int ret = i2c_master_write_read(fd, addr, cmdData.size(), cmdData.data(),
++                                    data.size(), data.data());
++    if (ret < 0)
++    {
++        log<level::ERR>("Fail to r/w I2C device", entry("BUS=%d", bus),
++                        entry("ADDRESS=%d", addr));
++        close_i2c_dev(fd);
++        return -1;
++    }
++
++    close_i2c_dev(fd);
++
++    return 0;
++}
++
+ namespace internal
+ {
+ 
+diff --git a/utils.hpp b/utils.hpp
+index a6db7f9..35a0bcd 100644
+--- a/utils.hpp
++++ b/utils.hpp
+@@ -26,6 +26,8 @@ std::string getService(sdbusplus::bus::bus& bus, const std::string& path,
+  **/
+ void mergeFiles(std::vector<std::string>& srcFiles, std::string& dstFile);
+ 
++int getCpldFwViaI2c(int bus, int addr, std::vector<uint8_t>& data);
++
+ namespace internal
+ {
+ 
+-- 
+2.34.1
+

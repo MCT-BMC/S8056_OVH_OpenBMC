@@ -1,0 +1,575 @@
+From 5a16fdccdce7428c7a3fadf40977c14b30148cb3 Mon Sep 17 00:00:00 2001
+From: Ren_Chen <Ren_Chen@wiwynn.com>
+Date: Wed, 16 Jun 2021 15:20:43 +0800
+Subject: [PATCH 3/6] Support full and almost full sel
+
+---
+ CMakeLists.txt                      |   2 +
+ include/sel_logger.hpp              |   9 ++
+ include/threshold_event_monitor.hpp |  56 +++----
+ src/sel_logger.cpp                  | 230 ++++++++++++++++++++++++----
+ 4 files changed, 239 insertions(+), 58 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 86a85a3..efc89ad 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -46,6 +46,8 @@ target_compile_definitions (
+     $<$<BOOL:${SEL_LOGGER_MONITOR_WATCHDOG_EVENTS}>: -DSEL_LOGGER_MONITOR_WATCHDOG_EVENTS>
+     $<$<BOOL:${SEL_LOGGER_SEND_TO_LOGGING_SERVICE}>: -DSEL_LOGGER_SEND_TO_LOGGING_SERVICE>
+     $<$<BOOL:${SEL_LOGGER_MONITOR_THRESHOLD_ALARM_EVENTS}>: -DSEL_LOGGER_MONITOR_THRESHOLD_ALARM_EVENTS>
++    $<$<BOOL:$<MAKE_C_IDENTIFIER:${MAX_SEL_SIZE}>>: -DMAX_SEL_SIZE=${MAX_SEL_SIZE}>
++    $<$<BOOL:$<MAKE_C_IDENTIFIER:${ALMOST_FULL_PERCENTAGE}>>: -DALMOST_FULL_PERCENTAGE=${ALMOST_FULL_PERCENTAGE}>
+ )
+ 
+ target_include_directories (sel-logger PRIVATE ${CMAKE_SOURCE_DIR})
+diff --git a/include/sel_logger.hpp b/include/sel_logger.hpp
+index 4aa3b6d..d9d428c 100644
+--- a/include/sel_logger.hpp
++++ b/include/sel_logger.hpp
+@@ -22,6 +22,15 @@ static constexpr char const* ipmiSelPath = "/xyz/openbmc_project/Logging/IPMI";
+ static constexpr char const* ipmiSelAddInterface =
+     "xyz.openbmc_project.Logging.IPMI";
+ 
++static constexpr auto discreteService = "xyz.openbmc_project.Discrete.Sensor";
++static constexpr auto eventLoggingPath =
++    "/xyz/openbmc_project/sensors/discrete/Event_Logging";
++static constexpr auto eventLoggingIntf = "xyz.openbmc_project.Sensor.Value";
++static constexpr auto propertiesIntf = "org.freedesktop.DBus.Properties";
++static constexpr uint8_t selClearOffset = 0x02;
++static constexpr uint8_t selFullOffset = 0x04;
++static constexpr uint8_t selAlmostFullOffset = 0x05;
++
+ // ID string generated using journalctl to include in the MESSAGE_ID field for
+ // SEL entries.  Helps with filtering SEL entries in the journal.
+ static constexpr char const* selMessageId = "b370836ccf2f4850ac5bee185b77893a";
+diff --git a/include/threshold_event_monitor.hpp b/include/threshold_event_monitor.hpp
+index ad652b1..ae1848e 100644
+--- a/include/threshold_event_monitor.hpp
++++ b/include/threshold_event_monitor.hpp
+@@ -68,10 +68,12 @@ static constexpr const uint8_t thresholdEventDataTriggerReadingByte3 = (1 << 4);
+ static const std::string openBMCMessageRegistryVersion("0.1");
+ 
+ inline static sdbusplus::bus::match::match startThresholdAssertMonitor(
+-    std::shared_ptr<sdbusplus::asio::connection> conn)
++    std::shared_ptr<sdbusplus::asio::connection> conn,
++    sdbusplus::bus::bus& internalBus)
+ {
+-    auto thresholdAssertMatcherCallback = [conn](sdbusplus::message::message&
+-                                                     msg) {
++    auto thresholdAssertMatcherCallback = [conn, &internalBus](
++                                              sdbusplus::message::message&
++                                                  msg) {
+         // This static set of std::pair<path, event> tracks asserted events to
+         // avoid duplicate logs or deasserts logged without an assert
+         static boost::container::flat_set<std::pair<std::string, std::string>>
+@@ -148,15 +150,17 @@ inline static sdbusplus::bus::match::match startThresholdAssertMonitor(
+ 
+         // Get the sensor reading to put in the event data
+         sdbusplus::message::message getSensorValue =
+-            conn->new_method_call(msg.get_sender(), msg.get_path(),
+-                                  "org.freedesktop.DBus.Properties", "GetAll");
++            internalBus.new_method_call(msg.get_sender(), msg.get_path(),
++                                        "org.freedesktop.DBus.Properties",
++                                        "GetAll");
++
+         getSensorValue.append("xyz.openbmc_project.Sensor.Value");
+         boost::container::flat_map<std::string, std::variant<double, int64_t>>
+             sensorValue;
+         try
+         {
+             sdbusplus::message::message getSensorValueResp =
+-                conn->call(getSensorValue);
++                internalBus.call(getSensorValue);
+             getSensorValueResp.read(sensorValue);
+         }
+         catch (sdbusplus::exception_t&)
+@@ -197,15 +201,15 @@ inline static sdbusplus::bus::match::match startThresholdAssertMonitor(
+         {
+             event.erase(pos, alarm.length());
+         }
+-        sdbusplus::message::message getThreshold =
+-            conn->new_method_call(msg.get_sender(), msg.get_path(),
+-                                  "org.freedesktop.DBus.Properties", "Get");
++        sdbusplus::message::message getThreshold = internalBus.new_method_call(
++            msg.get_sender(), msg.get_path(), "org.freedesktop.DBus.Properties",
++            "Get");
+         getThreshold.append(thresholdInterface, event);
+         std::variant<double, int64_t> thresholdValue;
+         try
+         {
+             sdbusplus::message::message getThresholdResp =
+-                conn->call(getThreshold);
++                internalBus.call(getThreshold);
+             getThresholdResp.read(thresholdValue);
+         }
+         catch (sdbusplus::exception_t&)
+@@ -296,16 +300,15 @@ inline static sdbusplus::bus::match::match startThresholdAssertMonitor(
+             }
+         }
+ 
+-        auto bus = sdbusplus::bus::new_default();
+         if (assert == true)
+         {
+             assertCount++;
+             if (assertCount == 1)
+             {
+-                setLedProperty(bus, amberObjPath, "State",
++                setLedProperty(internalBus, amberObjPath, "State",
+                                "xyz.openbmc_project.Led.Physical.Action.Blink",
+                                amberService);
+-                setLedProperty(bus, greenObjPath, "State",
++                setLedProperty(internalBus, greenObjPath, "State",
+                                "xyz.openbmc_project.Led.Physical.Action.Off",
+                                greenService);
+             }
+@@ -318,21 +321,21 @@ inline static sdbusplus::bus::match::match startThresholdAssertMonitor(
+                 if (pgoodState)
+                 {
+                     setLedProperty(
+-                        bus, amberObjPath, "State",
++                        internalBus, amberObjPath, "State",
+                         "xyz.openbmc_project.Led.Physical.Action.Off",
+                         amberService);
+-                    setLedProperty(bus, greenObjPath, "State",
++                    setLedProperty(internalBus, greenObjPath, "State",
+                                    "xyz.openbmc_project.Led.Physical.Action.On",
+                                    greenService);
+                 }
+                 else
+                 {
+                     setLedProperty(
+-                        bus, amberObjPath, "State",
++                        internalBus, amberObjPath, "State",
+                         "xyz.openbmc_project.Led.Physical.Action.Off",
+                         amberService);
+                     setLedProperty(
+-                        bus, greenObjPath, "State",
++                        internalBus, greenObjPath, "State",
+                         "xyz.openbmc_project.Led.Physical.Action.Blink",
+                         greenService);
+                 }
+@@ -359,9 +362,11 @@ inline static sdbusplus::bus::match::match startThresholdAssertMonitor(
+ }
+ 
+ inline static sdbusplus::bus::match::match startCheckBmcStatusMonitor(
+-    std::shared_ptr<sdbusplus::asio::connection> conn)
++    std::shared_ptr<sdbusplus::asio::connection> conn,
++    sdbusplus::bus::bus& internalBus)
+ {
+-    auto pgoodEventMatcherCallback = [conn](sdbusplus::message::message& msg) {
++    auto pgoodEventMatcherCallback = [conn, &internalBus](
++                                         sdbusplus::message::message& msg) {
+         boost::container::flat_map<std::string, std::variant<int>>
+             propertiesChanged;
+         std::string objName;
+@@ -394,13 +399,12 @@ inline static sdbusplus::bus::match::match startCheckBmcStatusMonitor(
+             }
+         }
+ 
+-        auto bus = sdbusplus::bus::new_default();
+         if (assertCount == 1)
+         {
+-            setLedProperty(bus, amberObjPath, "State",
++            setLedProperty(internalBus, amberObjPath, "State",
+                            "xyz.openbmc_project.Led.Physical.Action.Blink",
+                            amberService);
+-            setLedProperty(bus, greenObjPath, "State",
++            setLedProperty(internalBus, greenObjPath, "State",
+                            "xyz.openbmc_project.Led.Physical.Action.Off",
+                            greenService);
+         }
+@@ -408,19 +412,19 @@ inline static sdbusplus::bus::match::match startCheckBmcStatusMonitor(
+         {
+             if (pgoodState)
+             {
+-                setLedProperty(bus, amberObjPath, "State",
++                setLedProperty(internalBus, amberObjPath, "State",
+                                "xyz.openbmc_project.Led.Physical.Action.Off",
+                                amberService);
+-                setLedProperty(bus, greenObjPath, "State",
++                setLedProperty(internalBus, greenObjPath, "State",
+                                "xyz.openbmc_project.Led.Physical.Action.On",
+                                greenService);
+             }
+             else
+             {
+-                setLedProperty(bus, amberObjPath, "State",
++                setLedProperty(internalBus, amberObjPath, "State",
+                                "xyz.openbmc_project.Led.Physical.Action.Off",
+                                amberService);
+-                setLedProperty(bus, greenObjPath, "State",
++                setLedProperty(internalBus, greenObjPath, "State",
+                                "xyz.openbmc_project.Led.Physical.Action.Blink",
+                                greenService);
+             }
+diff --git a/src/sel_logger.cpp b/src/sel_logger.cpp
+index 9e83da7..efcd0e1 100644
+--- a/src/sel_logger.cpp
++++ b/src/sel_logger.cpp
+@@ -45,6 +45,19 @@ using SELCreated =
+     sdbusplus::xyz::openbmc_project::Logging::SEL::Error::Created;
+ #endif
+ 
++using Value = std::variant<bool>;
++
++static void checkSELCapacity();
++
++// setup connection to dbus
++boost::asio::io_service io;
++auto conn = std::make_shared<sdbusplus::asio::connection>(io);
++sdbusplus::asio::connection internalBus(io,
++                                        sdbusplus::bus::new_system().release());
++
++static bool isFullLogged = false;
++static bool isAlmostFullLogged = false;
++
+ struct DBusInternalError final : public sdbusplus::exception_t
+ {
+     const char* name() const noexcept override
+@@ -174,6 +187,9 @@ static uint16_t
+                     "IPMI_SEL_SENSOR_PATH=%s", path.c_str(),
+                     "IPMI_SEL_EVENT_DIR=%x", assert, "IPMI_SEL_DATA=%s",
+                     selDataStr.c_str(), std::forward<T>(metadata)..., NULL);
++
++    checkSELCapacity();
++
+     return recordId;
+ #endif
+ }
+@@ -203,35 +219,37 @@ static uint16_t selAddOemRecord(const std::string& message,
+                     "MESSAGE_ID=%s", selMessageId, "IPMI_SEL_RECORD_ID=%d",
+                     recordId, "IPMI_SEL_RECORD_TYPE=%x", recordType,
+                     "IPMI_SEL_DATA=%s", selDataStr.c_str(), NULL);
++
++    checkSELCapacity();
++
+     return recordId;
+ #endif
+ }
+ 
+-static void bmcStatusLedInit(std::shared_ptr<sdbusplus::asio::connection> conn)
++static void bmcStatusLedInit()
+ {
+     assertCount = 0;
+     pgoodState = false;
+     std::variant<int> pgood = -1;
+ 
+-    auto method = conn->new_method_call(
++    auto method = internalBus.new_method_call(
+         "org.openbmc.control.Power", "/org/openbmc/control/power0",
+         "org.freedesktop.DBus.Properties", "Get");
+ 
+     method.append("org.openbmc.control.Power", "pgood");
+     try
+     {
+-        auto reply = conn->call(method);
++        auto reply = internalBus.call(method);
+         reply.read(pgood);
+-        auto bus = sdbusplus::bus::new_default();
+ 
+         if (std::get<int>(pgood) == 1)
+         {
+             pgoodState = true;
+ 
+-            setLedProperty(bus, amberObjPath, "State",
++            setLedProperty(internalBus, amberObjPath, "State",
+                            "xyz.openbmc_project.Led.Physical.Action.Off",
+                            amberService);
+-            setLedProperty(bus, greenObjPath, "State",
++            setLedProperty(internalBus, greenObjPath, "State",
+                            "xyz.openbmc_project.Led.Physical.Action.On",
+                            greenService);
+         }
+@@ -239,10 +257,10 @@ static void bmcStatusLedInit(std::shared_ptr<sdbusplus::asio::connection> conn)
+         {
+             pgoodState = false;
+ 
+-            setLedProperty(bus, amberObjPath, "State",
++            setLedProperty(internalBus, amberObjPath, "State",
+                            "xyz.openbmc_project.Led.Physical.Action.Off",
+                            amberService);
+-            setLedProperty(bus, greenObjPath, "State",
++            setLedProperty(internalBus, greenObjPath, "State",
+                            "xyz.openbmc_project.Led.Physical.Action.Blink",
+                            greenService);
+         }
+@@ -253,6 +271,113 @@ static void bmcStatusLedInit(std::shared_ptr<sdbusplus::asio::connection> conn)
+     }
+ }
+ 
++static void checkSELCapacity()
++{
++    std::vector<std::filesystem::path> selLogFiles;
++    getSELLogFiles(selLogFiles);
++
++    // Count SEL files size.
++    size_t selSize = 0;
++    for (const auto& path : selLogFiles)
++    {
++        selSize += std::filesystem::file_size(path);
++    }
++
++    size_t almostFullSize =
++        std::ceil(MAX_SEL_SIZE * ALMOST_FULL_PERCENTAGE / 100);
++
++    if (selSize >= almostFullSize && selSize < MAX_SEL_SIZE &&
++        isAlmostFullLogged == false)
++    {
++        internalBus.async_method_call(
++            [](const boost::system::error_code ec) {
++                if (ec)
++                {
++                    sd_journal_print(LOG_ERR,
++                                     "Failed to set Clear property in discrete "
++                                     "sensor. ec = %d",
++                                     ec.value());
++                }
++            },
++            discreteService, eventLoggingPath, propertiesIntf, "Set",
++            eventLoggingIntf, "Clear", std::variant<bool>(false));
++
++        internalBus.async_method_call(
++            [](const boost::system::error_code ec) {
++                if (ec)
++                {
++                    sd_journal_print(LOG_ERR,
++                                     "Failed to set AlmostFull property in "
++                                     "discrete sensor. ec = %d",
++                                     ec.value());
++                }
++            },
++            discreteService, eventLoggingPath, propertiesIntf, "Set",
++            eventLoggingIntf, "AlmostFull", std::variant<bool>(true));
++
++        // Send almost full SEL.
++        std::vector<uint8_t> eventData = {selAlmostFullOffset, 0xFF,
++                                          ALMOST_FULL_PERCENTAGE};
++        std::string selMsg("SEL is almost full");
++        bool assert = true;
++        try
++        {
++            isAlmostFullLogged = true;
++            selAddSystemRecord(selMsg, eventLoggingPath, eventData, assert,
++                               selBMCGenID);
++        }
++        catch (const std::invalid_argument& e)
++        {
++            sd_journal_print(LOG_ERR, "Failed to add almost full SEL: %s",
++                             e.what());
++        }
++    }
++
++    if (selSize >= MAX_SEL_SIZE && isFullLogged == false)
++    {
++        internalBus.async_method_call(
++            [](const boost::system::error_code ec) {
++                if (ec)
++                {
++                    sd_journal_print(LOG_ERR,
++                                     "Failed to set AlmostFull property in "
++                                     "discrete sensor. ec = %d",
++                                     ec.value());
++                }
++            },
++            discreteService, eventLoggingPath, propertiesIntf, "Set",
++            eventLoggingIntf, "AlmostFull", std::variant<bool>(false));
++
++        internalBus.async_method_call(
++            [](const boost::system::error_code ec) {
++                if (ec)
++                {
++                    sd_journal_print(LOG_ERR,
++                                     "Failed to set Full property in discrete "
++                                     "sensor. ec = %d",
++                                     ec.value());
++                }
++            },
++            discreteService, eventLoggingPath, propertiesIntf, "Set",
++            eventLoggingIntf, "Full", std::variant<bool>(true));
++
++        // Send full SEL.
++        std::vector<uint8_t> eventData = {selFullOffset, 0xFF, 0xFF};
++        std::string selMsg("SEL is full");
++        bool assert = true;
++        try
++        {
++            isFullLogged = true;
++            selAddSystemRecord(selMsg, eventLoggingPath, eventData, assert,
++                               selBMCGenID);
++        }
++        catch (const std::invalid_argument& e)
++        {
++            sd_journal_print(LOG_ERR, "Failed to add full SEL: %s", e.what());
++        }
++    }
++}
++
+ static int selClear()
+ {
+     std::error_code ec;
+@@ -263,24 +388,25 @@ static int selClear()
+         {
+             if (std::filesystem::remove(selLogDir / filename, ec) == false)
+             {
+-                std::cerr << "Failed to remove SEL file: " << filename
+-                          << ", error code: " << ec << "\n";
++                sd_journal_print(
++                    LOG_ERR, "Failed to remove SEL file: %s, error code: %d",
++                    filename.c_str(), ec.value());
++
+                 return ec.value();
+             }
+         }
+     }
+ 
+-    auto bus = sdbusplus::bus::new_system();
+     sdbusplus::message::object_path reloadJobPath;
+ 
+     // Reload rsyslog so it knows to start new log files
+-    auto rsyslogReloadMsg = bus.new_method_call(
++    auto rsyslogReloadMsg = internalBus.new_method_call(
+         "org.freedesktop.systemd1", "/org/freedesktop/systemd1",
+         "org.freedesktop.systemd1.Manager", "ReloadUnit");
+     rsyslogReloadMsg.append("rsyslog.service", "replace");
+     try
+     {
+-        auto reloadResponse = bus.call(rsyslogReloadMsg);
++        auto reloadResponse = internalBus.call(rsyslogReloadMsg);
+         reloadResponse.read(reloadJobPath);
+     }
+     catch (sdbusplus::exception_t& e)
+@@ -288,9 +414,10 @@ static int selClear()
+         throw;
+     }
+ 
+-    sdbusplus::message::message rsyslogReloadJobMsg = bus.new_method_call(
+-        "org.freedesktop.systemd1", reloadJobPath.str.c_str(),
+-        "org.freedesktop.DBus.Introspectable", "Introspect");
++    sdbusplus::message::message rsyslogReloadJobMsg =
++        internalBus.new_method_call(
++            "org.freedesktop.systemd1", reloadJobPath.str.c_str(),
++            "org.freedesktop.DBus.Introspectable", "Introspect");
+     std::this_thread::sleep_for(
+         std::chrono::milliseconds(waitSystemdJobPreDelay));
+ 
+@@ -300,7 +427,7 @@ static int selClear()
+     {
+         try
+         {
+-            bus.call(rsyslogReloadJobMsg);
++            internalBus.call(rsyslogReloadJobMsg);
+             std::this_thread::sleep_for(
+                 std::chrono::milliseconds(waitSystemdJobDelay));
+         }
+@@ -312,30 +439,73 @@ static int selClear()
+     }
+     if (reloadDone == false)
+     {
+-        std::cerr << "Wait for rsyslog reload unit timeout\n";
++        sd_journal_print(LOG_ERR, "Wait for rsyslog reload unit timeout");
+         return -ETIME;
+     }
+ 
++    // Set SEL clear bit to true, full and almost full bits to false.
++    internalBus.async_method_call(
++        [](const boost::system::error_code ec) {
++            if (ec)
++            {
++                sd_journal_print(
++                    LOG_ERR,
++                    "Failed to set Clear property in discrete sensor. ec = %d",
++                    ec.value());
++            }
++        },
++        discreteService, eventLoggingPath, propertiesIntf, "Set",
++        eventLoggingIntf, "Clear", std::variant<bool>(true));
++
++    internalBus.async_method_call(
++        [](const boost::system::error_code ec) {
++            if (ec)
++            {
++                sd_journal_print(LOG_ERR,
++                                 "Failed to set AlmostFull property in "
++                                 "discrete sensor. ec = %d",
++                                 ec.value());
++            }
++        },
++        discreteService, eventLoggingPath, propertiesIntf, "Set",
++        eventLoggingIntf, "AlmostFull", std::variant<bool>(false));
++
++    internalBus.async_method_call(
++        [](const boost::system::error_code ec) {
++            if (ec)
++            {
++                sd_journal_print(
++                    LOG_ERR,
++                    "Failed to set Full property in discrete sensor. ec = %d",
++                    ec.value());
++            }
++        },
++        discreteService, eventLoggingPath, propertiesIntf, "Set",
++        eventLoggingIntf, "Full", std::variant<bool>(false));
++
++    isFullLogged = false;
++    isAlmostFullLogged = false;
++
+     // Add a SEL about SEL is cleared.
+-    std::string path("/xyz/openbmc_project/sensors/discrete/Event_Logging");
+-    std::vector<uint8_t> eventData{0x02, 0xFF, 0xFF};
++    std::vector<uint8_t> eventData{selClearOffset, 0xFF, 0xFF};
+     const std::string ipmiSELAddMessage = "SEL Clear";
+     bool assert = true;
+-    constexpr uint16_t sleBMCGenID = 0x0020;
+ 
+     try
+     {
+-        uint16_t recordID = selAddSystemRecord(ipmiSELAddMessage, path,
+-                                               eventData, assert, sleBMCGenID);
++        uint16_t recordID =
++            selAddSystemRecord(ipmiSELAddMessage, eventLoggingPath, eventData,
++                               assert, selBMCGenID);
+         if (recordID == selInvalidRecID)
+         {
+-            std::cerr << "Failed to add SEL clear: Got invalid record ID\n";
++            sd_journal_print(LOG_ERR,
++                             "Failed to add SEL clear: Got invalid record ID");
+             return -EBADFD;
+         }
+     }
+     catch (const std::invalid_argument& e)
+     {
+-        std::cerr << "Failed to add SEL clear: " << e.what() << "\n";
++        sd_journal_print(LOG_ERR, "Failed to add SEL clear: %s", e.what());
+         return -EINVAL;
+     }
+ 
+@@ -344,10 +514,6 @@ static int selClear()
+ 
+ int main(int argc, char* argv[])
+ {
+-    // setup connection to dbus
+-    boost::asio::io_service io;
+-    auto conn = std::make_shared<sdbusplus::asio::connection>(io);
+-
+     // IPMI SEL Object
+     conn->request_name(ipmiSelObject);
+     auto server = sdbusplus::asio::object_server(conn);
+@@ -375,11 +541,11 @@ int main(int argc, char* argv[])
+     ifaceAddSel->initialize();
+ 
+ #ifdef SEL_LOGGER_MONITOR_THRESHOLD_EVENTS
+-    bmcStatusLedInit(conn);
++    bmcStatusLedInit();
+     sdbusplus::bus::match::match thresholdAssertMonitor =
+-        startThresholdAssertMonitor(conn);
++        startThresholdAssertMonitor(conn, internalBus);
+     sdbusplus::bus::match::match checkBmcStatusMonitor =
+-        startCheckBmcStatusMonitor(conn);
++        startCheckBmcStatusMonitor(conn, internalBus);
+ #endif
+ 
+ #ifdef REDFISH_LOG_MONITOR_PULSE_EVENTS
+-- 
+2.28.0
+

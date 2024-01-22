@@ -1,0 +1,66 @@
+[
+    {
+        "Number": 214,
+        "Name": "CPU0 DIMM A0"
+    },
+    {
+        "Number": 215,
+        "Name": "CPU0 DIMM A1"
+    },
+    {
+        "Number": 216,
+        "Name": "CPU0 DIMM B0"
+    },
+    {
+        "Number": 217,
+        "Name": "CPU0 DIMM B1"
+    },
+    {
+        "Number": 218,
+        "Name": "CPU0 DIMM C0"
+    },
+    {
+        "Number": 219,
+        "Name": "CPU0 DIMM C1"
+    },
+    {
+        "Number": 220,
+        "Name": "CPU0 DIMM D0"
+    },
+    {
+        "Number": 221,
+        "Name": "CPU0 DIMM D1"
+    },
+    {
+        "Number": 222,
+        "Name": "CPU0 DIMM E0"
+    },
+    {
+        "Number": 223,
+        "Name": "CPU0 DIMM E1"
+    },
+    {
+        "Number": 224,
+        "Name": "CPU0 DIMM F0"
+    },
+    {
+        "Number": 225,
+        "Name": "CPU0 DIMM F1"
+    },
+    {
+        "Number": 226,
+        "Name": "CPU0 DIMM G0"
+    },
+    {
+        "Number": 227,
+        "Name": "CPU0 DIMM G1"
+    },
+    {
+        "Number": 228,
+        "Name": "CPU0 DIMM H0"
+    },
+    {
+        "Number": 229,
+        "Name": "CPU0 DIMM H1"
+    }
+]

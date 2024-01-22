@@ -1,0 +1,11 @@
+[Unit]
+Description=Reboot BMC with delay time 30 seconds
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+ExecStart=/bin/bash -c ' sleep 30;reboot'
+SyslogIdentifier=reboot-bmc-with-delay
+
+[Install]
+WantedBy=bmc-reboot.service

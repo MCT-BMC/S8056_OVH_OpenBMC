@@ -1,0 +1,51 @@
+
+0xB6: &fan_present
+  entityID: 0x07
+  entityInstance: 1
+  interfaces:
+    xyz.openbmc_project.Sensor.Value:
+      Value:
+        Offsets:
+          0x00:
+            assert: 0x00
+            type: double
+          0x01:
+            assert: 0x01
+            type: double
+  mutability: Mutability::Read
+  path: /xyz/openbmc_project/sensors/fan_present/FAN1_PRESENT
+  readingType: readingAssertion
+  sensorName: FAN1 PRESENT
+  sensorReadingType: 0x08
+  sensorType: 0x04
+  serviceInterface: org.freedesktop.DBus.Properties
+
+0xB7:
+  <<: *fan_present
+  entityInstance: 1
+  path: /xyz/openbmc_project/sensors/fan_present/FAN2_PRESENT
+  sensorName: FAN2 PRESENT
+
+0xB8:
+  <<: *fan_present
+  entityInstance: 1
+  path: /xyz/openbmc_project/sensors/fan_present/FAN3_PRESENT
+  sensorName: FAN3 PRESENT
+
+0xB9:
+  <<: *fan_present
+  entityInstance: 1
+  path: /xyz/openbmc_project/sensors/fan_present/FAN4_PRESENT
+  sensorName: FAN4 PRESENT
+
+0xBA:
+  <<: *fan_present
+  entityInstance: 1
+  path: /xyz/openbmc_project/sensors/fan_present/FAN5_PRESENT
+  sensorName: FAN5 PRESENT
+
+0xBB:
+  <<: *fan_present
+  entityInstance: 1
+  path: /xyz/openbmc_project/sensors/fan_present/FAN6_PRESENT
+  sensorName: FAN6 PRESENT

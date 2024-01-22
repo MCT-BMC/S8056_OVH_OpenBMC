@@ -1,0 +1,7 @@
+[Unit]
+Description=%I hot swap controller via register
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+ExecStart=/usr/bin/env setting-hsc-register.sh %I

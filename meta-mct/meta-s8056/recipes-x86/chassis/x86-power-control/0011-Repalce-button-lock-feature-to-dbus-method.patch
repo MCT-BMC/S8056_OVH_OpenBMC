@@ -1,0 +1,141 @@
+From 8019d50f90c0a3557e1cd55421e5f634a7642b24 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Wed, 5 Oct 2022 09:58:18 +0800
+Subject: [PATCH] Repalce button lock feature to dbus method
+
+Remove GPIO button lock feature.
+Add dbus method for control button lock feature.
+Fix button lock function abnormal issue
+---
+ src/power_control.cpp | 52 +++++++++++++++++++++++++++++++------------
+ 1 file changed, 38 insertions(+), 14 deletions(-)
+
+diff --git a/src/power_control.cpp b/src/power_control.cpp
+index af3480a..7feaa05 100755
+--- a/src/power_control.cpp
++++ b/src/power_control.cpp
+@@ -92,7 +92,6 @@ static ConfigData resetButtonConfig;
+ static ConfigData idButtonConfig;
+ static ConfigData nmiButtonConfig;
+ static ConfigData slotPowerConfig;
+-static ConfigData buttonLockConfig;
+ 
+ // map for storing list of gpio parameters whose config are to be read from x86
+ // power control json config
+@@ -109,8 +108,16 @@ boost::container::flat_map<std::string, ConfigData*> powerSignalMap = {
+     {"ResetButton", &resetButtonConfig},
+     {"IdButton", &idButtonConfig},
+     {"NMIButton", &nmiButtonConfig},
+-    {"SlotPower", &slotPowerConfig},
+-    {"ButtonLock", &buttonLockConfig}};
++    {"SlotPower", &slotPowerConfig}};
++
++namespace cpld
++{
++    static constexpr const char* busName = "xyz.openbmc_project.mct.cpld";
++    static constexpr const char* path = "/xyz/openbmc_project/mct/cpld";
++    static constexpr const char* interface = "xyz.openbmc_project.mct.cpld";
++    static constexpr const char* buttonLockMethod = "buttonLockMethod";
++    static constexpr const char* buttonUnlockMethod = "buttonUnlockMethod";
++} // namespace cpld
+ 
+ static std::string hostDbusName = "xyz.openbmc_project.State.Host";
+ static std::string chassisDbusName = "xyz.openbmc_project.State.Chassis";
+@@ -209,7 +216,6 @@ static gpiod::line postCompleteLine;
+ static boost::asio::posix::stream_descriptor postCompleteEvent(io);
+ static gpiod::line nmiOutLine;
+ static gpiod::line slotPowerLine;
+-static gpiod::line buttonLockLine;
+ 
+ static void logSELEvent(std::string enrty, std::string path ,
+                      uint8_t eventData0, uint8_t eventData1, uint8_t eventData2);
+@@ -863,6 +869,20 @@ static void logSELEvent(std::string enrty, std::string path ,
+     }
+ }
+ 
++static void buttonLockControl(std::string buttonControl)
++{
++    sdbusplus::message::message method = conn->new_method_call(
++        cpld::busName, cpld::path, cpld::interface, buttonControl.c_str());
++    try
++    {
++        conn->call(method);
++    }
++    catch (std::exception& e)
++    {
++        std::cerr << "Failed to send button control method:" << e.what() << std::endl;
++    }
++}
++
+ static void setIdLed(bool assert)
+ {
+     sdbusplus::message::message method = conn->new_method_call(
+@@ -1517,6 +1537,11 @@ static int setGPIOOutputForMs(const ConfigData& config, const int value,
+                                         durationMs);
+     }
+ 
++    if(config.lineName == powerOutConfig.lineName)
++    {
++        buttonLockControl(cpld::buttonUnlockMethod);
++    }
++
+     // No mask set, so request and set the GPIO normally
+     gpiod::line gpioLine;
+     if (!setGPIOOutput(config.lineName, value, gpioLine))
+@@ -1541,6 +1566,11 @@ static int setGPIOOutputForMs(const ConfigData& config, const int value,
+                                "GPIO_NAME", name, "ERROR_MSG", ec.message());
+                 }
+             }
++
++            if(name == powerOutConfig.lineName)
++            {
++                buttonLockControl(cpld::buttonLockMethod);
++            }
+         });
+     return 0;
+ }
+@@ -2311,15 +2341,16 @@ static void powerButtonHandler(bool state)
+                                 "Power button delay async_wait failed: {ERROR_MSG}",
+                                 "ERROR_MSG", ec.message());
+                         }
++                        return;
+                     }
+-                    buttonLockLine.set_value(1);
++                    buttonLockControl(cpld::buttonUnlockMethod);
+                     sendPowerControlEvent(Event::powerButtonPressed);
+                     addRestartCause(RestartCause::powerButton);
+                 });
+             }
+             else
+             {
+-                buttonLockLine.set_value(1);
++                buttonLockControl(cpld::buttonUnlockMethod);
+                 sendPowerControlEvent(Event::powerButtonPressed);
+                 addRestartCause(RestartCause::powerButton);
+             }
+@@ -2361,7 +2392,7 @@ static void powerButtonHandler(bool state)
+     }
+     else
+     {
+-        buttonLockLine.set_value(0);
++        buttonLockControl(cpld::buttonLockMethod);
+         powerButtonDelayTimer.cancel(cancelErrorCode);
+         hscButtonDelayTimer.cancel(cancelErrorCode);
+     }
+@@ -3101,13 +3132,6 @@ int main(int argc, char* argv[])
+         setGPIOOutput(nmiOutConfig.lineName, !nmiOutConfig.polarity, nmiOutLine);
+     }
+ 
+-    // initialize BUTTON_LOCK GPIO.
+-    if (!buttonLockConfig.lineName.empty())
+-    {
+-        setGPIOOutput(buttonLockConfig.lineName, 0, buttonLockLine);
+-        buttonLockLine.set_value(0);
+-    }
+-
+     // Initialize POWER_OUT and RESET_OUT GPIO.
+     gpiod::line line;
+     if (!powerOutConfig.lineName.empty())
+-- 
+2.25.1
+

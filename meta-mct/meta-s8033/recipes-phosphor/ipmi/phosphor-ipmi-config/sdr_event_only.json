@@ -1,0 +1,284 @@
+[
+    {
+        "ownerId" : "0x1f",
+        "sensorNumber" : "0xe5",
+        "sensorType" : "0x22",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "POWER OVERRIDE"
+    },
+    {
+        "ownerId" : "0x3f",
+        "sensorNumber" : "0x00",
+        "sensorType" : "0x0C",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "P0_UMC0_CH_A0"
+    },
+    {
+        "ownerId" : "0x3f",
+        "sensorNumber" : "0x01",
+        "sensorType" : "0x0C",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "P0_UMC0_CH_A1"
+    },
+    {
+        "ownerId" : "0x3f",
+        "sensorNumber" : "0x12",
+        "sensorType" : "0x0C",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "P0_UMC1_CH_B0"
+    },
+    {
+        "ownerId" : "0x3f",
+        "sensorNumber" : "0x13",
+        "sensorType" : "0x0C",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "P0_UMC1_CH_B1"
+    },
+    {
+        "ownerId" : "0x3f",
+        "sensorNumber" : "0x34",
+        "sensorType" : "0x0C",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "P0_UMC3_CH_C0"
+    },
+    {
+        "ownerId" : "0x3f",
+        "sensorNumber" : "0x35",
+        "sensorType" : "0x0C",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "P0_UMC3_CH_C1"
+    },
+    {
+        "ownerId" : "0x3f",
+        "sensorNumber" : "0x26",
+        "sensorType" : "0x0C",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "P0_UMC2_CH_D0"
+    },
+    {
+        "ownerId" : "0x3f",
+        "sensorNumber" : "0x27",
+        "sensorType" : "0x0C",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "P0_UMC2_CH_D1"
+    },
+    {
+        "ownerId" : "0x3f",
+        "sensorNumber" : "0x68",
+        "sensorType" : "0x0C",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "P0_UMC6_CH_E0"
+    },
+    {
+        "ownerId" : "0x3f",
+        "sensorNumber" : "0x69",
+        "sensorType" : "0x0C",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "P0_UMC6_CH_E1"
+    },
+    {
+        "ownerId" : "0x3f",
+        "sensorNumber" : "0x7A",
+        "sensorType" : "0x0C",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "P0_UMC7_CH_F0"
+    },
+    {
+        "ownerId" : "0x3f",
+        "sensorNumber" : "0x7B",
+        "sensorType" : "0x0C",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "P0_UMC7_CH_F1"
+    },
+    {
+        "ownerId" : "0x3f",
+        "sensorNumber" : "0x5C",
+        "sensorType" : "0x0C",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "P0_UMC5_CH_G0"
+    },
+    {
+        "ownerId" : "0x3f",
+        "sensorNumber" : "0x5D",
+        "sensorType" : "0x0C",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "P0_UMC5_CH_G1"
+    },
+    {
+        "ownerId" : "0x3f",
+        "sensorNumber" : "0x4E",
+        "sensorType" : "0x0C",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "P0_UMC4_CH_H0"
+    },
+    {
+        "ownerId" : "0x3f",
+        "sensorNumber" : "0x4F",
+        "sensorType" : "0x0C",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "P0_UMC4_CH_H1"
+    },
+    {
+        "ownerId" : "0x3f",
+        "sensorNumber" : "0x80",
+        "sensorType" : "0x13",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "NVME1"
+    },
+    {
+        "ownerId" : "0x3f",
+        "sensorNumber" : "0x81",
+        "sensorType" : "0x13",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "NVME2"
+    },
+    {
+        "ownerId" : "0x3f",
+        "sensorNumber" : "0x82",
+        "sensorType" : "0x13",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "NVME3"
+    },
+    {
+        "ownerId" : "0x3f",
+        "sensorNumber" : "0x83",
+        "sensorType" : "0x13",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "NVME4"
+    },
+    {
+        "ownerId" : "0x3f",
+        "sensorNumber" : "0x84",
+        "sensorType" : "0x13",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "OCP"
+    },
+    {
+        "ownerId" : "0x3f",
+        "sensorNumber" : "0x85",
+        "sensorType" : "0x13",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "VGA"
+    },
+    {
+        "ownerId" : "0x3f",
+        "sensorNumber" : "0x86",
+        "sensorType" : "0x13",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "SMN"
+    },
+    {
+        "ownerId" : "0x3f",
+        "sensorNumber" : "0x87",
+        "sensorType" : "0x13",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "FCH"
+    },
+    {
+        "ownerId" : "0x3f",
+        "sensorNumber" : "0x88",
+        "sensorType" : "0x13",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "USB"
+    },
+    {
+        "ownerId" : "0x3f",
+        "sensorNumber" : "0x89",
+        "sensorType" : "0x13",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "SATA"
+    },
+    {
+        "ownerId" : "0x3f",
+        "sensorNumber" : "0x8a",
+        "sensorType" : "0x13",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "NBIF"
+    },
+    {
+        "ownerId" : "0x3f",
+        "sensorNumber" : "0x8b",
+        "sensorType" : "0x13",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "NBIO"
+    },
+    {
+        "ownerId" : "0x3f",
+        "sensorNumber" : "0x8C",
+        "sensorType" : "0x13",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "M2"
+    },
+    {
+        "ownerId" : "0x3f",
+        "sensorNumber" : "0x8D",
+        "sensorType" : "0x13",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "MINIPCIE"
+    },
+    {
+        "ownerId" : "0x3f",
+        "sensorNumber" : "0x90",
+        "sensorType" : "0x07",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "CPU_MCA"
+    },
+    {
+        "ownerId" : "0x2c",
+        "sensorNumber" : "0x80",
+        "sensorType" : "0x21",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "USB_Status"
+    },
+    {
+        "ownerId" : "0x1f",
+        "sensorNumber" : "0xED",
+        "sensorType" : "0x12",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "BIOS_POST"
+    },
+    {
+        "ownerId" : "0x20",
+        "sensorNumber" : "0xfe",
+        "sensorType" : "0x2b",
+        "entityID": "0x07",
+        "entityInstance": "0x01",
+        "sensorName" : "IB BMC FW UPDATE"
+    }
+
+]
+

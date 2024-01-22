@@ -1,0 +1,52 @@
+From 3c1d04a644dfce6e4ab8d66733bc60251a883798 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Wed, 16 Mar 2022 10:54:48 +0800
+Subject: [PATCH 08/11] Add sol pattern sensor type supported for chassis
+ sensor node
+
+---
+ redfish-core/lib/sensors.hpp | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+ mode change 100644 => 100755 redfish-core/lib/sensors.hpp
+
+diff --git a/redfish-core/lib/sensors.hpp b/redfish-core/lib/sensors.hpp
+old mode 100644
+new mode 100755
+index dd2d752..58d3f76
+--- a/redfish-core/lib/sensors.hpp
++++ b/redfish-core/lib/sensors.hpp
+@@ -72,7 +72,8 @@ static const boost::container::flat_map<std::string_view,
+                "/xyz/openbmc_project/sensors/altitude",
+                "/xyz/openbmc_project/sensors/energy",
+ #endif
+-               "/xyz/openbmc_project/sensors/utilization"}},
++               "/xyz/openbmc_project/sensors/utilization",
++               "/xyz/openbmc_project/sensors/pattern"}},
+              {node::thermal,
+               {"/xyz/openbmc_project/sensors/fan_tach",
+                "/xyz/openbmc_project/sensors/temperature",
+@@ -117,6 +118,10 @@ inline const char* toReadingType(const std::string& sensorType)
+     {
+         return "EnergyJoules";
+     }
++    if (sensorType == "pattern")
++    {
++        return "Matching";
++    }
+     return "";
+ }
+ 
+@@ -158,6 +163,10 @@ inline const char* toReadingUnits(const std::string& sensorType)
+     {
+         return "J";
+     }
++    if (sensorType == "pattern")
++    {
++        return "Hit";
++    }
+     return "";
+ }
+ } // namespace sensors
+-- 
+2.7.4
+

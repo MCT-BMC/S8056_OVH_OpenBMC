@@ -1,0 +1,41 @@
+From a04408ea1921dec431a45bad5e62dd08b7f8eb0c Mon Sep 17 00:00:00 2001
+From: Ren_Chen <Ren_Chen@wiwynn.com>
+Date: Wed, 28 Oct 2020 10:35:17 +0800
+Subject: [PATCH] Support HMAC-SHA1 to Authentication and Integrity Algorithm
+
+---
+ auth_algo.hpp      | 3 ++-
+ integrity_algo.hpp | 3 ++-
+ 2 files changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/auth_algo.hpp b/auth_algo.hpp
+index 894a853..24e4ff3 100644
+--- a/auth_algo.hpp
++++ b/auth_algo.hpp
+@@ -107,7 +107,8 @@ class Interface
+      */
+     static bool isAlgorithmSupported(Algorithms algo)
+     {
+-        if (algo == Algorithms::RAKP_HMAC_SHA256)
++        if (algo == Algorithms::RAKP_HMAC_SHA1 ||
++            algo == Algorithms::RAKP_HMAC_SHA256)
+         {
+             return true;
+         }
+diff --git a/integrity_algo.hpp b/integrity_algo.hpp
+index cdeb617..d8c9f5a 100644
+--- a/integrity_algo.hpp
++++ b/integrity_algo.hpp
+@@ -93,7 +93,8 @@ class Interface
+      */
+     static bool isAlgorithmSupported(Algorithms algo)
+     {
+-        if (algo == Algorithms::HMAC_SHA256_128)
++        if (algo == Algorithms::HMAC_SHA1_96 ||
++            algo == Algorithms::HMAC_SHA256_128)
+         {
+             return true;
+         }
+-- 
+2.28.0
+

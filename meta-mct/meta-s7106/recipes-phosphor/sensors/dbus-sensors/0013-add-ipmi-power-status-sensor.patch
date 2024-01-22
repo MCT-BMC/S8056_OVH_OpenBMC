@@ -1,0 +1,215 @@
+From 511a032f09f2104ea85b249ee2441d75e6dd6a2d Mon Sep 17 00:00:00 2001
+From: "wendy.shi" <wendy.shi@mic.com.tw>
+Date: Wed, 6 Nov 2019 16:04:41 +0800
+Subject: [PATCH] add ipmi power status sensor
+
+---
+ CMakeLists.txt                                     |  13 ++
+ .../xyz.openbmc_project.aclostsensor.service       |  15 +++
+ src/AcLostSensor.cpp                               | 133 +++++++++++++++++++++
+ 3 files changed, 161 insertions(+)
+ create mode 100644 service_files/xyz.openbmc_project.aclostsensor.service
+ create mode 100644 src/AcLostSensor.cpp
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 99f4ab6..66fad74 100755
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -51,6 +51,7 @@ option (DISABLE_ACPI "Disable installing acpi sensor" OFF)
+ option (DISABLE_HOSTRESET "Disable installing host reset sensor" OFF)
+ option (DISABLE_PWR_BUTTON "Disable installing power button sensor" OFF)
+ option (DISABLE_VERSION_CHANGE "Disable installing version change sensor" OFF)
++option (DISABLE_POWER_STATUS "Disable installing power status sensor" OFF)
+ 
+ include ("cmake/HunterGate.cmake")
+ 
+@@ -222,6 +223,10 @@ add_executable (versionchangesensor src/VersionChangeSensor.cpp)
+ add_dependencies (versionchangesensor sdbusplus-project)
+ target_link_libraries (versionchangesensor ${SENSOR_LINK_LIBS})
+ 
++add_executable (aclostsensor src/AcLostSensor.cpp)
++add_dependencies (aclostsensor sdbusplus-project)
++target_link_libraries (aclostsensor ${SENSOR_LINK_LIBS})
++
+ if (NOT YOCTO)
+     add_dependencies (adcsensor ${EXTERNAL_PACKAGES})
+     add_dependencies (cpusensor ${EXTERNAL_PACKAGES})
+@@ -238,6 +243,7 @@ if (NOT YOCTO)
+     add_dependencies (hostresetsensor ${EXTERNAL_PACKAGES})
+     add_dependencies (pwrbuttonsensor ${EXTERNAL_PACKAGES})
+     add_dependencies (versionchangesensor ${EXTERNAL_PACKAGES})
++    add_dependencies (aclostsensor ${EXTERNAL_PACKAGES})
+ endif ()
+ 
+ set (SERVICE_FILE_SRC_DIR ${PROJECT_SOURCE_DIR}/service_files)
+@@ -356,3 +362,10 @@ if (NOT DISABLE_VERSION_CHANGE)
+                  ${SERVICE_FILE_SRC_DIR}/xyz.openbmc_project.versionchangesensor.service
+                  DESTINATION ${SERVICE_FILE_INSTALL_DIR})
+ endif ()
++
++if (NOT DISABLE_POWER_STATUS)
++    install (TARGETS aclostsensor DESTINATION bin)
++    install (FILES
++                 ${SERVICE_FILE_SRC_DIR}/xyz.openbmc_project.aclostsensor.service
++                 DESTINATION ${SERVICE_FILE_INSTALL_DIR})
++endif ()
+diff --git a/service_files/xyz.openbmc_project.aclostsensor.service b/service_files/xyz.openbmc_project.aclostsensor.service
+new file mode 100644
+index 0000000..ceff86f
+--- /dev/null
++++ b/service_files/xyz.openbmc_project.aclostsensor.service
+@@ -0,0 +1,15 @@
++[Unit]
++Description=IPMI defined ac lost Sensor
++StopWhenUnneeded=false
++After=xyz.openbmc_project.Logging.IPMI.service
++After=obmc-sync-pch-rtc.service
++
++[Service]
++Restart=always
++RestartSec=5
++ExecStartPre=/bin/bash -c 'while [ ! -e /run/time_sync_done ]; do sleep 1; done'
++ExecStart=/usr/bin/env aclostsensor
++SyslogIdentifier=aclost-sensor
++
++[Install]
++WantedBy=multi-user.target
+diff --git a/src/AcLostSensor.cpp b/src/AcLostSensor.cpp
+new file mode 100644
+index 0000000..e73d4b1
+--- /dev/null
++++ b/src/AcLostSensor.cpp
+@@ -0,0 +1,133 @@
++/*
++// Copyright (c) 2018 Intel Corporation
++//
++// Licensed under the Apache License, Version 2.0 (the "License");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//      http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an "AS IS" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++*/
++
++#include <Utils.hpp>
++#include <boost/algorithm/string/predicate.hpp>
++#include <boost/asio.hpp>
++#include <chrono>
++#include <ctime>
++#include <iostream>
++#include <sdbusplus/asio/connection.hpp>
++#include <sdbusplus/asio/object_server.hpp>
++#include <sdbusplus/asio/sd_event.hpp>
++#include <sdbusplus/bus.hpp>
++#include <sdbusplus/exception.hpp>
++#include <sdbusplus/server.hpp>
++#include <sdbusplus/timer.hpp>
++#include <sensor.hpp>
++#include <systemd/sd-journal.h>
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <unistd.h>
++
++static constexpr bool DEBUG = true;
++
++static constexpr char const* ipmiSELService = "xyz.openbmc_project.Logging.IPMI";
++static constexpr char const* ipmiSELPath = "/xyz/openbmc_project/Logging/IPMI";
++static constexpr char const* ipmiSELAddInterface = "xyz.openbmc_project.Logging.IPMI";
++
++static const std::string ipmiSELAddMessage = "SEL Entry";
++static const std::string sensorPath = "/xyz/openbmc_project/sensors/power_unit/POWER_STATUS";
++
++static constexpr size_t selEvtDataMaxSize = 3;
++
++int execmd(char* cmd,char* result) {
++    char buffer[128];
++    FILE* pipe = popen(cmd, "r");
++    if (!pipe)
++        return -1;
++
++    while(!feof(pipe)) {
++        if(fgets(buffer, 128, pipe)){
++            strcat(result,buffer);
++        }
++    }
++    pclose(pipe);
++    return 0;
++}
++
++
++int main()
++{
++
++    int rc = 0;
++    char command[100];
++    char temp[50];
++    uint8_t ResetFlag=0;
++    uint8_t data=0;
++
++    // setup connection to dbus
++    boost::asio::io_service io;
++    auto systemBus = std::make_shared<sdbusplus::asio::connection>(io);
++    auto objServer = sdbusplus::asio::object_server(systemBus);
++
++    // setup object server, define interface
++    systemBus->request_name("xyz.openbmc_project.AcLostSensor");
++
++    // add interface into sensor tree
++    std::shared_ptr<sdbusplus::asio::dbus_interface> iface =
++        objServer.add_interface(sensorPath,sensorValueInterface);
++
++    double value = 0;
++    //dummy value, just identifier for sdr command   
++    iface->register_property("Value", value);
++    iface->initialize();
++
++    sprintf(command, "devmem 0x1e6e203c");
++    memset(temp, 0, sizeof(temp));
++    rc = execmd((char *)command, temp);
++    if (rc != 0)
++    {
++        std::cerr << "get SCU3C register failed\n";
++    }
++
++    ResetFlag=(strtoull(temp,NULL,0)&0x1);
++
++    if (ResetFlag==1)
++    {
++        uint16_t genid = 0x20;
++        bool assert = 1;
++        std::vector<uint8_t> eventData(selEvtDataMaxSize, 0xFF);
++        eventData[0] = 4;
++
++        sdbusplus::message::message writeSEL = systemBus->new_method_call(
++            ipmiSELService, ipmiSELPath, ipmiSELAddInterface, "IpmiSelAdd");
++        writeSEL.append(ipmiSELAddMessage, std::string(sensorPath), eventData, assert,
++                    genid);
++        try
++        {
++            systemBus->call(writeSEL);
++        }
++        catch (sdbusplus::exception_t& e)
++        {
++            std::cerr << "call IpmiSelAdd failed\n";
++        }
++
++        data=strtoull(temp,NULL,0);
++        memset(command, 0, sizeof(command));
++        snprintf(command,sizeof(command),"devmem 0x1e6e203c 32 0x%x",data-1);
++        rc = system(command);
++        if (rc != 0)
++        {
++            std::cerr << "set SCU3C register failed\n";
++        }
++    }
++
++    io.run();
++
++    return 0;
++}

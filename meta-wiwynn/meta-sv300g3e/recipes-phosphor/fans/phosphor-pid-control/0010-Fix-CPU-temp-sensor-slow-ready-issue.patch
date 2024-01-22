@@ -1,0 +1,134 @@
+From 1f9f7ff8e55e7c9b88d92e6a0b75641490360429 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Sun, 19 Apr 2020 18:21:39 +0800
+Subject: [PATCH] Fix for CPU temp sensor slow ready issue
+
+Description
+- CPU temp. sensor is not ready when phosphor-pid-control initialization
+- CPU temp. would not be added in fan control so that fan speed does not match to CPU fan table setting
+---
+ main.cpp        | 18 +++++++++++++++---
+ pid/builder.cpp |  8 ++++++--
+ pid/builder.hpp |  2 ++
+ util.hpp        |  2 +-
+ 4 files changed, 24 insertions(+), 6 deletions(-)
+
+diff --git a/main.cpp b/main.cpp
+index 378ab7b..1966fa6 100644
+--- a/main.cpp
++++ b/main.cpp
+@@ -105,7 +105,7 @@ void registerDebugSignalHandler()
+     return;
+ }
+ 
+-void restartControlLoops()
++int restartControlLoops()
+ {
+     static SensorManager mgmr;
+     static std::unordered_map<int64_t, std::unique_ptr<PIDZone>> zones;
+@@ -118,7 +118,7 @@ void restartControlLoops()
+     static boost::asio::steady_timer reloadTimer(io);
+     if (!dbus_configuration::init(modeControlBus, reloadTimer))
+     {
+-        return; // configuration not ready
++        return -1; // configuration not ready
+     }
+ 
+ #else
+@@ -207,6 +207,12 @@ void restartControlLoops()
+ 
+     zones = buildZones(zoneConfig, zoneDetailsConfig, mgmr, modeControlBus);
+ 
++    if (1 == resetService)
++    {
++        resetService = 0;
++        return -1;
++    }
++
+     if (0 == zones.size())
+     {
+         std::cerr << "No zones defined, exiting.\n";
+@@ -219,6 +225,8 @@ void restartControlLoops()
+         std::cerr << "pushing zone " << i.first << "\n";
+         pidControlLoop(i.second.get(), timer);
+     }
++
++    return 0;
+ }
+ 
+ /* If process receive sigint/sigterm write 80% pwm to all pwm files. */
+@@ -321,7 +329,11 @@ int main(int argc, char* argv[])
+      * it.
+      */
+ 
+-    restartControlLoops();
++    if (-1 == restartControlLoops())
++    {
++        std::cerr << "Reset phosphor-pid-control service\n";
++        return -1;
++    }
+ 
+     io.run();
+     return 0;
+diff --git a/pid/builder.cpp b/pid/builder.cpp
+index 7f161fb..44ecd13 100644
+--- a/pid/builder.cpp
++++ b/pid/builder.cpp
+@@ -32,6 +32,8 @@
+ static constexpr bool deferSignals = true;
+ static constexpr auto objectPath = "/xyz/openbmc_project/settings/fanctrl/zone";
+ 
++uint8_t resetService = 0;
++
+ static std::string getControlPath(int64_t zone)
+ {
+     return std::string(objectPath) + std::to_string(zone);
+@@ -120,7 +122,8 @@ std::unordered_map<int64_t, std::unique_ptr<PIDZone>>
+                                      "Failed to create thermal pid."
+                                      "Skip %s of type: %s",
+                                      name.c_str(), info->type.c_str());
+-                    continue;
++                    resetService = 1;
++                    return zones;
+                 }
+ 
+                 zone->addThermalPID(std::move(pid));
+@@ -145,7 +148,8 @@ std::unordered_map<int64_t, std::unique_ptr<PIDZone>>
+                                      "Failed to create stepwise controller."
+                                      "Skip %s of type: %s",
+                                      name.c_str(), info->type.c_str());
+-                    continue;
++                    resetService = 1;
++                    return zones;
+                 }
+ 
+                 zone->addThermalPID(std::move(stepwise));
+diff --git a/pid/builder.hpp b/pid/builder.hpp
+index e500503..9909ef2 100644
+--- a/pid/builder.hpp
++++ b/pid/builder.hpp
+@@ -7,6 +7,8 @@
+ #include <sdbusplus/bus.hpp>
+ #include <unordered_map>
+ 
++extern uint8_t resetService;
++
+ std::unordered_map<int64_t, std::unique_ptr<PIDZone>>
+     buildZones(std::map<int64_t, conf::PIDConf>& zonePids,
+                std::map<int64_t, struct conf::ZoneConfig>& zoneConfigs,
+diff --git a/util.hpp b/util.hpp
+index e40b61f..f9dcedf 100644
+--- a/util.hpp
++++ b/util.hpp
+@@ -30,7 +30,7 @@ IOInterfaceType getWriteInterfaceType(const std::string& path);
+ 
+ IOInterfaceType getReadInterfaceType(const std::string& path);
+ 
+-void restartControlLoops(void);
++int restartControlLoops(void);
+ 
+ /*
+  * Given a configuration structure, fill out the information we use within the
+-- 
+2.24.1
+

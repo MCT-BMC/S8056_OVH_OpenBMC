@@ -1,0 +1,58 @@
+From afe0b912b687e419512aacd4c8233784802fd312 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Mon, 20 Jul 2020 22:20:54 +0800
+Subject: [PATCH] Set the power button GPIOs to pass-through mode
+
+---
+ board/aspeed/ast-g5/ast-g5.c | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+
+diff --git a/board/aspeed/ast-g5/ast-g5.c b/board/aspeed/ast-g5/ast-g5.c
+index 4ef33e333f..b4f210a8a6 100644
+--- a/board/aspeed/ast-g5/ast-g5.c
++++ b/board/aspeed/ast-g5/ast-g5.c
+@@ -49,6 +49,8 @@ DECLARE_GLOBAL_DATA_PTR;
+ #define GPIO_YZAAAB_DATA          0x1e0
+ #define GPIO_YZAAAB_DIR           0x1e4
+ 
++#define SCU_REG_BASE              0x1e6e2000
++#define MULTI_FUNC_PIN_CTL4       0x8c
+ /* --------------------------------------------------------------------
+  * @fn Chip_Register_Init
+  * @brief Initialize the BMC chip registers if needed
+@@ -236,6 +238,24 @@ void Set_Default_Caterr_LED()
+     *((volatile ulong *) reg_addr) = temp;
+ }
+ 
++void Set_GPIOD2_Passthru_to_GPIOD3()
++{
++    ulong reg_addr = 0;
++    ulong temp = 0;
++
++    // UNLOCK SCU
++    reg_addr = SCU_REG_BASE;
++    temp = *((volatile ulong *) reg_addr);
++    temp = 0x1688a8a8;     // UNLOCK KEY
++    *((volatile ulong *) reg_addr) = temp;
++
++    // Modify bypass
++    reg_addr = SCU_REG_BASE + MULTI_FUNC_PIN_CTL4;
++    temp = *((volatile ulong *) reg_addr);
++    temp |= 0x00000200;
++    *((volatile ulong *) reg_addr) = temp;
++}
++
+ int board_init(void)
+ {
+ 	gd->bd->bi_boot_params = CONFIG_SYS_SDRAM_BASE + 0x100;
+@@ -246,6 +266,7 @@ int board_init(void)
+     Set_Default_UART_Route();
+     Set_Default_Status_LED();
+     Set_Default_Caterr_LED();
++    Set_GPIOD2_Passthru_to_GPIOD3();
+ 
+ 	return 0;
+ }
+-- 
+2.24.1
+

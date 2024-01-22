@@ -1,0 +1,10 @@
+[Unit]
+Description=Set Next Node Present
+
+[Service]
+Type=oneshot
+
+ExecStart=echo "Another node present detected"
+
+ExecStopPost=/usr/bin/busctl set-property xyz.openbmc_project.GpioMonitor /xyz/openbmc_project/gpio/event xyz.openbmc_project.GpioEvent NEXT_NODE_P3V3_STBY_PG s "Idle"
+

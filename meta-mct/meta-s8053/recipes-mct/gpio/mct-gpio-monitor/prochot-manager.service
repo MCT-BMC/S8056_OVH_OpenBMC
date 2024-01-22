@@ -1,0 +1,11 @@
+[Unit]
+Description=MiTAC asset CPU PROCHOT_L manager
+
+[Service]
+Restart=always
+ExecStart=/usr/bin/env prochot-manager
+SyslogIdentifier=prochot-manager
+TimeoutSec=infinity
+
+[Install]
+WantedBy={SYSTEMD_DEFAULT_TARGET}

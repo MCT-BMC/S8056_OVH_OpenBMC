@@ -1,0 +1,24 @@
+From 125ef9de49571f3914c1035ce5eeecddd6b60f81 Mon Sep 17 00:00:00 2001
+From: Ren_Chen <Ren_Chen@wiwynn.com>
+Date: Wed, 16 Jun 2021 09:07:45 +0800
+Subject: [PATCH] Remove the dependency of phosphor-ipmi-host
+
+---
+ phosphor-ipmi-kcs@.service.in | 2 --
+ 1 file changed, 2 deletions(-)
+
+diff --git a/phosphor-ipmi-kcs@.service.in b/phosphor-ipmi-kcs@.service.in
+index 3dacda4..cfe5893 100644
+--- a/phosphor-ipmi-kcs@.service.in
++++ b/phosphor-ipmi-kcs@.service.in
+@@ -1,7 +1,5 @@
+ [Unit]
+ Description=Phosphor IPMI KCS DBus Bridge
+-Requires=phosphor-ipmi-host.service
+-After=phosphor-ipmi-host.service
+ 
+ [Service]
+ Type=notify
+-- 
+2.28.0
+

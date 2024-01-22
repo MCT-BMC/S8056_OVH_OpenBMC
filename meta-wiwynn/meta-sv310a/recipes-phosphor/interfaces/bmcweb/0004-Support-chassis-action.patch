@@ -1,0 +1,167 @@
+From 5d66fbaf7d0e4f06e49be059107a2be9f5ed9524 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Fri, 8 Oct 2021 11:13:55 +0800
+Subject: [PATCH] Support chassis action
+
+---
+ redfish-core/lib/chassis.hpp | 109 ++++++++++++++++++++++++++++++++++-
+ 1 file changed, 106 insertions(+), 3 deletions(-)
+
+diff --git a/redfish-core/lib/chassis.hpp b/redfish-core/lib/chassis.hpp
+index 80c5c50..ef1a533 100644
+--- a/redfish-core/lib/chassis.hpp
++++ b/redfish-core/lib/chassis.hpp
+@@ -27,6 +27,21 @@
+ namespace redfish
+ {
+ 
++std::map<std::string, std::string> actionMap = {
++    {"ForceOff", "xyz.openbmc_project.State.Host.Transition.Off"},
++    {"On", "xyz.openbmc_project.State.Host.Transition.On"},
++    {"PowerCycle", "xyz.openbmc_project.State.Host.Transition.Reboot"},
++    {"GracefulShutdown", "xyz.openbmc_project.State.Host.Transition.SoftOff"},
++    {"ForceRestart",
++     "xyz.openbmc_project.State.Host.Transition.ForceWarmReboot"}};
++
++std::map<std::string, std::string> restartCauseMap = {
++    {"On", "xyz.openbmc_project.State.Host.RestartCause.IpmiPowerOn"},
++    {"PowerCycle",
++     "xyz.openbmc_project.State.Host.RestartCause.IpmiPowerCycle"},
++    {"ForceRestart",
++     "xyz.openbmc_project.State.Host.RestartCause.IpmiPowerReset"}};
++
+ /**
+  * @brief Retrieves chassis state properties over dbus
+  *
+@@ -630,6 +645,88 @@ inline void
+         busName, path, interface, method, "/", 0, interfaces);
+ }
+ 
++inline void setRestartCause(const std::string& resetType)
++{
++    auto findRestartCause = restartCauseMap.find(resetType);
++    if (findRestartCause == restartCauseMap.end())
++    {
++        return;
++    }
++
++    constexpr auto restartCauseServ = "xyz.openbmc_project.State.Host";
++    constexpr auto restartCausePath = "/xyz/openbmc_project/state/host0";
++    constexpr auto restartCauseIntf = "xyz.openbmc_project.State.Host";
++
++    try
++    {
++        auto method = crow::connections::systemBus->new_method_call(
++            restartCauseServ, restartCausePath,
++            "org.freedesktop.DBus.Properties", "Set");
++        method.append(restartCauseIntf, "RestartCause",
++                      std::variant<std::string>{findRestartCause->second});
++        crow::connections::systemBus->call_noreply(method);
++    }
++    catch (const sdbusplus::exception_t& e)
++    {
++        BMCWEB_LOG_ERROR << "Failed to set restart cause: " << e.what() << "\n";
++    }
++}
++
++inline void
++    doChassisPowerControl(const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++                          const std::string& resetType)
++{
++    const char* busName = "xyz.openbmc_project.ObjectMapper";
++    const char* path = "/xyz/openbmc_project/object_mapper";
++    const char* interface = "xyz.openbmc_project.ObjectMapper";
++    const char* method = "GetSubTreePaths";
++
++    const std::array<const char*, 1> interfaces = {
++        "xyz.openbmc_project.State.Host"};
++
++    // Use mapper to get subtree paths.
++    crow::connections::systemBus->async_method_call(
++        [asyncResp, resetType](const boost::system::error_code ec,
++                               const std::vector<std::string>& hostList) {
++            if (ec)
++            {
++                BMCWEB_LOG_DEBUG << "[mapper] Bad D-Bus request error: " << ec;
++                messages::internalError(asyncResp->res);
++                return;
++            }
++
++            if (hostList.empty())
++            {
++                BMCWEB_LOG_DEBUG << "Empty host list";
++                messages::internalError(asyncResp->res);
++                return;
++            }
++
++            const char* processName = "xyz.openbmc_project.State.Host";
++            const char* interfaceName = "xyz.openbmc_project.State.Host";
++            const char* destProperty = "RequestedHostTransition";
++            const std::string propertyValue = actionMap[resetType];
++
++            crow::connections::systemBus->async_method_call(
++                [asyncResp, resetType](const boost::system::error_code ec) {
++                    // Use "Set" method to set the property value.
++                    if (ec)
++                    {
++                        BMCWEB_LOG_DEBUG << "[Set] Bad D-Bus request error: "
++                                         << ec;
++                        messages::internalError(asyncResp->res);
++                        return;
++                    }
++                    setRestartCause(resetType);
++                    messages::success(asyncResp->res);
++                },
++                processName, hostList[0], "org.freedesktop.DBus.Properties",
++                "Set", interfaceName, destProperty,
++                std::variant<std::string>{propertyValue});
++        },
++        busName, path, interface, method, "/", 0, interfaces);
++}
++
+ /**
+  * ChassisResetAction class supports the POST method for the Reset
+  * action.
+@@ -655,7 +752,7 @@ inline void requestRoutesChassisResetAction(App& app)
+                     return;
+                 }
+ 
+-                if (resetType != "PowerCycle")
++                if (actionMap.find(resetType) == actionMap.end())
+                 {
+                     BMCWEB_LOG_DEBUG << "Invalid property value for ResetType: "
+                                      << resetType;
+@@ -664,7 +761,7 @@ inline void requestRoutesChassisResetAction(App& app)
+ 
+                     return;
+                 }
+-                doChassisPowerCycle(asyncResp);
++                doChassisPowerControl(asyncResp, resetType);
+             });
+ }
+ 
+@@ -682,6 +779,12 @@ inline void requestRoutesChassisResetActionInfo(App& app)
+                const std::string& chassisId)
+ 
+             {
++                std::vector<std::string> actions;
++                for (const auto& [key, value] : actionMap)
++                {
++                    actions.emplace_back(key);
++                }
++
+                 asyncResp->res.jsonValue = {
+                     {"@odata.type", "#ActionInfo.v1_1_2.ActionInfo"},
+                     {"@odata.id",
+@@ -692,7 +795,7 @@ inline void requestRoutesChassisResetActionInfo(App& app)
+                      {{{"Name", "ResetType"},
+                        {"Required", true},
+                        {"DataType", "String"},
+-                       {"AllowableValues", {"PowerCycle"}}}}}};
++                       {"AllowableValues", actions}}}}};
+             });
+ }
+ 
+-- 
+2.32.0
+

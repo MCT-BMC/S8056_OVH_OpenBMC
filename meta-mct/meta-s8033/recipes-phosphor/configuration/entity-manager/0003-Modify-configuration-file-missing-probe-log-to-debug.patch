@@ -1,0 +1,28 @@
+From f8d5288f4869b803fd8ac30dc07c1d7897a78e8a Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Tue, 29 Mar 2022 19:53:56 +0800
+Subject: [PATCH] Modify configuration file missing probe log to debug level
+
+---
+ src/PerformScan.cpp | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/src/PerformScan.cpp b/src/PerformScan.cpp
+index 5978710..a81bc1b 100644
+--- a/src/PerformScan.cpp
++++ b/src/PerformScan.cpp
+@@ -265,7 +265,10 @@ void PerformScan::run()
+         // check for poorly formatted fields, probe must be an array
+         if (findProbe == it->end())
+         {
+-            std::cerr << "configuration file missing probe:\n " << *it << "\n";
++            if constexpr (debug)
++            {
++                std::cerr << "configuration file missing probe:\n " << *it << "\n";
++            }
+             it = _configurations.erase(it);
+             continue;
+         }
+-- 
+2.7.4
+

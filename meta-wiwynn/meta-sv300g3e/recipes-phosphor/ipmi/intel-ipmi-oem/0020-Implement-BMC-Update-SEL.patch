@@ -1,0 +1,29 @@
+From c6fdabf1250098a6ab93ceedc6a9af144e64116b Mon Sep 17 00:00:00 2001
+From: Varun Sampat <vsampat@twitter.com>
+Date: Mon, 15 Jun 2020 22:06:22 -0400
+Subject: [PATCH] Implement BMC Update SEL
+
+---
+ include/sdrutils.hpp | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/include/sdrutils.hpp b/include/sdrutils.hpp
+index 2ce6db0..9ef962c 100644
+--- a/include/sdrutils.hpp
++++ b/include/sdrutils.hpp
+@@ -173,6 +173,7 @@ enum class SensorTypeCodes : uint8_t
+     acpi = 0x22,
+     watchdog2 = 0x23,
+     mgmtsystemhealth = 0x28,
++    versionchange = 0x2b,
+     fru_state = 0x2c,
+ };
+ 
+@@ -191,6 +192,7 @@ const static boost::container::flat_map<const char*, SensorTypeCodes, CmpStr>
+                  {"acpi", SensorTypeCodes::acpi},
+                  {"systemevent", SensorTypeCodes::systemevent},
+                  {"mgmtsystemhealth", SensorTypeCodes::mgmtsystemhealth},
++                 {"versionchange", SensorTypeCodes::versionchange},
+                  {"button", SensorTypeCodes::button},
+                  {"fru_state", SensorTypeCodes::fru_state}}};
+ 

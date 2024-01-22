@@ -1,0 +1,98 @@
+From 88ebe4c5f36ab58361d1ec2fc353ca1ce495f3bf Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Wed, 16 Mar 2022 15:06:54 +0800
+Subject: [PATCH 01/24] Support IPMI power commands and SEL
+
+---
+ chassishandler.cpp | 44 +++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 43 insertions(+), 1 deletion(-)
+ mode change 100644 => 100755 chassishandler.cpp
+
+diff --git a/chassishandler.cpp b/chassishandler.cpp
+old mode 100644
+new mode 100755
+index 737d3d2..ebfb5f3
+--- a/chassishandler.cpp
++++ b/chassishandler.cpp
+@@ -882,6 +882,33 @@ int initiateChassisStateTransition(ipmi::Context::ptr& ctx,
+     return 0;
+ }
+ 
++//-----------------------------------------------
++// Calls IpmiSelAdd Dbus method to generate a SEL
++//-----------------------------------------------
++void generateSELEvent(char const* SensorPath,std::vector<uint8_t> eventData)
++{
++    static constexpr char const* ipmiSELService =    "xyz.openbmc_project.Logging.IPMI";
++    static constexpr char const* ipmiSELPath = "/xyz/openbmc_project/Logging/IPMI";
++    static constexpr char const* ipmiSELAddInterface = "xyz.openbmc_project.Logging.IPMI";
++
++    std::shared_ptr<sdbusplus::asio::connection> busp = getSdBus();
++
++    uint16_t genid = 0x20;
++    bool assert=1;
++
++    sdbusplus::message::message writeSEL = busp->new_method_call(
++                            ipmiSELService, ipmiSELPath, ipmiSELAddInterface, "IpmiSelAdd");
++    writeSEL.append("IPMI command SEL Entry",  std::string(SensorPath), eventData, assert,genid);
++    try
++    {
++        busp->call(writeSEL);
++    }
++    catch (sdbusplus::exception_t& e)
++    {
++        std::cerr << "call IpmiSelAdd failed\n";
++    }
++}
++
+ //------------------------------------------
+ // Set Enabled property to inform NMI source
+ // handling to trigger a NMI_OUT BSOD.
+@@ -1326,28 +1353,43 @@ ipmi::RspType<uint4_t, // Restart Cause
+ ipmi::RspType<> ipmiChassisControl(ipmi::Context::ptr& ctx,
+                                    uint8_t chassisControl)
+ {
++    static constexpr char const* fruStatePowerCycle= "/xyz/openbmc_project/sensors/fru_state/IPMI_POWER_CYCLE";
++    static constexpr char const* fruStatePowerOn= "/xyz/openbmc_project/sensors/fru_state/IPMI_POWER_ON";
++    static constexpr char const* fruStatePowerOff= "/xyz/openbmc_project/sensors/fru_state/IPMI_POWER_OFF";
++    static constexpr char const* fruStatePowerSoft= "/xyz/openbmc_project/sensors/fru_state/IPMI_POWER_SOFT";
++    static constexpr char const* fruStatePowerReset= "/xyz/openbmc_project/sensors/fru_state/IPMI_POWER_RESET";
++    static constexpr char const* fruStateSensorPath= "/xyz/openbmc_project/sensors/fru_state/IPMI_POWER_DIAG";
++    std::vector<uint8_t> powerControlEventData{0x02,0x01,0xff};
++    std::vector<uint8_t> nmiEventData{0x02, 0x22, 0xff};
++
+     int rc = 0;
+     switch (chassisControl)
+     {
+         case CMD_POWER_ON:
++            generateSELEvent(fruStatePowerOn,powerControlEventData);
+             rc = initiateHostStateTransition(ctx, State::Host::Transition::On);
+             break;
+         case CMD_POWER_OFF:
++            generateSELEvent(fruStatePowerOff,powerControlEventData);
+             rc = initiateChassisStateTransition(
+                 ctx, State::Chassis::Transition::Off);
+             break;
+         case CMD_HARD_RESET:
++            generateSELEvent(fruStatePowerReset,powerControlEventData);
+             rc = initiateHostStateTransition(
+                 ctx, State::Host::Transition::ForceWarmReboot);
+             break;
+         case CMD_POWER_CYCLE:
++            generateSELEvent(fruStatePowerCycle,powerControlEventData);
+             rc = initiateHostStateTransition(ctx,
+                                              State::Host::Transition::Reboot);
+             break;
+         case CMD_SOFT_OFF_VIA_OVER_TEMP:
+-            rc = initiateHostStateTransition(ctx, State::Host::Transition::Off);
++            generateSELEvent(fruStatePowerSoft,powerControlEventData);
++            rc = initiateHostStateTransition(ctx, State::Host::Transition::gracefulOff);
+             break;
+         case CMD_PULSE_DIAGNOSTIC_INTR:
++            generateSELEvent(fruStateSensorPath,nmiEventData);
+             rc = setNmiProperty(ctx, true);
+             break;
+ 
+-- 
+2.7.4
+

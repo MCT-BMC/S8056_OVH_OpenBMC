@@ -1,0 +1,22 @@
+From 4e0b09655f38cfa77cbeed1b60a73c84e98b2ece Mon Sep 17 00:00:00 2001
+From: Janny Au <janny.au@mic.com.tw>
+Date: Thu, 10 Mar 2022 17:24:27 +0800
+Subject: [PATCH] Fix-fan-sensor-disappear-when-power-off-problem
+
+---
+ drivers/hwmon/aspeed-pwm-tacho.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/hwmon/aspeed-pwm-tacho.c b/drivers/hwmon/aspeed-pwm-tacho.c
+index 97f35a3768e3..29d7a964ac2a 100644
+--- a/drivers/hwmon/aspeed-pwm-tacho.c
++++ b/drivers/hwmon/aspeed-pwm-tacho.c
+@@ -549,7 +549,7 @@ static int aspeed_get_fan_tach_ch_rpm(struct aspeed_pwm_tacho_data *priv,
+ 
+ 	/* return -ETIMEDOUT if we didn't get an answer. */
+ 	if (ret)
+-		return ret;
++		val = 0 ;       //mitac add
+ 
+ 	raw_data = val & RESULT_VALUE_MASK;
+ 	tach_div = priv->type_fan_tach_clock_division[type];

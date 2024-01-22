@@ -1,0 +1,28 @@
+From f532412eed0789c247416ed02e85808e22f9cf26 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Thu, 12 Aug 2021 11:44:12 +0800
+Subject: [PATCH] Add host last state property
+
+---
+ yaml/xyz/openbmc_project/State/Host.interface.yaml | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/yaml/xyz/openbmc_project/State/Host.interface.yaml b/yaml/xyz/openbmc_project/State/Host.interface.yaml
+index 8bbfe6b..feb67f0 100644
+--- a/yaml/xyz/openbmc_project/State/Host.interface.yaml
++++ b/yaml/xyz/openbmc_project/State/Host.interface.yaml
+@@ -17,6 +17,11 @@ properties:
+           comparing the CurrentHostState and the RequestedHostTransition
+           properties.
+ 
++    - name: LastHostState
++      type: enum[self.HostState]
++      description: >
++          Record the last host state for power restore policy previous.
++
+     - name: RestartCause
+       type: enum[self.RestartCause]
+       default: 'Unknown'
+-- 
+2.32.0
+

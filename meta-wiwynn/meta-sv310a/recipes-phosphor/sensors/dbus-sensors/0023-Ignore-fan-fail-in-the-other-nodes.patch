@@ -1,0 +1,34 @@
+From 61360c13f2ad167118a836a9b0c3204721c7ba0e Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Thu, 5 Aug 2021 15:00:15 +0800
+Subject: [PATCH] Ignore fan fail in the other nodes
+
+---
+ src/TachSensor.cpp | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/TachSensor.cpp b/src/TachSensor.cpp
+index f7cc9e2..961a137 100644
+--- a/src/TachSensor.cpp
++++ b/src/TachSensor.cpp
+@@ -192,7 +192,7 @@ void TachSensor::setupRead(void)
+ 
+     std::weak_ptr<TachSensor> weakRef = weak_from_this();
+ 
+-    if (readingStateGood() && path.empty())
++    if (readingStateGood() && path.empty() && !thresholds.empty())
+     {
+         if (!fanFailSelLogged)
+         {
+@@ -295,7 +295,7 @@ void TachSensor::handleResponse(const boost::system::error_code& err)
+             }
+         }
+ 
+-        if ((errCount >= errorThreshold) || missing)
++        if (((errCount >= errorThreshold) || missing) && !thresholds.empty())
+         {
+             if (!fanFailSelLogged)
+             {
+-- 
+2.32.0
+

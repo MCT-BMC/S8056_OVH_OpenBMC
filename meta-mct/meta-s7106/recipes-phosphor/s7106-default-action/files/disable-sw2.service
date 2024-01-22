@@ -1,0 +1,14 @@
+[Unit]
+Description=Disable SW2
+Wants=xyz.openbmc_project.State.BMC.service
+After=xyz.openbmc_project.State.BMC.service
+After=xyz.openbmc_project.hwmontempsensor.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/env disable-sw2.sh
+SyslogIdentifier=disable-sw2
+
+[Install]
+WantedBy=multi-user.target
+

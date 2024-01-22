@@ -1,0 +1,687 @@
+// SPDX-License-Identifier: GPL-2.0+
+// Copyright (c) 2019 Wiwynn Inc.
+/dts-v1/;
+
+#include "aspeed-g5.dtsi"
+#include <dt-bindings/gpio/aspeed-gpio.h>
+#include <dt-bindings/leds/leds-pca955x.h>
+
+/ {
+    model = "SV310a MC";
+    compatible = "wiwynn,sv310a-bmc", "aspeed,ast2500";
+    aliases {
+        serial0 = &uart1;
+        serial4 = &uart5;
+    };
+    chosen {
+        stdout-path = &uart5;
+        bootargs = "console=ttyS4,115200 earlyprintk";
+    };
+
+    memory@80000000 {
+        reg = <0x80000000 0x20000000>;
+    };
+    reserved-memory {
+        #address-cells = <1>;
+        #size-cells = <1>;
+        ranges;
+
+        flash_memory: region@98000000 {
+            no-map;
+            reg = <0x98000000 0x04000000>; /* 64M */
+        };
+
+        vga_memory: framebuffer@7f000000 {
+            no-map;
+            reg = <0x7f000000 0x01000000>;
+        };
+        safs_memory: region@30000000 {
+            no-map;
+            reg = <0x30000000 0x08000000>; /* 128M */
+        };
+
+        ramoops@9c000000 {
+            compatible = "ramoops";
+            reg = <0x9c000000 0x180000>;
+            record-size = <0x4000>;
+            console-size = <0x4000>;
+            pmsg-size = <0x4000>;
+            max-reason = <3>; /* KMSG_DUMP_EMERG */
+        };
+
+        gfx_memory: framebuffer@9f000000 {
+            no-map;
+            compatible = "shared-dma-pool";
+            reg = <0x9f000000 0x01000000>; /* 16M */
+        };
+    };
+
+    leds {
+        compatible = "gpio-leds";
+
+        identify {
+            gpios = <&gpio ASPEED_GPIO(E, 7) GPIO_ACTIVE_LOW>;
+            default-state = "keep";
+            retain-state-shutdown;
+        };
+
+        status_amber {
+            gpios = <&gpio ASPEED_GPIO(M, 5) GPIO_ACTIVE_HIGH>;
+            default-state = "off";
+        };
+    };
+
+    gpio-keys {
+        compatible = "gpio-keys";
+    };
+
+    iio-hwmon {
+        compatible = "iio-hwmon";
+        io-channels = <&adc 0>, <&adc 1>, <&adc 2>, <&adc 3>,
+            <&adc 4>, <&adc 5>, <&adc 6>, <&adc 7>, <&adc 8>, 
+            <&adc 10>, <&adc 11>, <&adc 12>, <&adc 13>,
+            <&adc 14>, <&adc 15>;
+    };
+};
+
+&fmc {
+    status = "okay";
+    flash@0 {
+        status = "okay";
+        m25p,fast-read;
+        label = "bmc";
+        #include "openbmc-flash-layout-64M.dtsi"
+    };
+    flash@1 {
+        status = "okay";
+        m25p,fast-read;
+        label = "bmc2";
+    };
+};
+
+&spi1 {
+    status = "okay";
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinctrl_spi1_default>;
+    flash@0 {
+        status = "okay";
+        m25p,fast-read;
+        label = "bios";
+    };
+};
+
+&uart1 {
+    status = "okay";
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinctrl_txd1_default
+                 &pinctrl_rxd1_default
+                 &pinctrl_ncts1_default
+                 &pinctrl_nrts1_default>;
+};
+
+&uart4 {
+    status = "okay";
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinctrl_txd4_default
+                 &pinctrl_rxd4_default>;
+};
+
+&uart5 {
+    // BMC Console
+    status = "okay";
+};
+
+&kcs1 {
+    // BMC KCS channel 1
+    status = "okay";
+    aspeed,lpc-io-reg = <0xca0>;
+};
+
+&kcs2 {
+    // BMC KCS channel 2
+    status = "okay";
+    aspeed,lpc-io-reg = <0xca8>;
+};
+
+&kcs3 {
+    // BMC KCS channel 3
+    status = "okay";
+    aspeed,lpc-io-reg = <0xca2>;
+};
+
+&mac0 {
+    status = "okay";
+    pinctrl-names = "default";
+    pinctrl-0 = <&pinctrl_rgmii1_default
+                 &pinctrl_mdio1_default>;
+};
+
+&mac1 {
+    pntctrl-names = "default";
+    pinctrl-0 = <&pinctrl_rmii2_default>;
+    use-ncsi;
+};
+
+&adc {
+    status = "okay";
+    clock-divisor = <0x140>;
+};
+
+&i2c0 {
+    status = "okay";
+    /* CPU APML */
+    sbtsi@4c {
+        compatible = "amd,sbtsi";
+        reg = <0x4c>;
+    };
+};
+
+&i2c1 {
+    status = "okay";
+    /* TCA9555 - IO Expander(debug card) */
+    expander0: tca9555@27 {
+    compatible = "nxp,pca9555";
+    reg = <0x27>;
+    #address-cells = <1>;
+    #size-cells = <0>;
+    gpio-controller;
+    #gpio-cells = <2>;
+
+    gpio-line-names = "LED_POSTCODE_0",
+                    "LED_POSTCODE_1",
+                    "LED_POSTCODE_2",
+                    "LED_POSTCODE_3",
+                    "LED_POSTCODE_4",
+                    "LED_POSTCODE_5",
+                    "LED_POSTCODE_6",
+                    "LED_POSTCODE_7",
+                    "FP_RSTBTN_N",
+                    "FRONT_LED_PWRBTN_N",
+                    "P0_33_PWROK",
+                    "P0_33_RESET_N",
+                    "PG_P3V3_STBY",
+                    "FM_CPU_CATERR_N",
+                    "P0_SLP_S5_PLD_N",
+                    "FM_UART_SWITCH_N";
+    };
+};
+
+&i2c2 {
+    status = "okay";
+    /* TMP75 - Outlet Temp */
+    tmp75@48 {
+        compatible = "ti,tmp75";
+        reg = <0x48>;
+    };
+
+    /* TCA9554 - IO Expander(PDB MISC) */
+    expander2: tca9554@21{
+        compatible = "ti,tca9554";
+        reg = <0x21>;
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+        gpio-controller;
+        #gpio-cells = <2>;
+
+        gpio-line-names = "FM_MB_SLOT_ID0",
+                        "FM_MB_SLOT_ID1",
+                        "FM_MB_SLOT_ID2",
+                        "",
+                        "PSU1_PWROK_AND",
+                        "PSU2_PWROK_AND",
+                        "",
+                        "";
+    };
+};
+
+&i2c3 {
+    status = "okay";
+    /* TMP75 - Inlet Temp */
+    tmp75@49 {
+        compatible = "ti,tmp75";
+        reg = <0x49>;
+    };
+
+    /* TCA9555 - IO Expander(SLI11/12 Present) */
+    expander3: tca9555@22 {
+    compatible = "nxp,pca9555";
+    reg = <0x22>;
+    #address-cells = <1>;
+    #size-cells = <0>;
+    gpio-controller;
+    #gpio-cells = <2>;
+
+    gpio-line-names = "",
+                    "",
+                    "SLIM11_PRSNT_N",
+                    "SLIM12_PRSNT_N",
+                    "M2_1_IFDET_D_N",
+                    "M2_2_IFDET_D_N",
+                    "M2_3_IFDET_D_N",
+                    "FIO_PRSNT_N",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "";
+    };
+
+    /* FM24C64 - FRU */
+    eeprom@50 {
+        compatible = "atmel,24c64";
+        reg = <0x50>;
+        pagesize = <32>;
+    };
+
+    /* PCF8563 - RTC */
+    rtc@51 {
+        compatible = "nxp,pcf8563";
+        reg = <0x51>;
+    };
+};
+
+&i2c4 {
+    status = "okay";
+    /* TCA9548A - I2C MUX
+     * Channel 0 - M.2-1
+     * Channel 1 - M.2-2
+     * Channel 2 - M.2-3
+     * Channel 3 - OCP
+     * Channel 4 - Clock Buffer
+     * Channel 5 - Clock Buffer
+     * Channel 6 - Clock Buffer
+     * Channel 7 - Clock Buffer
+     */
+    tca9548@71 {
+        compatible = "nxp,pca9548";
+        pinctrl-names = "default";
+        #address-cells = <1>;
+        #size-cells = <0>;
+        reg = <0x71>;
+        reset-gpios = <&gpio 106 GPIO_ACTIVE_LOW>;
+
+        i2c@3 {
+            #address-cells = <1>;
+            #size-cells = <0>;
+            reg = <3>;
+
+            eeprom@50 {
+                compatible = "atmel,24c32";
+                reg = <0x50>;
+            };
+        };
+    };
+};
+
+&i2c5 {
+    status = "okay";
+    /* ADM1278 - PDB-HSC */
+    adm1278@11 {
+        compatible = "adi,adm1278";
+        reg = <0x11>;
+        shunt-resistor-micro-ohms = <300>;
+    };
+
+    vrm@61 {
+        compatible = "isl69247";
+        reg = <0x61>;
+    };
+
+    vrm@63 {
+        compatible = "isl69242";
+        reg = <0x63>;
+    };
+
+    vrm@64 {
+        compatible = "isl68223";
+        reg = <0x64>;
+    };
+
+    vrm@65 {
+        compatible = "isl68223";
+        reg = <0x65>;
+    };
+};
+
+&i2c6 {
+    status = "okay";
+};
+
+&i2c7 {
+    status = "okay";
+    /* TCA9543A - I2C MUX
+     * Channel 0 - SLI11 Sensor
+     * Channel 1 - SLI12 Sensor
+     */
+};
+
+&i2c8 {
+    status = "okay";
+};
+
+&i2c9 {
+    status = "okay";
+};
+
+&i2c10 {
+    status = "okay";
+    /* Connect to PDB - PCA9641 - I2C Arbiter */
+    pca9641@70 {
+        compatible = "nxp,pca9641";
+        reg = <0x70>;
+        #address-cells = <1>;
+        #size-cells = <0>;
+        i2c-arb {
+            /* ADM1278 - HSC */
+            adm1278@11 {
+                compatible = "adi,adm1278";
+                reg = <0x11>;
+                shunt-resistor-micro-ohms = <150>;
+            };
+
+            /* TMP75 */
+            tmp75@4C {
+                compatible = "ti,tmp75";
+                reg = <0x4C>;
+            };
+
+            /* TMP75 */
+            tmp75@4D {
+                compatible = "ti,tmp75";
+                reg = <0x4D>;
+            };
+
+            /* MAX31790 - PWM Control */
+            max31790@23 {
+                compatible = "max31790";
+                reg = <0x23>;
+                #address-cells = <1>;
+                #size-cells = <0>;
+                fanconfig = /bits/ 8 <0x08 0x08 0x08 0x18 0x18 0x18>;
+            };
+
+            /* MAX31790 - PWM Control */
+            max31790@20 {
+                compatible = "max31790";
+                reg = <0x20>;
+                #address-cells = <1>;
+                #size-cells = <0>;
+                fanconfig = /bits/ 8 <0x08 0x08 0x08 0x18 0x18 0x18>;
+            };
+
+            /* PCA9555 - FAN LED */
+            pdb_expander1: pca9555@26 {
+                compatible = "nxp,pca9555";
+                reg = <0x26>;
+                #address-cells = <1>;
+                #size-cells = <0>;
+                gpio-controller;
+                #gpio-cells = <2>;
+
+                gpio-line-names = "LED_DR_LED1",
+                                "LED_DR_LED2",
+                                "LED_DR_LED3",
+                                "FAN1_2_3_PWR_EN_N",
+                                "",
+                                "",
+                                "",
+                                "",
+                                "",
+                                "",
+                                "",
+                                "PG_P12V_FAN3",
+                                "",
+                                "PG_P12V_FAN2",
+                                "",
+                                "PG_P12V_FAN1";
+            };
+
+            /* PCA9555 - FAN LED */
+            pdb_expander2: pca9555@27 {
+                compatible = "nxp,pca9555";
+                reg = <0x27>;
+                #address-cells = <1>;
+                #size-cells = <0>;
+                gpio-controller;
+                #gpio-cells = <2>;
+
+                gpio-line-names = "LED_DR_LED4",
+                                "LED_DR_LED5",
+                                "LED_DR_LED6",
+                                "FAN4_5_6_PWR_EN_N",
+                                "",
+                                "",
+                                "",
+                                "",
+                                "",
+                                "",
+                                "",
+                                "PG_P12V_FAN6",
+                                "",
+                                "PG_P12V_FAN5",
+                                "",
+                                "PG_P12V_FAN4";
+            };
+
+            /* PCA9555 - IO Expander(Fan Present) */
+            pdb_expander0: pca9555@24 {
+                compatible = "nxp,pca9555";
+                reg = <0x24>;
+                #address-cells = <1>;
+                #size-cells = <0>;
+                gpio-controller;
+                #gpio-cells = <2>;
+
+                debounce-ms = <0x3E8>;
+                interrupt-parent = <&gpio>;
+                interrupts = <119 8>;
+                interrupt-controller;
+                #interrupt-cells = <2>;
+
+                gpio-line-names = "FAN1_PRSNT_N",
+                                "FAN2_PRSNT_N",
+                                "FAN3_PRSNT_N",
+                                "FAN4_PRSNT_N",
+                                "FAN5_PRSNT_N",
+                                "FAN6_PRSNT_N",
+                                "MB0_SKU_PRSNT_N",
+                                "MB1_SKU_PRSNT_N",
+                                "TEMP1_ALERT_R",
+                                "TEMP2_ALERT_R",
+                                "IOEXP_IO1_2",
+                                "IOEXP_IO1_3",
+                                "PSU2_PWR_AC_OK_R",
+                                "PSU2_PRSNT_N_R",
+                                "PSU1_PWR_AC_OK_R",
+                                "PSU1_PRSNT_N_R";
+            };
+
+            /* FM24C64 - FRU */
+            eeprom@52 {
+                compatible = "atmel,24c64";
+                reg = <0x52>;
+                pagesize = <32>;
+            };
+
+            /* 24LC64 - FRU */
+            eeprom@54 {
+                compatible = "atmel,24c64";
+                reg = <0x54>;
+                pagesize = <32>;
+            };
+
+            /*48V PDB MUX*/
+            i2cswitch@75 {
+                compatible = "nxp,pca9544";
+                idle-state = <0>;
+                i2c-mux-idle-disconnect;
+                reg = <0x75>;
+
+                i2c@0 {
+                    /* 48V PDB Temp Sensor */
+                    reg = <0>;
+                    tmp75@4e {
+                        compatible = "ti,tmp75";
+                        reg = <0x4e>;
+                    };
+                    tmp75@4f {
+                        compatible = "ti,tmp75";
+                        reg = <0x4f>;
+                    };
+                };
+
+                i2c@1 {
+                    /* 48V PDB Power and Current Monitor */
+                    reg = <1>;
+                    ina219@42 {
+                        compatible = "ti,ina219";
+                        reg = <0x42>;
+                        shunt-resistor = <5000>;
+                    };
+                };
+
+                i2c@2 {
+                    /* 48V HSC Controller */
+                    reg = <2>;
+                    adm1272@10 {
+                        compatible = "adi,adm1272";
+                        reg = <0x10>;
+                        shunt-resistor-micro-ohms = <500>;
+                    };
+                };
+
+                i2c@3 {
+                    /* P48V to P12V controller */
+                    reg = <3>;
+                    vrm@5a {
+                        compatible = "raa228006";
+                        reg = <0x5a>;
+                    };
+                };
+            };
+
+        };
+    };
+};
+
+&i2c11 {
+    status = "okay";
+    /* Right Node */
+    ipmb@18 {
+        compatible = "ipmb-dev";
+        reg = <0x18>;
+        i2c-protocol;
+        gpios = <&gpio ASPEED_GPIO(P, 3) GPIO_ACTIVE_HIGH>;
+    };
+    /* Left Node */
+    ipmb@19 {
+        compatible = "ipmb-dev";
+        reg = <0x19>;
+        i2c-protocol;
+        gpios = <&gpio ASPEED_GPIO(P, 3) GPIO_ACTIVE_LOW>;
+    };
+};
+
+&i2c12 {
+    status = "okay";
+};
+
+&i2c13 {
+    status = "okay";
+    /* TCA9543A - I2C MUX
+     * Channel 0 - SLI9 Sensor
+     * Channel 1 - IO Expander(PCIe Slot Present)
+     */
+    i2c-switch@73 {
+        compatible = "nxp,pca9543";
+        pinctrl-names = "default";
+        #address-cells = <1>;
+        #size-cells = <0>;
+        reg = <0x73>;
+        reset-gpios = <&gpio 63 GPIO_ACTIVE_LOW>;
+
+        i2c@1 {
+            reg = <1>;
+            /* TCA9555 - IO Expander(PCIe Slot Present) */
+            mux_expander0: tca9555@22 {
+                compatible = "nxp,pca9555";
+                reg = <0x22>;
+                #address-cells = <1>;
+                #size-cells = <0>;
+                gpio-controller;
+                #gpio-cells = <2>;
+
+                gpio-line-names = "RISER_ID_1",
+                                "RISER_ID_2",
+                                "",
+                                "RC_PRESNET_N",
+                                "P4E_SLOT1_PRSNT1_N",
+                                "P4E_SLOT1_PRSNT2_N",
+                                "P4E_SLOT1_PRSNT3_N",
+                                "P4E_SLOT1_PRSNT4_N",
+                                "P4E_LVC3_OCP_PRSNTB0_N ",
+                                "P4E_LVC3_OCP_PRSNTB1_N ",
+                                "P4E_LVC3_OCP_PRSNTB2_N ",
+                                "P4E_LVC3_OCP_PRSNTB3_N ",
+                                "",
+                                "",
+                                "",
+                                "";
+            };
+        };
+    };
+};
+
+&lpc_ctrl {
+    status = "okay";
+    memory-region = <&flash_memory>;
+    flash = <&spi1>;
+};
+
+&lpc_snoop {
+    status = "okay";
+    snoop-ports = <0x80>;
+};
+
+&gpio {
+    status = "okay";
+    gpio-line-names =
+    /*A0-A7*/   "BMC_HDR_LVL_XLTR_OE_N","","JTAG_BMC_OE_N","FM_BMC_BATTERY_SENSE_EN_N","","","","",
+    /*B0-B7*/   "GPU_SKU_PWRBRK_N","P0_SP3R1_BMC","P0_SP3R2_BMC","P0_CORETYPE_BMC","IRQ_HSC_FAULT_N","","","",
+    /*C0-C7*/   "","","","","","","","",
+    /*D0-D7*/   "VR_VDD_MEM_ABCD_SUS_VRHOT_N","VR_VDD_MEM_EFGH_SUS_VRHOT_N","FM_BIOS_SPI_BMC_CTRL","NMI_BTN_N","P0_PCIE_MGMT_RST_N","RST_OCP_CARD_SMB_N","","",
+    /*E0-E7*/   "FP_RST_BTN_BMC_IN_N","RST_BMC_RSTBTN_OUT_R_N","FM_BMC_PWRBTN_IN_N","FM_BMC_PWRBTN_OUT_R_N","","BMC_SYS_MON_PWROK","","",
+    /*F0-F7*/   "IRQ_BMC_PCH_NMI_N","SENSOR3_THERM_N","P0_THERMTRIP_LVT3_PLD_N","P0_RSMRST_N","HSC_GPIO1_CPLD_N","","","",
+    /*G0-G7*/   "BMC_HSC_AC_OFF","FM_UART_SWITCH_N","M2CN3_PEDET","","P0_APML_ALERT_N","MB_BOARD_REV_ID0","MB_BOARD_REV_ID1","MB_BOARD_REV_ID2",
+    /*H0-H7*/   "VDD_MEM_ABCD_SUS_FAULT","VDD_MEM_EFGH_SUS_FAULT","VDD_SOC_RUN_VRHOT_N","PDB_ARBITER_INT_N","HSC_GPIO2_CPLD_N","P0_SMB_M2_3_ALERT_N","SLI9_IOEXP_INT_N","IICMUX6_RESET",
+    /*I0-I7*/   "FM_BIOS_MRC_DEBUG_MSG_DIS_N","","","","","","","",
+    /*J0-J7*/   "P0_NMI_SYNC_FLOOD_N","FM_BIOS_FRB3_N","M2CN1_PEDET","M2CN2_PEDET","","","","",
+    /*K0-K7*/   "","","","","","","","",
+    /*L0-L7*/   "","VDD_SOC_RUN_FAULT","P0_33_RESET_N","","LPC_ENABLE_ESPI_N","","","",
+    /*M0-M7*/   "FM_BIOS_POST_CMPLT_N","PSU1_PWROK_AND","P0_CPLD_PRESENT_N","MGMT_ASSERT_LOCAL_LOCK","MGMT_ASSERT_P0_PROCHOT","BMC_LED_PWR_AMBER","PSU2_PWROK_AND","IRQ_SMI_ACTIVE_BMC_N",
+    /*N0-N7*/   "","EN_ADC_P1V5_RTC_N","IICMUX1_RESET","","IICMUX5_RESET","IICMUX7_RESET","VDD_CORE_RUN_VRHOT_N","P0_PROCHOT_BMC_N",
+    /*O0-O7*/   "SKU_DETECT_BIT2","SKU_DETECT_BIT1","SKU_DETECT_BIT0","PDB_I2C_BUS12_RESET_N","PSU_PWROK_AND_R","PSU2_AC_PWROK","SSD_INT_B_N","FAN_PSU_IOEXP_INT_N",
+    /*P0-P7*/   "PSU1_AC_PWROK","NEXT_NODE_P3V3_STBY_PG","SLOT_ID_0","SLOT_ID_1","MB_PRESENT_N","PDB_REVISION_0","PDB_REVISION_1","FP_PWR_ID_LED_N",
+    /*Q0-Q7*/   "","","","","","","","SP3_PCIE_WAKE_N",
+    /*R0-R7*/   "","VDD_CORE_RUN_FAULT","FAST_PROCHOT_N","","","USB_OC_2_N","","",
+    /*S0-S7*/   "","BMC_HDT_PWROK","P12V_NIC_FAULT_N","I2C_VR_ALERT_N","BMC_JTAG_SEL","MGMT_GPIOS5_STRAP","MGMT_STRAP5","BMC_SPD_SMBUS_SEL",
+    /*T0-T7*/   "","","","","","","","",
+    /*U0-U7*/   "","","","","","","","",
+    /*V0-V7*/   "","","","","","","","",
+    /*W0-W7*/   "","","","","","","","",
+    /*X0-X7*/   "","","","","","","","",
+    /*Y0-Y7*/   "P0_SLP_S3_BMC_N","P0_SLP_S5_PLD_N","SLI5_IOEXP_INT_N","","","","","",
+    /*Z0-Z7*/   "","SLI7_IOEXP_INT_N","MGMT_ASSERT_CLR_CMOS","","BMC_STRAP17","BMC_HDT_DBREQ_N","MGMT_ASSERT_BMC_READY","",
+    /*AA0-AA7*/ "P0_SMB_M2_1_ALERT_N","SLI1_IOEXP_INT_N","P0_SMB_M2_2_ALERT_N","SENSOR1_THERM_N","SENSOR2_THERM_N","IRQ_TPM_SPI_N","SLI3_IOEXP_INT_N","IRQ_SML1_PMBUS_ALERT_N_R",
+    /*AB0-AB7*/ "USB_DB_PRSNT_N","P0_NVDIMM_EVENT_N","BMC_PLD_WDRST1_N","BMC_PLD_WDRST2_N","","","","",
+    /*AC0-AC7*/ "","","","","","","","";
+};
+
+&jtag {
+    status = "okay";
+};
+

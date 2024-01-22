@@ -1,0 +1,289 @@
+0x01: &temperature
+  sensorType: 0x01
+  path: /xyz/openbmc_project/sensors/temperature/MB_AIR_INLET
+  sensorReadingType: 0x01
+  multiplierM: 1
+  offsetB: 0
+  bExp: 0
+  unit: xyz.openbmc_project.Sensor.Value.Unit.DegreesC
+  scale: -3
+  mutability: Mutability::Read
+  serviceInterface: org.freedesktop.DBus.Properties
+  readingType: readingData
+  interfaces:
+    xyz.openbmc_project.Sensor.Value:
+      Value:
+        Offsets:
+          0x0:
+            type: int64_t
+
+0x02:
+  <<: *temperature
+  path: /xyz/openbmc_project/sensors/temperature/SYS_AIR_INLET
+
+0x03:
+  <<: *temperature
+  path: /xyz/openbmc_project/sensors/temperature/SYS_AIR_OUTLET
+
+0x08: 
+  <<: *temperature
+  path: /xyz/openbmc_project/sensors/temperature/PCH_Temp
+
+0x09:
+  <<: *temperature
+  path: /xyz/openbmc_project/sensors/temperature/PSU_TEMP
+
+0x20: &voltage
+  sensorType: 0x02
+  path: /xyz/openbmc_project/sensors/voltage/PVCCP_P0_ADC0
+  sensorReadingType: 0x01
+  multiplierM: 78
+  offsetB: 0
+  bExp: 0
+  rExp: -4
+  unit: xyz.openbmc_project.Sensor.Value.Unit.Volts
+  scale: -3
+  mutability: Mutability::Read
+  serviceInterface: org.freedesktop.DBus.Properties
+  readingType: readingData
+  interfaces:
+    xyz.openbmc_project.Sensor.Value:
+      Value:
+        Offsets:
+          0x0:
+            type: int64_t
+
+0x21:
+  <<: *voltage
+  path: /xyz/openbmc_project/sensors/voltage/PVCCIO_P0_ADC1
+  multiplierM: 47
+  offsetB: 0
+  bExp: 0
+  rExp: -4
+
+0x22:
+  <<: *voltage
+  path: /xyz/openbmc_project/sensors/voltage/PVDDQ_P0_ADC2
+  multiplierM: 59
+  offsetB: 0
+  bExp: 0
+  rExp: -4
+
+0x23:
+  <<: *voltage
+  path: /xyz/openbmc_project/sensors/voltage/PVPP_P0_ADC3
+  multiplierM: 110
+  offsetB: 0
+  bExp: 0
+  rExp: -4
+
+0x24:
+  <<: *voltage
+  path: /xyz/openbmc_project/sensors/voltage/PVCCP_P1_ADC4
+  multiplierM: 78
+  offsetB: 0
+  bExp: 0
+  rExp: -4
+
+0x25:
+  <<: *voltage
+  path: /xyz/openbmc_project/sensors/voltage/PVCCIO_P1_ADC5
+  multiplierM: 47
+  offsetB: 0
+  bExp: 0
+  rExp: -4
+
+0x26:
+  <<: *voltage
+  path: /xyz/openbmc_project/sensors/voltage/PVDDQ_P1_ADC6
+  multiplierM: 59
+  offsetB: 0
+  bExp: 0
+  rExp: -4
+
+0x27:
+  <<: *voltage
+  path: /xyz/openbmc_project/sensors/voltage/PVPP_P1_ADC7
+  multiplierM: 110
+  offsetB: 0
+  bExp: 0
+  rExp: -4
+
+0x28:
+  <<: *voltage
+  path: /xyz/openbmc_project/sensors/voltage/PVCC12_ADC8
+  multiplierM: 51
+  offsetB: 0
+  bExp: 0
+  rExp: -3
+
+0x29:
+  <<: *voltage
+  path: /xyz/openbmc_project/sensors/voltage/PVCC5_ADC9
+  multiplierM: 235
+  offsetB: 0
+  bExp: 0
+  rExp: -4
+
+0x2a:
+  <<: *voltage
+  path: /xyz/openbmc_project/sensors/voltage/PVCC3_ADC10
+  multiplierM: 157
+  offsetB: 0
+  bExp: 0
+  rExp: -4
+
+0x2b:
+  <<: *voltage
+  path: /xyz/openbmc_project/sensors/voltage/PVCC3_AUX_ADC11
+  multiplierM: 157
+  offsetB: 0
+  bExp: 0
+  rExp: -4
+
+0x2c:
+  <<: *voltage
+  path: /xyz/openbmc_project/sensors/voltage/P1V8_PCH_ADC12
+  multiplierM: 78
+  offsetB: 0
+  bExp: 0
+  rExp: -4
+
+0x2d:
+  <<: *voltage
+  path: /xyz/openbmc_project/sensors/voltage/PVNN_PCH_ADC13
+  multiplierM: 47
+  offsetB: 0
+  bExp: 0
+  rExp: -4
+
+0x2E:
+  <<: *voltage
+  path: /xyz/openbmc_project/sensors/voltage/P1V05_PCH_ADC14
+  multiplierM: 47
+  offsetB: 0
+  bExp: 0
+  rExp: -4
+
+0x2F:
+  <<: *voltage
+  path: /xyz/openbmc_project/sensors/voltage/RTC_BAT_ADC15
+  multiplierM: 137
+  offsetB: 0
+  bExp: 0
+  rExp: -4
+
+0x71: &fan_tach
+  sensorType: 0x04
+  path: /xyz/openbmc_project/sensors/fan_tach/SYS_FAN1
+  sensorReadingType: 0x01
+  multiplierM: 255
+  offsetB: 0
+  bExp: 0
+  rExp: 0
+  unit: xyz.openbmc_project.Sensor.Value.Unit.RPMS
+  scale: 0
+  mutability: Mutability::Read
+  serviceInterface: org.freedesktop.DBus.Properties
+  readingType: readingData
+  interfaces:
+    xyz.openbmc_project.Sensor.Value:
+      Value:
+        Offsets:
+          0x0:
+            type: int64_t
+0x72:
+  <<: *fan_tach
+  path: /xyz/openbmc_project/sensors/fan_tach/SYS_FAN2
+
+0x73:
+  <<: *fan_tach
+  path: /xyz/openbmc_project/sensors/fan_tach/SYS_FAN3
+
+0x74:
+  <<: *fan_tach
+  path: /xyz/openbmc_project/sensors/fan_tach/CPU0_FAN
+
+0x75:
+  <<: *fan_tach
+  path: /xyz/openbmc_project/sensors/fan_tach/CPU1_FAN
+  
+0x76:
+  <<: *fan_tach
+  path: /xyz/openbmc_project/sensors/fan_tach/PSU_FAN
+  
+0x81:
+  <<: *voltage
+  path: /xyz/openbmc_project/sensors/voltage/PSU_VOLTAGE_IN
+  multiplierM: 1
+  offsetB: 0
+  bExp: 0
+  rExp: 0
+
+0x82:
+  sensorType: 0x0B
+  path: /xyz/openbmc_project/sensors/power/PSU_POWER_IN
+  sensorReadingType: 0x01
+  multiplierM: 235
+  offsetB: 0
+  bExp: 0
+  rExp: -2
+  unit: xyz.openbmc_project.Sensor.Value.Unit.Watts
+  scale: -6
+  mutability: Mutability::Read
+  serviceInterface: org.freedesktop.DBus.Properties
+  readingType: readingData
+  interfaces:
+    xyz.openbmc_project.Sensor.Value:
+      Value:
+        Offsets:
+          0x0:
+            type: int64_t
+  
+0x83:
+  <<: *voltage
+  path: /xyz/openbmc_project/sensors/voltage/PSU_VOLTAGE_OUT
+  multiplierM: 59
+  offsetB: 0
+  bExp: 0
+  rExp: -3
+  
+0x84:
+  sensorType: 0x0B
+  path: /xyz/openbmc_project/sensors/power/PSU_POWER_OUT
+  sensorReadingType: 0x01
+  multiplierM: 235
+  offsetB: 0
+  bExp: 0
+  rExp: -2
+  unit: xyz.openbmc_project.Sensor.Value.Unit.Watts
+  scale: -6
+  mutability: Mutability::Read
+  serviceInterface: org.freedesktop.DBus.Properties
+  readingType: readingData
+  interfaces:
+    xyz.openbmc_project.Sensor.Value:
+      Value:
+        Offsets:
+          0x0:
+            type: int64_t
+            
+0x85:
+  sensorType: 0x03
+  path: /xyz/openbmc_project/sensors/current/PSU_CURRENT_OUT
+  sensorReadingType: 0x01
+  multiplierM: 137
+  offsetB: 0
+  bExp: 0
+  rExp: -3
+  unit: xyz.openbmc_project.Sensor.Value.Unit.Amperes
+  scale: -3
+  mutability: Mutability::Read
+  serviceInterface: org.freedesktop.DBus.Properties
+  readingType: readingData
+  interfaces:
+    xyz.openbmc_project.Sensor.Value:
+      Value:
+        Offsets:
+          0x0:
+            type: int64_t

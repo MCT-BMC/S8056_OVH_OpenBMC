@@ -1,0 +1,12 @@
+[Unit]
+Description=SV305 BMC Check AC Lost
+Wants=mapper-wait@-xyz-openbmc_project-Logging-IPMI.service
+After=mapper-wait@-xyz-openbmc_project-Logging-IPMI.service
+Before=phosphor-discover-system-state@0.service xyz.openbmc_project.LED.GroupManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/sv305-checkaclost.sh
+
+[Install]
+WantedBy=multi-user.target

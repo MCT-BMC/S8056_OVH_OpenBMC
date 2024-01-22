@@ -1,0 +1,7 @@
+[Unit]
+Description=IERR/MCERR Event Log Service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env caterr-event.sh
+SyslogIdentifier=caterr-event

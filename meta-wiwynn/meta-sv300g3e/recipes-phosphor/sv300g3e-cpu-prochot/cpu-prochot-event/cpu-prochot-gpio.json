@@ -1,0 +1,12 @@
+[
+    {
+        "Name": "CPU0_State",
+        "GpioNum": 22,
+        "EventMon": "FALLING"
+    },
+    {
+        "Name": "CPU1_State",
+        "GpioNum": 23,
+        "EventMon": "FALLING"
+    }
+]

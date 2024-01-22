@@ -1,0 +1,209 @@
+From 2876fab6ecc6a19f50979952921ec84302f077d2 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Mon, 6 Jan 2020 18:10:24 +0800
+Subject: [PATCH] Support BIOS SDR configuration in JSON
+
+---
+ src/sensorcommands.cpp | 150 ++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 147 insertions(+), 3 deletions(-)
+
+diff --git a/src/sensorcommands.cpp b/src/sensorcommands.cpp
+index e72c79c..09ff7e3 100644
+--- a/src/sensorcommands.cpp
++++ b/src/sensorcommands.cpp
+@@ -30,6 +30,8 @@
+ #include <sensorutils.hpp>
+ #include <storagecommands.hpp>
+ #include <string>
++#include <fstream>
++#include <nlohmann/json.hpp>
+ 
+ namespace ipmi
+ {
+@@ -51,6 +53,7 @@ static uint32_t sdrLastAdd = noTimestamp;
+ static uint32_t sdrLastRemove = noTimestamp;
+ 
+ SensorSubTree sensorTree;
++static std::vector<get_sdr::SensorDataEventOnlyRecord> biosSdrList;
+ static boost::container::flat_map<std::string, ManagedObjectType> SensorCache;
+ 
+ // Specify the comparison required to sort and find char* map objects
+@@ -1154,6 +1157,124 @@ ipmi::RspType<uint16_t> ipmiStorageReserveSDR()
+     return ipmi::responseSuccess(sdrReservationID);
+ }
+ 
++
++// JSON of FRU configuration
++constexpr const char* biosSdrConfig =
++    "/usr/share/entity-manager/configurations/sv300g3e-BIOS.json";
++
++/** @brief implements the BIOS sensor/sdr list
++*/
++static void initBiosSdrList(uint16_t baseRecID)
++{
++    static bool biosSdrloaded = false;
++    static uint16_t lastBaseID = 0;
++
++    if((biosSdrloaded == true) && (lastBaseID == baseRecID))
++    {
++        return;
++    }
++
++    lastBaseID = baseRecID;
++    biosSdrList.clear();
++    std::ifstream biosSdrFile(biosSdrConfig);
++
++    if(!biosSdrFile)
++    {
++        std::cerr << "Failed to open BIOS SDR config file: " << biosSdrConfig <<"\n";
++    }
++    else
++    {
++        auto data = nlohmann::json::parse(biosSdrFile, nullptr, false);
++        if(data.is_discarded())
++        {
++            std::cerr << "syntax error in " << biosSdrConfig << "\n";
++        }
++        else
++        {
++            int idx = 0;
++            get_sdr::SensorDataEventOnlyRecord record = {0};
++
++            while(!data[idx].is_null())
++            {
++                // Header
++                record.header.record_id_msb = (baseRecID + idx) << 8;
++                record.header.record_id_lsb = (baseRecID + idx) & 0xFF;
++                record.header.sdr_version = ipmiSdrVersion;
++                record.header.record_type = get_sdr::SENSOR_DATA_EVENT_ONLY_RECORD;
++                record.header.record_length = sizeof(get_sdr::SensorDataEventOnlyRecord) -
++                                    sizeof(get_sdr::SensorDataRecordHeader);
++
++                // Key
++                if(!data[idx]["ownerId"].is_null())
++                {
++                    std::string ownerIdStr = data[idx]["ownerId"];
++                    record.key.owner_id = std::stoul(ownerIdStr, nullptr, 16);
++                }
++                else
++                {
++                    record.key.owner_id = 0x21;
++                }
++
++                record.key.owner_lun = 0x0;
++
++                if(!data[idx]["sensorNumber"].is_null())
++                {
++                    record.key.sensor_number =
++                                    static_cast<uint8_t>(data[idx]["sensorNumber"]);
++                }
++                else
++                {
++                    idx++;
++                    continue;
++                }
++
++                // Body
++                record.body.entity_id = 0x0;
++                record.body.entity_instance = 0x01;
++                record.body.event_reading_type = 0x6f;
++                if(!data[idx]["sensorType"].is_null())
++                {
++                    std::string sensorTypeStr = data[idx]["sensorType"];
++                    record.body.sensor_type = std::stoul(sensorTypeStr, nullptr, 16);
++                }
++                else
++                {
++                    idx++;
++                    continue;
++                }
++
++                // Sensor Name
++                if(!data[idx]["sensorName"].is_null())
++                {
++                    std::string sensorNameStr = data[idx]["sensorName"];
++                    std::replace(sensorNameStr.begin(), sensorNameStr.end(), '_', ' ');
++                    if (sensorNameStr.size() > EVENT_ONLY_RECORD_ID_STR_MAX_LENGTH)
++                    {
++                        sensorNameStr.resize(EVENT_ONLY_RECORD_ID_STR_MAX_LENGTH);
++                    }
++
++                    record.body.id_string_info = sensorNameStr.size();
++                    std::strncpy(record.body.id_string, sensorNameStr.c_str(),
++                        sizeof(record.body.id_string));
++                }
++                else
++                {
++                   idx++;
++                   continue;
++                }
++
++                biosSdrList.push_back(record);
++                idx++;
++            }
++        }
++
++        biosSdrFile.close();
++    }
++
++    biosSdrloaded = true;
++    std::cerr << "BIOS sdr size: " << biosSdrList.size() << '\n';
++}
++
+ ipmi::RspType<uint16_t,            // next record ID
+               std::vector<uint8_t> // payload
+               >
+@@ -1174,6 +1295,9 @@ ipmi::RspType<uint16_t,            // next record ID
+         return ipmi::responseResponseError();
+     }
+ 
++    // Init BIOS sensor/sdr
++    initBiosSdrList(sensorTree.size());
++
+     size_t fruCount = 0;
+     ipmi_ret_t ret = ipmi::storage::getFruSdrCount(fruCount);
+     if (ret != IPMI_CC_OK)
+@@ -1181,7 +1305,8 @@ ipmi::RspType<uint16_t,            // next record ID
+         return ipmi::response(ret);
+     }
+ 
+-    size_t lastRecord = sensorTree.size() + fruCount - 1;
++    // size_t lastRecord = sensorTree.size() + fruCount - 1;
++    size_t lastRecord = sensorTree.size() + biosSdrList.size() + fruCount - 1;
+     if (recordID == lastRecordIndex)
+     {
+         recordID = lastRecord;
+@@ -1193,9 +1318,28 @@ ipmi::RspType<uint16_t,            // next record ID
+ 
+     uint16_t nextRecordId = lastRecord > recordID ? recordID + 1 : 0XFFFF;
+ 
+-    if (recordID >= sensorTree.size())
++    // This belongs to BIOS sensor/sdr
++    if (recordID >= sensorTree.size() &&
++        recordID < biosSdrList.size() + sensorTree.size())
++    {
++        size_t biosSdrIndex = recordID - sensorTree.size();
++        if (sizeof(get_sdr::SensorDataEventOnlyRecord) < (offset + bytesToRead))
++        {
++            bytesToRead = sizeof(get_sdr::SensorDataEventOnlyRecord) - offset;
++        }
++
++        uint8_t *respStart = reinterpret_cast<uint8_t *>(&biosSdrList[biosSdrIndex]) + offset;
++        std::vector<uint8_t> recordData(respStart, respStart + bytesToRead);
++
++        return ipmi::responseSuccess(nextRecordId, recordData);
++    }
++
++    // This belongs to FRU record
++    // if (recordID >= sensorTree.size())
++    if (recordID >= (sensorTree.size() + biosSdrList.size()))
+     {
+-        size_t fruIndex = recordID - sensorTree.size();
++        // size_t fruIndex = recordID - sensorTree.size();
++        size_t fruIndex = recordID - (sensorTree.size() + biosSdrList.size());
+         if (fruIndex >= fruCount)
+         {
+             return ipmi::responseInvalidFieldRequest();
+-- 
+2.24.1
+

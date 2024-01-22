@@ -1,0 +1,582 @@
+From 2f1aab3fec8d077c5a78a4f5686f2051a81af111 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Fri, 25 Mar 2022 15:03:41 +0800
+Subject: [PATCH] Change the using timer from deadline_timer to steady
+
+---
+ include/CPUSensor.hpp              |  2 +-
+ include/ChassisIntrusionSensor.hpp |  4 ++--
+ include/DIMMTempSensor.hpp         |  4 ++--
+ include/IpmbSensor.hpp             |  4 ++--
+ include/MCUTempSensor.hpp          |  4 ++--
+ include/NVMeContext.hpp            |  4 ++--
+ include/NVMeMCTPContext.hpp        |  2 +-
+ include/Thresholds.hpp             |  4 ++--
+ src/CPUSensor.cpp                  |  2 +-
+ src/CPUSensorMain.cpp              | 26 +++++++++++++-------------
+ src/ChassisIntrusionSensor.cpp     |  2 +-
+ src/DIMMTempSensor.cpp             |  6 +++---
+ src/ExitAirTempSensor.cpp          |  4 ++--
+ src/ExternalSensorMain.cpp         |  4 ++--
+ src/FanMain.cpp                    |  4 ++--
+ src/IpmbSensor.cpp                 | 12 ++++++------
+ src/MCUTempSensor.cpp              |  6 +++---
+ src/NVMeBasicContext.cpp           |  2 +-
+ src/NVMeMCTPContext.cpp            |  4 ++--
+ src/NVMeSensorMain.cpp             |  6 +++---
+ src/Thresholds.cpp                 |  4 ++--
+ 21 files changed, 55 insertions(+), 55 deletions(-)
+ mode change 100644 => 100755 include/CPUSensor.hpp
+ mode change 100644 => 100755 include/ChassisIntrusionSensor.hpp
+ mode change 100644 => 100755 include/IpmbSensor.hpp
+ mode change 100644 => 100755 include/MCUTempSensor.hpp
+ mode change 100644 => 100755 include/NVMeContext.hpp
+ mode change 100644 => 100755 include/NVMeMCTPContext.hpp
+ mode change 100644 => 100755 src/CPUSensor.cpp
+ mode change 100644 => 100755 src/CPUSensorMain.cpp
+ mode change 100644 => 100755 src/ChassisIntrusionSensor.cpp
+ mode change 100644 => 100755 src/ExitAirTempSensor.cpp
+ mode change 100644 => 100755 src/ExternalSensorMain.cpp
+ mode change 100644 => 100755 src/IpmbSensor.cpp
+ mode change 100644 => 100755 src/MCUTempSensor.cpp
+ mode change 100644 => 100755 src/NVMeBasicContext.cpp
+ mode change 100644 => 100755 src/NVMeMCTPContext.cpp
+ mode change 100644 => 100755 src/NVMeSensorMain.cpp
+
+diff --git a/include/CPUSensor.hpp b/include/CPUSensor.hpp
+old mode 100644
+new mode 100755
+index 3f16069..1535458
+--- a/include/CPUSensor.hpp
++++ b/include/CPUSensor.hpp
+@@ -37,7 +37,7 @@ class CPUSensor : public Sensor, public std::enable_shared_from_this<CPUSensor>
+     sdbusplus::asio::object_server& objServer;
+     boost::asio::streambuf readBuf;
+     boost::asio::posix::stream_descriptor inputDev;
+-    boost::asio::deadline_timer waitTimer;
++    boost::asio::steady_timer waitTimer;
+     std::string nameTcontrol;
+     std::string path;
+     double privTcontrol;
+diff --git a/include/ChassisIntrusionSensor.hpp b/include/ChassisIntrusionSensor.hpp
+old mode 100644
+new mode 100755
+index 142ced3..05a4343
+--- a/include/ChassisIntrusionSensor.hpp
++++ b/include/ChassisIntrusionSensor.hpp
+@@ -1,6 +1,6 @@
+ #pragma once
+ 
+-#include <boost/asio/deadline_timer.hpp>
++#include <boost/asio/steady_timer.hpp>
+ #include <boost/asio/io_service.hpp>
+ #include <gpiod.hpp>
+ #include <sdbusplus/asio/object_server.hpp>
+@@ -39,7 +39,7 @@ class ChassisIntrusionSensor
+     // valid if it is PCH register via i2c
+     int mBusId;
+     int mSlaveAddr;
+-    boost::asio::deadline_timer mPollTimer;
++    boost::asio::steady_timer mPollTimer;
+ 
+     // valid if it is via GPIO
+     bool mGpioInverted;
+diff --git a/include/DIMMTempSensor.hpp b/include/DIMMTempSensor.hpp
+index fd2507e..ec11f3d 100755
+--- a/include/DIMMTempSensor.hpp
++++ b/include/DIMMTempSensor.hpp
+@@ -1,7 +1,7 @@
+ #pragma once
+ #include "sensor.hpp"
+ 
+-#include <boost/asio/deadline_timer.hpp>
++#include <boost/asio/steady_timer.hpp>
+ #include <boost/container/flat_map.hpp>
+ #include <chrono>
+ #include <limits>
+@@ -45,6 +45,6 @@ struct DIMMTempSensor : public Sensor
+     int getDimmRegsInfoWord(uint8_t dimmAddress, uint8_t regs, int32_t* pu16data, double* rawValue);
+     sdbusplus::asio::object_server& objectServer;
+     std::shared_ptr<sdbusplus::asio::connection> dbusConnection;
+-    boost::asio::deadline_timer waitTimer;
++    boost::asio::steady_timer waitTimer;
+     uint8_t PowerDelayCounter;
+ };
+diff --git a/include/IpmbSensor.hpp b/include/IpmbSensor.hpp
+old mode 100644
+new mode 100755
+index b23c0f3..3b2572b
+--- a/include/IpmbSensor.hpp
++++ b/include/IpmbSensor.hpp
+@@ -1,5 +1,5 @@
+ #pragma once
+-#include <boost/asio/deadline_timer.hpp>
++#include <boost/asio/steady_timer.hpp>
+ #include <boost/container/flat_map.hpp>
+ #include <sensor.hpp>
+ 
+@@ -113,5 +113,5 @@ struct IpmbSensor : public Sensor
+ 
+   private:
+     sdbusplus::asio::object_server& objectServer;
+-    boost::asio::deadline_timer waitTimer;
++    boost::asio::steady_timer waitTimer;
+ };
+diff --git a/include/MCUTempSensor.hpp b/include/MCUTempSensor.hpp
+old mode 100644
+new mode 100755
+index deb7102..2a149c0
+--- a/include/MCUTempSensor.hpp
++++ b/include/MCUTempSensor.hpp
+@@ -1,5 +1,5 @@
+ #pragma once
+-#include <boost/asio/deadline_timer.hpp>
++#include <boost/asio/steady_timer.hpp>
+ #include <boost/container/flat_map.hpp>
+ #include <sensor.hpp>
+ 
+@@ -30,5 +30,5 @@ struct MCUTempSensor : public Sensor
+   private:
+     int getMCURegsInfoWord(uint8_t regs, int16_t* pu16data);
+     sdbusplus::asio::object_server& objectServer;
+-    boost::asio::deadline_timer waitTimer;
++    boost::asio::steady_timer waitTimer;
+ };
+diff --git a/include/NVMeContext.hpp b/include/NVMeContext.hpp
+old mode 100644
+new mode 100755
+index 27c1720..f453a85
+--- a/include/NVMeContext.hpp
++++ b/include/NVMeContext.hpp
+@@ -2,7 +2,7 @@
+ 
+ #include "NVMeSensor.hpp"
+ 
+-#include <boost/asio/deadline_timer.hpp>
++#include <boost/asio/steady_timer.hpp>
+ #include <boost/asio/io_service.hpp>
+ 
+ #include <memory>
+@@ -61,7 +61,7 @@ class NVMeContext : public std::enable_shared_from_this<NVMeContext>
+     }
+ 
+   protected:
+-    boost::asio::deadline_timer scanTimer;
++    boost::asio::steady_timer scanTimer;
+     int rootBus;                                    // Root bus for this drive
+     std::list<std::shared_ptr<NVMeSensor>> sensors; // used as a poll queue
+ };
+diff --git a/include/NVMeMCTPContext.hpp b/include/NVMeMCTPContext.hpp
+old mode 100644
+new mode 100755
+index 8af3e8d..690cc20
+--- a/include/NVMeMCTPContext.hpp
++++ b/include/NVMeMCTPContext.hpp
+@@ -18,7 +18,7 @@ class NVMeMCTPContext : public NVMeContext
+ 
+   private:
+     boost::asio::ip::tcp::socket nvmeSlaveSocket;
+-    boost::asio::deadline_timer mctpResponseTimer;
++    boost::asio::steady_timer mctpResponseTimer;
+ 
+     void readResponse();
+ };
+diff --git a/include/Thresholds.hpp b/include/Thresholds.hpp
+index d03994e..467f41b 100755
+--- a/include/Thresholds.hpp
++++ b/include/Thresholds.hpp
+@@ -1,6 +1,6 @@
+ #pragma once
+ #include <Utils.hpp>
+-#include <boost/asio/deadline_timer.hpp>
++#include <boost/asio/steady_timer.hpp>
+ #include <boost/asio/io_service.hpp>
+ #include <nlohmann/json.hpp>
+ 
+@@ -62,7 +62,7 @@ struct TimerUsed
+     bool assert;
+ };
+ 
+-using TimerPair = std::pair<struct TimerUsed, boost::asio::deadline_timer>;
++using TimerPair = std::pair<struct TimerUsed, boost::asio::steady_timer>;
+ 
+ struct ThresholdTimer
+ {
+diff --git a/src/CPUSensor.cpp b/src/CPUSensor.cpp
+old mode 100644
+new mode 100755
+index 0fdb2f4..80ca549
+--- a/src/CPUSensor.cpp
++++ b/src/CPUSensor.cpp
+@@ -147,7 +147,7 @@ void CPUSensor::setupRead(void)
+         pollTime = sensorFailedPollTimeMs;
+         markAvailable(false);
+     }
+-    waitTimer.expires_from_now(boost::posix_time::milliseconds(pollTime));
++    waitTimer.expires_from_now(boost::asio::chrono::milliseconds(pollTime));
+     waitTimer.async_wait([weakRef](const boost::system::error_code& ec) {
+         if (ec == boost::asio::error::operation_aborted)
+         {
+diff --git a/src/CPUSensorMain.cpp b/src/CPUSensorMain.cpp
+old mode 100644
+new mode 100755
+index 4f377aa..3dbd6da
+--- a/src/CPUSensorMain.cpp
++++ b/src/CPUSensorMain.cpp
+@@ -96,8 +96,8 @@ static constexpr auto hiddenProps{std::to_array<const char*>(
+     {CPUSensor::labelTcontrol, "Tthrottle", "Tjmax"})};
+ 
+ void detectCpuAsync(
+-    boost::asio::deadline_timer& pingTimer,
+-    boost::asio::deadline_timer& creationTimer, boost::asio::io_service& io,
++    boost::asio::steady_timer& pingTimer,
++    boost::asio::steady_timer& creationTimer, boost::asio::io_service& io,
+     sdbusplus::asio::object_server& objectServer,
+     std::shared_ptr<sdbusplus::asio::connection>& dbusConnection,
+     boost::container::flat_set<CPUConfig>& cpuConfigs,
+@@ -449,8 +449,8 @@ void exportDevice(const CPUConfig& config)
+     std::cout << parameters << " on bus " << busStr << " is exported\n";
+ }
+ 
+-void detectCpu(boost::asio::deadline_timer& pingTimer,
+-               boost::asio::deadline_timer& creationTimer,
++void detectCpu(boost::asio::steady_timer& pingTimer,
++               boost::asio::steady_timer& creationTimer,
+                boost::asio::io_service& io,
+                sdbusplus::asio::object_server& objectServer,
+                std::shared_ptr<sdbusplus::asio::connection>& dbusConnection,
+@@ -557,7 +557,7 @@ void detectCpu(boost::asio::deadline_timer& pingTimer,
+     if (rescanDelaySeconds)
+     {
+         creationTimer.expires_from_now(
+-            boost::posix_time::seconds(rescanDelaySeconds));
++            boost::asio::chrono::seconds(rescanDelaySeconds));
+         creationTimer.async_wait([&](const boost::system::error_code& ec) {
+             if (ec == boost::asio::error::operation_aborted)
+             {
+@@ -581,14 +581,14 @@ void detectCpu(boost::asio::deadline_timer& pingTimer,
+ }
+ 
+ void detectCpuAsync(
+-    boost::asio::deadline_timer& pingTimer,
+-    boost::asio::deadline_timer& creationTimer, boost::asio::io_service& io,
++    boost::asio::steady_timer& pingTimer,
++    boost::asio::steady_timer& creationTimer, boost::asio::io_service& io,
+     sdbusplus::asio::object_server& objectServer,
+     std::shared_ptr<sdbusplus::asio::connection>& dbusConnection,
+     boost::container::flat_set<CPUConfig>& cpuConfigs,
+     ManagedObjectType& sensorConfigs)
+ {
+-    pingTimer.expires_from_now(boost::posix_time::seconds(1));
++    pingTimer.expires_from_now(boost::asio::chrono::seconds(1));
+     pingTimer.async_wait([&](const boost::system::error_code& ec) {
+         if (ec == boost::asio::error::operation_aborted)
+         {
+@@ -716,12 +716,12 @@ int main()
+ 
+     sdbusplus::asio::object_server objectServer(systemBus);
+     std::vector<std::unique_ptr<sdbusplus::bus::match::match>> matches;
+-    boost::asio::deadline_timer pingTimer(io);
+-    boost::asio::deadline_timer creationTimer(io);
+-    boost::asio::deadline_timer filterTimer(io);
++    boost::asio::steady_timer pingTimer(io);
++    boost::asio::steady_timer creationTimer(io);
++    boost::asio::steady_timer filterTimer(io);
+     ManagedObjectType sensorConfigs;
+ 
+-    filterTimer.expires_from_now(boost::posix_time::seconds(1));
++    filterTimer.expires_from_now(boost::asio::chrono::seconds(1));
+     filterTimer.async_wait([&](const boost::system::error_code& ec) {
+         if (ec == boost::asio::error::operation_aborted)
+         {
+@@ -749,7 +749,7 @@ int main()
+             }
+ 
+             // this implicitly cancels the timer
+-            filterTimer.expires_from_now(boost::posix_time::seconds(1));
++            filterTimer.expires_from_now(boost::asio::chrono::seconds(1));
+             filterTimer.async_wait([&](const boost::system::error_code& ec) {
+                 if (ec == boost::asio::error::operation_aborted)
+                 {
+diff --git a/src/ChassisIntrusionSensor.cpp b/src/ChassisIntrusionSensor.cpp
+old mode 100644
+new mode 100755
+index 9b35da2..2da0b9c
+--- a/src/ChassisIntrusionSensor.cpp
++++ b/src/ChassisIntrusionSensor.cpp
+@@ -147,7 +147,7 @@ void ChassisIntrusionSensor::pollSensorStatusByPch()
+ {
+     // setting a new experation implicitly cancels any pending async wait
+     mPollTimer.expires_from_now(
+-        boost::posix_time::seconds(intrusionSensorPollSec));
++        boost::asio::chrono::seconds(intrusionSensorPollSec));
+ 
+     mPollTimer.async_wait([&](const boost::system::error_code& ec) {
+         // case of timer expired
+diff --git a/src/DIMMTempSensor.cpp b/src/DIMMTempSensor.cpp
+index ede1458..8dc191a 100755
+--- a/src/DIMMTempSensor.cpp
++++ b/src/DIMMTempSensor.cpp
+@@ -200,7 +200,7 @@ void DIMMTempSensor::read(void)
+ {
+     static constexpr size_t pollTime = 1; // in seconds
+ 
+-    waitTimer.expires_from_now(boost::posix_time::seconds(pollTime));
++    waitTimer.expires_from_now(boost::asio::chrono::seconds(pollTime));
+     waitTimer.async_wait([this](const boost::system::error_code& ec) {
+         if (ec == boost::asio::error::operation_aborted)
+         {
+@@ -401,11 +401,11 @@ int main(int argc, char** argv)
+ 
+     io.post([&]() { createSensors(io, objectServer, sensors, systemBus); });
+ 
+-    boost::asio::deadline_timer configTimer(io);
++    boost::asio::steady_timer configTimer(io);
+ 
+     std::function<void(sdbusplus::message::message&)> eventHandler =
+         [&](sdbusplus::message::message& message) {
+-            configTimer.expires_from_now(boost::posix_time::seconds(1));
++            configTimer.expires_from_now(boost::asio::chrono::seconds(1));
+             // create a timer because normally multiple properties change
+             configTimer.async_wait([&](const boost::system::error_code& ec) {
+                 if (ec == boost::asio::error::operation_aborted)
+diff --git a/src/ExitAirTempSensor.cpp b/src/ExitAirTempSensor.cpp
+old mode 100644
+new mode 100755
+index 58f7468..93da32f
+--- a/src/ExitAirTempSensor.cpp
++++ b/src/ExitAirTempSensor.cpp
+@@ -964,11 +964,11 @@ int main()
+ 
+     io.post([&]() { createSensor(objectServer, sensor, systemBus); });
+ 
+-    boost::asio::deadline_timer configTimer(io);
++    boost::asio::steady_timer configTimer(io);
+ 
+     std::function<void(sdbusplus::message::message&)> eventHandler =
+         [&](sdbusplus::message::message&) {
+-            configTimer.expires_from_now(boost::posix_time::seconds(1));
++            configTimer.expires_from_now(boost::asio::chrono::seconds(1));
+             // create a timer because normally multiple properties change
+             configTimer.async_wait([&](const boost::system::error_code& ec) {
+                 if (ec == boost::asio::error::operation_aborted)
+diff --git a/src/ExternalSensorMain.cpp b/src/ExternalSensorMain.cpp
+old mode 100644
+new mode 100755
+index 477a4c6..80a9b5d
+--- a/src/ExternalSensorMain.cpp
++++ b/src/ExternalSensorMain.cpp
+@@ -363,7 +363,7 @@ int main()
+         createSensors(objectServer, sensors, systemBus, nullptr, reaperTimer);
+     });
+ 
+-    boost::asio::deadline_timer filterTimer(io);
++    boost::asio::steady_timer filterTimer(io);
+     std::function<void(sdbusplus::message::message&)> eventHandler =
+         [&objectServer, &sensors, &systemBus, &sensorsChanged, &filterTimer,
+          &reaperTimer](sdbusplus::message::message& message) mutable {
+@@ -382,7 +382,7 @@ int main()
+             }
+ 
+             // this implicitly cancels the timer
+-            filterTimer.expires_from_now(boost::posix_time::seconds(1));
++            filterTimer.expires_from_now(boost::asio::chrono::seconds(1));
+ 
+             filterTimer.async_wait(
+                 [&objectServer, &sensors, &systemBus, &sensorsChanged,
+diff --git a/src/FanMain.cpp b/src/FanMain.cpp
+index 7f25a2e..a00d9f2 100755
+--- a/src/FanMain.cpp
++++ b/src/FanMain.cpp
+@@ -491,7 +491,7 @@ int main()
+                       nullptr);
+     });
+ 
+-    boost::asio::deadline_timer filterTimer(io);
++    boost::asio::steady_timer filterTimer(io);
+     std::function<void(sdbusplus::message::message&)> eventHandler =
+         [&](sdbusplus::message::message& message) {
+             if (message.is_method_error())
+@@ -501,7 +501,7 @@ int main()
+             }
+             sensorsChanged->insert(message.get_path());
+             // this implicitly cancels the timer
+-            filterTimer.expires_from_now(boost::posix_time::seconds(1));
++            filterTimer.expires_from_now(boost::asio::chrono::seconds(1));
+ 
+             filterTimer.async_wait([&](const boost::system::error_code& ec) {
+                 if (ec == boost::asio::error::operation_aborted)
+diff --git a/src/IpmbSensor.cpp b/src/IpmbSensor.cpp
+old mode 100644
+new mode 100755
+index 0615c86..c2c21d6
+--- a/src/IpmbSensor.cpp
++++ b/src/IpmbSensor.cpp
+@@ -54,7 +54,7 @@ using IpmbMethodType =
+ 
+ boost::container::flat_map<std::string, std::unique_ptr<IpmbSensor>> sensors;
+ 
+-std::unique_ptr<boost::asio::deadline_timer> initCmdTimer;
++std::unique_ptr<boost::asio::steady_timer> initCmdTimer;
+ 
+ IpmbSensor::IpmbSensor(std::shared_ptr<sdbusplus::asio::connection>& conn,
+                        boost::asio::io_service& io,
+@@ -338,7 +338,7 @@ bool IpmbSensor::processReading(const std::vector<uint8_t>& data, double& resp)
+ 
+ void IpmbSensor::read(void)
+ {
+-    waitTimer.expires_from_now(boost::posix_time::milliseconds(sensorPollMs));
++    waitTimer.expires_from_now(boost::asio::chrono::milliseconds(sensorPollMs));
+     waitTimer.async_wait([this](const boost::system::error_code& ec) {
+         if (ec == boost::asio::error::operation_aborted)
+         {
+@@ -588,7 +588,7 @@ void reinitSensors(sdbusplus::message::message& message)
+             // we seem to send this command too fast sometimes, wait before
+             // sending
+             initCmdTimer->expires_from_now(
+-                boost::posix_time::seconds(reinitWaitSeconds));
++                boost::asio::chrono::seconds(reinitWaitSeconds));
+ 
+             initCmdTimer->async_wait([](const boost::system::error_code ec) {
+                 if (ec == boost::asio::error::operation_aborted)
+@@ -616,15 +616,15 @@ int main()
+     systemBus->request_name("xyz.openbmc_project.IpmbSensor");
+     sdbusplus::asio::object_server objectServer(systemBus);
+ 
+-    initCmdTimer = std::make_unique<boost::asio::deadline_timer>(io);
++    initCmdTimer = std::make_unique<boost::asio::steady_timer>(io);
+ 
+     io.post([&]() { createSensors(io, objectServer, sensors, systemBus); });
+ 
+-    boost::asio::deadline_timer configTimer(io);
++    boost::asio::steady_timer configTimer(io);
+ 
+     std::function<void(sdbusplus::message::message&)> eventHandler =
+         [&](sdbusplus::message::message&) {
+-            configTimer.expires_from_now(boost::posix_time::seconds(1));
++            configTimer.expires_from_now(boost::asio::chrono::seconds(1));
+             // create a timer because normally multiple properties change
+             configTimer.async_wait([&](const boost::system::error_code& ec) {
+                 if (ec == boost::asio::error::operation_aborted)
+diff --git a/src/MCUTempSensor.cpp b/src/MCUTempSensor.cpp
+old mode 100644
+new mode 100755
+index 4653bc8..abee16d
+--- a/src/MCUTempSensor.cpp
++++ b/src/MCUTempSensor.cpp
+@@ -153,7 +153,7 @@ void MCUTempSensor::read(void)
+ {
+     static constexpr size_t pollTime = 1; // in seconds
+ 
+-    waitTimer.expires_from_now(boost::posix_time::seconds(pollTime));
++    waitTimer.expires_from_now(boost::asio::chrono::seconds(pollTime));
+     waitTimer.async_wait([this](const boost::system::error_code& ec) {
+         if (ec == boost::asio::error::operation_aborted)
+         {
+@@ -273,11 +273,11 @@ int main()
+ 
+     io.post([&]() { createSensors(io, objectServer, sensors, systemBus); });
+ 
+-    boost::asio::deadline_timer configTimer(io);
++    boost::asio::steady_timer configTimer(io);
+ 
+     std::function<void(sdbusplus::message::message&)> eventHandler =
+         [&](sdbusplus::message::message&) {
+-            configTimer.expires_from_now(boost::posix_time::seconds(1));
++            configTimer.expires_from_now(boost::asio::chrono::seconds(1));
+             // create a timer because normally multiple properties change
+             configTimer.async_wait([&](const boost::system::error_code& ec) {
+                 if (ec == boost::asio::error::operation_aborted)
+diff --git a/src/NVMeBasicContext.cpp b/src/NVMeBasicContext.cpp
+old mode 100644
+new mode 100755
+index 93802b9..c5048e5
+--- a/src/NVMeBasicContext.cpp
++++ b/src/NVMeBasicContext.cpp
+@@ -358,7 +358,7 @@ void NVMeBasicContext::readAndProcessNVMeSensor()
+ 
+ void NVMeBasicContext::pollNVMeDevices()
+ {
+-    scanTimer.expires_from_now(boost::posix_time::seconds(1));
++    scanTimer.expires_from_now(boost::asio::chrono::seconds(1));
+     scanTimer.async_wait(
+         [self{shared_from_this()}](const boost::system::error_code errorCode) {
+             if (errorCode == boost::asio::error::operation_aborted)
+diff --git a/src/NVMeMCTPContext.cpp b/src/NVMeMCTPContext.cpp
+old mode 100644
+new mode 100755
+index 40bb8ac..57370dd
+--- a/src/NVMeMCTPContext.cpp
++++ b/src/NVMeMCTPContext.cpp
+@@ -349,7 +349,7 @@ void NVMeMCTPContext::readAndProcessNVMeSensor()
+ 
+     // setup the timeout timer
+     mctpResponseTimer.expires_from_now(
+-        boost::posix_time::seconds(mctpResponseTimeout));
++        boost::asio::chrono::seconds(mctpResponseTimeout));
+ 
+     mctpResponseTimer.async_wait(
+         [sensor, this](const boost::system::error_code errorCode) {
+@@ -396,7 +396,7 @@ NVMeMCTPContext::NVMeMCTPContext(boost::asio::io_service& io, int rootBus) :
+ 
+ void NVMeMCTPContext::pollNVMeDevices()
+ {
+-    scanTimer.expires_from_now(boost::posix_time::seconds(1));
++    scanTimer.expires_from_now(boost::asio::chrono::seconds(1));
+     scanTimer.async_wait(
+         [self{shared_from_this()}](const boost::system::error_code errorCode) {
+             if (errorCode == boost::asio::error::operation_aborted)
+diff --git a/src/NVMeSensorMain.cpp b/src/NVMeSensorMain.cpp
+old mode 100644
+new mode 100755
+index f15f867..624106a
+--- a/src/NVMeSensorMain.cpp
++++ b/src/NVMeSensorMain.cpp
+@@ -18,7 +18,7 @@
+ #include <NVMeContext.hpp>
+ #include <NVMeMCTPContext.hpp>
+ #include <NVMeSensor.hpp>
+-#include <boost/asio/deadline_timer.hpp>
++#include <boost/asio/steady_timer.hpp>
+ 
+ #include <optional>
+ #include <regex>
+@@ -227,12 +227,12 @@ int main()
+ 
+     io.post([&]() { createSensors(io, objectServer, systemBus); });
+ 
+-    boost::asio::deadline_timer filterTimer(io);
++    boost::asio::steady_timer filterTimer(io);
+     std::function<void(sdbusplus::message::message&)> eventHandler =
+         [&filterTimer, &io, &objectServer,
+          &systemBus](sdbusplus::message::message&) {
+             // this implicitly cancels the timer
+-            filterTimer.expires_from_now(boost::posix_time::seconds(1));
++            filterTimer.expires_from_now(boost::asio::chrono::seconds(1));
+ 
+             filterTimer.async_wait([&](const boost::system::error_code& ec) {
+                 if (ec == boost::asio::error::operation_aborted)
+diff --git a/src/Thresholds.cpp b/src/Thresholds.cpp
+index 22108ba..6673cec 100755
+--- a/src/Thresholds.cpp
++++ b/src/Thresholds.cpp
+@@ -402,14 +402,14 @@ void ThresholdTimer::startTimer(const std::weak_ptr<Sensor>& weakSensor,
+     }
+     if (pair == nullptr)
+     {
+-        pair = &timers.emplace_back(timerUsed, boost::asio::deadline_timer(io));
++        pair = &timers.emplace_back(timerUsed, boost::asio::steady_timer(io));
+     }
+ 
+     pair->first.used = true;
+     pair->first.level = threshold.level;
+     pair->first.direction = threshold.direction;
+     pair->first.assert = assert;
+-    pair->second.expires_from_now(boost::posix_time::seconds(waitTime));
++    pair->second.expires_from_now(boost::asio::chrono::seconds(waitTime));
+     pair->second.async_wait([weakSensor, pair, threshold, assert,
+                              assertValue](boost::system::error_code ec) {
+         auto sensorPtr = weakSensor.lock();
+-- 
+2.7.4
+

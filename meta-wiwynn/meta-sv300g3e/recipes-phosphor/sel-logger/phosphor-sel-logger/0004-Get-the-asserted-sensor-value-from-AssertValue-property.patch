@@ -1,0 +1,32 @@
+From 7f606314ac1ab4891749866f883518f2b867693e Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Sun, 14 Jun 2020 21:35:48 +0800
+Subject: [PATCH] Get the asserted sensor value from AssertValue property on
+ dbus
+
+---
+ include/threshold_event_monitor.hpp | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/include/threshold_event_monitor.hpp b/include/threshold_event_monitor.hpp
+index 7c8e2c4..77dff4a 100644
+--- a/include/threshold_event_monitor.hpp
++++ b/include/threshold_event_monitor.hpp
+@@ -167,7 +167,13 @@ inline static sdbusplus::bus::match::match startThresholdEventMonitor(
+             min = std::visit(ipmi::VariantToDoubleVisitor(), findMin->second);
+         }
+         double sensorVal = 0;
+-        auto findVal = sensorValue.find("Value");
++        // auto findVal = sensorValue.find("Value");
++        std::string refReading = "Value";
++        if (assert)
++        {
++            refReading = "AssertValue";
++        }
++        auto findVal = sensorValue.find(refReading);
+         if (findVal != sensorValue.end())
+         {
+             sensorVal =
+-- 
+2.24.1
+

@@ -1,0 +1,112 @@
+From 662ea7a1b91074485f06fecdadcc46bd788ce451 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Tue, 3 Nov 2020 10:58:16 +0800
+Subject: [PATCH] Register dbus done object path
+
+---
+ meson.build           | 51 -------------------------------------------
+ src/EntityManager.cpp | 26 ++++++++++++++++++++++
+ 2 files changed, 26 insertions(+), 51 deletions(-)
+
+diff --git a/meson.build b/meson.build
+index 2d72ebf..89e6389 100644
+--- a/meson.build
++++ b/meson.build
+@@ -68,57 +68,6 @@ endif
+ install_data('blacklist.json')
+ 
+ configs = [
+-    '1Ux16 Riser.json',
+-    '2Ux8 Riser.json',
+-    '8X25 HSBP.json',
+-    'A2UL16RISER.json',
+-    'A2UX8X4RISER.json',
+-    'ACBELL_RICA_PSU.json',
+-    'AHW1UM2RISER.json',
+-    'ASPOWER_U1A-D10550_PSU.json',
+-    'ASPOWER_U1A-D10800_PSU.json',
+-    'ASPOWER_U1A-D11200_PSU.json',
+-    'ASPOWER_U1A-D11600_PSU.json',
+-    'ASPOWER_U1D-D10800_PSU.json',
+-    'AXX1P100HSSI_AIC.json',
+-    'AXX2PRTHDHD.json',
+-    'BNP Baseboard.json',
+-    'Bellavista.json',
+-    'Delta DPS-750XB PSU.json',
+-    'Delta_DPS-1600AB_PSU.json',
+-    'Delta_DPS-2000AB_PSU.json',
+-    'Everest.json',
+-    'F1U12X25 HSBP.json',
+-    'F1U4X25 HSBP.json',
+-    'F2U12X35 HSBP.json',
+-    'F2U8X25 HSBP.json',
+-    'FBTP.json',
+-    'FBYV2.json',
+-    'Flextronics S-1100ADU00-201 PSU.json',
+-    'IBM 1000W CFFPS.json',
+-    'IBM 1400W CFFPS.json',
+-    'IBM 1600W CFFPS.json',
+-    'IBM 2000W CFFPS.json',
+-    'IBM 2300W CFFPS.json',
+-    'Intel Front Panel.json',
+-    'Nisqually.json',
+-    'NVME P4000.json',
+-    'PCIE SSD Retimer.json',
+-    'PSSF132202A.json',
+-    'PSSF162205A.json',
+-    'PSSF212201A.json',
+-    'PSSF222201A.json',
+-    'Rainier 2U Chassis.json',
+-    'Rainier 4U Chassis.json',
+-    'Rainier 1S4U Chassis.json',
+-    'R1000 Chassis.json',
+-    'R2000 Chassis.json',
+-    'SAS Module.json',
+-    'SOLUM_PSSF162202_PSU.json',
+-    'STP Baseboard.json',
+-    'STP P4000 Chassis.json',
+-    'Tyan_S7106_Baseboard.json',
+-    'WFT Baseboard.json',
+ ]
+ 
+ foreach c : configs
+diff --git a/src/EntityManager.cpp b/src/EntityManager.cpp
+index c6f2fb5..b8b8723 100644
+--- a/src/EntityManager.cpp
++++ b/src/EntityManager.cpp
+@@ -1974,6 +1974,32 @@ int main()
+     // removed until the same state happens
+     setupPowerMatch(SYSTEM_BUS);
+ 
++    std::shared_ptr<sdbusplus::asio::dbus_interface> doneIface;
++    sdbusplus::bus::match::match matchBoardAddInterface(
++        static_cast<sdbusplus::bus::bus&>(*SYSTEM_BUS),
++        sdbusplus::bus::match::rules::sender(
++            "xyz.openbmc_project.EntityManager") +
++            sdbusplus::bus::match::rules::interfacesAdded("/"),
++        [&](sdbusplus::message::message& m) {
++            if (doneIface != nullptr)
++            {
++                return;
++            }
++
++            sdbusplus::message::object_path objPath;
++            m.read(objPath);
++            if (objPath.str.find("/xyz/openbmc_project/inventory/system") ==
++                std::string::npos)
++            {
++                return;
++            }
++
++            doneIface =
++                objServer.add_interface("/xyz/openbmc_project/inventory/done",
++                                        "xyz.openbmc_project.Inventory.Done");
++            doneIface->initialize();
++        });
++
+     io.run();
+ 
+     return 0;
+-- 
+2.28.0
+

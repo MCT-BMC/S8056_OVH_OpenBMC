@@ -1,0 +1,57 @@
+From 8bcf76b5ddd5f7e279f03be77d8f48aadcd94c5c Mon Sep 17 00:00:00 2001
+From: Ren_Chen <Ren_Chen@wiwynn.com>
+Date: Fri, 18 Jun 2021 13:59:22 +0800
+Subject: [PATCH] Add http end-point for SOL buffer
+
+---
+ include/openbmc_dbus_rest.hpp | 34 ++++++++++++++++++++++++++++++++++
+ 1 file changed, 34 insertions(+)
+
+diff --git a/include/openbmc_dbus_rest.hpp b/include/openbmc_dbus_rest.hpp
+index b988095..a4d318b 100644
+--- a/include/openbmc_dbus_rest.hpp
++++ b/include/openbmc_dbus_rest.hpp
+@@ -2226,6 +2226,40 @@ inline void requestRoutes(App& app)
+                 return;
+             });
+ 
++    BMCWEB_ROUTE(app, "/hostconsole.log")
++        .privileges({"ConfigureManager"})
++        .methods(boost::beast::http::verb::get)(
++            [](const crow::Request&, 
++               const std::shared_ptr<bmcweb::AsyncResp>& asyncResp) {
++
++            std::filesystem::path loc(
++                "/var/log/obmc-console.log");
++
++            if (!std::filesystem::exists(loc) ||
++                std::filesystem::is_empty(loc) || !std::filesystem::is_regular_file(loc))
++            {
++                BMCWEB_LOG_ERROR << loc << "SOL data Not found";
++                asyncResp->res.result(boost::beast::http::status::not_found);
++                asyncResp->res.end();
++                return;
++            }
++
++            std::ifstream readFile(loc);
++
++            if (readFile.good())
++            {
++                asyncResp->res.addHeader("Content-Type", "application/octet-stream");
++                asyncResp->res.body() = {std::istreambuf_iterator<char>(readFile),
++                              std::istreambuf_iterator<char>()};
++                asyncResp->res.end();
++                return;
++            }else{
++                asyncResp->res.result(boost::beast::http::status::not_found);
++                asyncResp->res.end();
++                return;
++            }
++        });
++
+     BMCWEB_ROUTE(app, "/bus/system/<str>/")
+         .privileges({"Login"})
+ 
+-- 
+2.28.0
+

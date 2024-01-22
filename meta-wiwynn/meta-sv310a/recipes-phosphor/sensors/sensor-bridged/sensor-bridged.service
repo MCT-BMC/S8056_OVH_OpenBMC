@@ -1,0 +1,12 @@
+[Unit]
+Description=Sensor Bridge Daemon
+Before=xyz.openbmc_project.EntityManager.service
+
+[Service]
+Restart=always
+RestartSec=5
+ExecStart=/usr/bin/sensorbridged
+
+[Install]
+WantedBy=multi-user.target
+

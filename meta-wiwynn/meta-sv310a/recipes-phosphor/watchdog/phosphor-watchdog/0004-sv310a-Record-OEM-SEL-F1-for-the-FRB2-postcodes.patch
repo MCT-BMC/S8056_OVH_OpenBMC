@@ -1,0 +1,181 @@
+From 785daae1c4ef281b19fd2fada3f26c25e1af429d Mon Sep 17 00:00:00 2001
+From: Eric Chen <Eric_LC_Chen@wiwynn.com>
+Date: Wed, 8 Sep 2021 15:41:14 +0800
+Subject: [PATCH] [sv310a] Record OEM SEL F1 for the FRB2 postcodes
+ Description: - Record the post codes in OEM SEL format for FRB2 event.
+
+Designed:
+- Record the latest 12 post codes in an OEM SEL when a FRB2 event occurs.
+- The OEM SEL type is 0xF1, which has no timestamp.
+  The definition  of "OEM Record F1":
+    Event Data 0: post codes length
+    Event Data 1-12: last 12 post codes(12th is the last codes)
+
+Test Case:
+Check OEM Record F1 SEL after FRB2 event.
+
+Test Result:
+Check OEM Record F1 SEL after FRB2 event:
+eric@gen8:~$ ipmitool -H 10.248.41.36 -U root -P root -I lanplus chassis power cycle
+Chassis Power Control: Cycle
+eric@gen8:~$ ipmitool -H 10.248.41.36 -U root -P root -I lanplus mc watchdog get
+Watchdog Timer Use:     BIOS FRB2 (0x41)
+Watchdog Timer Is:      Started/Running
+Watchdog Timer Actions: No action (0x00)
+Pre-timeout interval:   0 seconds
+Timer Expiration Flags: 0x00
+Initial Countdown:      180 sec
+Present Countdown:      135 sec
+[press keyboard pause button to stop postcode]
+eric@gen8:~$ ipmitool -H 10.248.41.36 -U root -P root -I lanplus mc watchdog get
+Watchdog Timer Use:     BIOS FRB2 (0x01)
+Watchdog Timer Is:      Stopped
+Watchdog Timer Actions: No action (0x00)
+Pre-timeout interval:   0 seconds
+Timer Expiration Flags: 0x02
+Initial Countdown:      180 sec
+Present Countdown:      0 sec
+eric@gen8:~$ ipmitool -H 10.248.41.36 -U root -P root -I lanplus sel elist
+   1 | 09/08/2021 | 08:36:19 | Event Logging Disabled Event Logging | Log area reset/cleared | Asserted
+   2 | 09/08/2021 | 08:37:05 | System ACPI Power State ACPI Power State | S5/G2: soft-off | Asserted
+   3 | 09/08/2021 | 08:37:10 | FRU State FRU Status | Activation Requested | Asserted
+   4 | 09/08/2021 | 08:37:15 | System Boot Initiated System Restart | System Restart | Asserted
+   5 | 09/08/2021 | 08:37:17 | System ACPI Power State ACPI Power State | S0/G0: working | Asserted
+   6 | 09/08/2021 | 08:41:28 | Watchdog 2 Watchdog2 | Timer expired | Asserted
+   7 | 09/08/2021 | 08:41:28 | Processor Processor Fail | FRB2/Hang in POST failure | Asserted
+   8 | OEM record f1 | 0c9297989d9a9cb498b49d9a9c
+   9 | 09/08/2021 | 08:42:09 | System Event End of POST | OEM System boot event | Asserted
+eric@gen8:~$ ipmitool -H 10.248.41.36 -U root -P root -I lanplus sel get 0x8
+SEL Record ID          : 0008
+ Record Type           : f1  (OEM non-timestamped)
+ OEM Defined           : 0c9297989d9a9cb498b49d9a9c [.............]
+
+Related Item:
+Add OEM SEL F1 for the FRB2 postcodes
+---
+ src/watchdog.cpp | 83 ++++++++++++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 81 insertions(+), 2 deletions(-)
+
+diff --git a/src/watchdog.cpp b/src/watchdog.cpp
+index 81a869d..37dab15 100644
+--- a/src/watchdog.cpp
++++ b/src/watchdog.cpp
+@@ -1,13 +1,14 @@
+ #include "watchdog.hpp"
+ 
+-#include <algorithm>
+-#include <chrono>
+ #include <phosphor-logging/elog.hpp>
+ #include <phosphor-logging/log.hpp>
+ #include <sdbusplus/exception.hpp>
+ #include <xyz/openbmc_project/Common/error.hpp>
+ #include <xyz/openbmc_project/State/Host/server.hpp>
+ 
++#include <algorithm>
++#include <chrono>
++
+ namespace phosphor
+ {
+ namespace watchdog
+@@ -34,6 +35,7 @@ constexpr auto selService = "xyz.openbmc_project.Logging.IPMI";
+ constexpr auto selPath = "/xyz/openbmc_project/Logging/IPMI";
+ constexpr auto selIntf = "xyz.openbmc_project.Logging.IPMI";
+ constexpr auto selAddMethod = "IpmiSelAdd";
++constexpr auto selAddOemMethod = "IpmiSelAddOem";
+ constexpr uint8_t wdEventData1Header = 0xc0;
+ constexpr uint16_t selBMCGenID = 0x0020;
+ 
+@@ -47,6 +49,11 @@ constexpr auto bootOptionValidIntf = "xyz.openbmc_project.Control.Valid";
+ // Indicate bit 2 of BMC boot flag valid bit clearing.
+ constexpr auto dontClearWatchdogTimeout = 0x4;
+ 
++constexpr auto postCodeInterface = "xyz.openbmc_project.State.Boot.PostCode";
++constexpr auto postCodeObjPath = "/xyz/openbmc_project/State/Boot/PostCode0";
++constexpr auto postCodeService = "xyz.openbmc_project.State.Boot.PostCode0";
++constexpr auto getPostCodesMethod = "GetPostCodes";
++
+ void Watchdog::resetTimeRemaining(bool enableWatchdog)
+ {
+     timeRemaining(interval());
+@@ -314,6 +321,78 @@ void Watchdog::addTimeOutSel()
+                             entry("ERROR=%s", e.what()));
+         }
+     }
++    /* Record the post codes when a FRB2 event occurs */
++    if (expiredTimerUse() == TimerUse::BIOSFRB2)
++    {
++        uint16_t lastestPostCodeIndex = 1;
++        std::vector<std::tuple<uint64_t, std::vector<uint8_t>>> tmpBuffer;
++        const size_t retPostCodeLen = 12;
++        const size_t retLen = 13;
++        std::vector<uint8_t> postcodeData(retLen, 0xFF);
++        std::string message;
++
++        try
++        {
++            /* Get the post codes by calling GetPostCodes method */
++            auto msg =
++                bus.new_method_call(postCodeService, postCodeObjPath,
++                                    postCodeInterface, getPostCodesMethod);
++            msg.append(lastestPostCodeIndex);
++            auto reply = bus.call(msg);
++            reply.read(tmpBuffer);
++            int tmpBufferSize = tmpBuffer.size();
++
++            if (tmpBufferSize <= 0)
++            {
++                postcodeData.at(0) = 0x0;
++            }
++            else
++            {
++                postcodeData.at(0) = (tmpBufferSize > retPostCodeLen)
++                                         ? retPostCodeLen
++                                         : tmpBufferSize;
++            }
++            /* Set command return length to return the last 12 post code*/
++            int tmpBufferIndex = 0;
++            if (tmpBufferSize > retPostCodeLen)
++            {
++                tmpBufferIndex = tmpBufferSize - retPostCodeLen;
++            }
++            /* Get post code data */
++            for (int i = 0;
++                 ((i < retPostCodeLen) && (tmpBufferIndex < tmpBufferSize));
++                 ++i, ++tmpBufferIndex)
++            {
++                postcodeData.at(i + 1) = std::get<0>(tmpBuffer[tmpBufferIndex]);
++            }
++        }
++        catch (const sdbusplus::exception::SdBusError& e)
++        {
++            log<level::ERR>("watchdog: Failed to get post codes",
++                            entry("ERROR=%s", e.what()));
++            return;
++        }
++
++        // Add SEL
++        const uint8_t oemType = 0xF1;
++        message = "OEM Record F1";
++
++        auto method =
++            bus.new_method_call(selService, selPath, selIntf, selAddOemMethod);
++        method.append(message, postcodeData, oemType);
++
++        try
++        {
++            bus.call(method);
++        }
++        catch (sdbusplus::exception_t& e)
++        {
++            log<level::ERR>(
++                "watchdog: Failed to add oem post code SEL for FRB2 event",
++                entry("ERROR=%s", e.what()));
++            return;
++        }
++    }
+ }
+ 
+ } // namespace watchdog
+-- 
+2.32.0
+

@@ -1,0 +1,61 @@
+From 19f1837097b186c65df3f7ba7bab67d557477758 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Wed, 6 Apr 2022 11:42:52 +0800
+Subject: [PATCH] Add filter post code function for BMC resource issue
+
+It would disable post code function after BIOS post completed
+---
+ inc/post_code.hpp | 17 ++++++++++-------
+ src/post_code.cpp |  6 ++++++
+ 2 files changed, 16 insertions(+), 7 deletions(-)
+
+diff --git a/inc/post_code.hpp b/inc/post_code.hpp
+index e4bfccd..cf5bf2b 100755
+--- a/inc/post_code.hpp
++++ b/inc/post_code.hpp
+@@ -113,15 +113,18 @@ struct PostCode : sdbusplus::server::object_t<post_code, delete_all>
+                 {
+                     if (valPropMap != msgData.end())
+                     {
+-                        auto bus = sdbusplus::bus::new_default();
++                        if((access("/run/end-of-post", F_OK)) != 0)
++                        {
++                            auto bus = sdbusplus::bus::new_default();
+ 
+-                        auto msg = bus.new_signal("/", "org.freedesktop.DBus", "getPostCode");
+-                        uint64_t parameter = std::get<0>(std::get<postcode_t>(valPropMap->second));
+-                        msg.append(parameter);
+-                        msg.signal_send();
++                            auto msg = bus.new_signal("/", "org.freedesktop.DBus", "getPostCode");
++                            uint64_t parameter = std::get<0>(std::get<postcode_t>(valPropMap->second));
++                            msg.append(parameter);
++                            msg.signal_send();
+ 
+-                        this->savePostCodes(
+-                            std::get<postcode_t>(valPropMap->second));
++                            this->savePostCodes(
++                                std::get<postcode_t>(valPropMap->second));
++                        }
+                     }
+                 }
+             }),
+diff --git a/src/post_code.cpp b/src/post_code.cpp
+index 319e379..718bff9 100755
+--- a/src/post_code.cpp
++++ b/src/post_code.cpp
+@@ -217,6 +217,12 @@ void PostCode::incrBootCycle()
+         currentBootCycleIndex++;
+     }
+     std::cerr << "Current boot cycle index " <<  currentBootCycleIndex << std::endl;
++
++    if((access("/run/end-of-post", F_OK)) != -1)
++    {
++        std::remove("/run/end-of-post");
++    }
++
+     currentBootCycleCount(std::min(
+         maxBootCycleNum(), static_cast<uint16_t>(currentBootCycleCount() + 1)));
+ }
+-- 
+2.7.4
+

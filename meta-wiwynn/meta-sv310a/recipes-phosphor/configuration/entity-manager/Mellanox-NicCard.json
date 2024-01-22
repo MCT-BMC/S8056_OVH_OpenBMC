@@ -1,0 +1,36 @@
+[
+    {
+        "Exposes": [
+            {
+                "Name": "NIC_Temp",
+                "Bus": 18,
+                "Address": "0x1F",
+                "Command": "0x01",
+                "SensorType": "temp",
+                "Mode": "Byte",
+                "MaxReading": 127,
+                "MinReading": 0,
+                "Type": "NIC",
+                "PowerState": "On",
+                "TctlMax": 105,
+                "Thresholds": [
+                    {
+                        "Direction": "greater than",
+                        "Name": "upper critical",
+                        "Severity": 1,
+                        "Value": 103
+                    }
+                ]
+            }
+        ],
+        "Name": "Mellanox NIC Card",
+        "Probe": "xyz.openbmc_project.FruDevice({'PRODUCT_PRODUCT_NAME': '.*Mellanox*'})",
+        "Type": "NIC",
+        "xyz.openbmc_project.Inventory.Decorator.Asset": {
+            "Manufacturer": "$PRODUCT_MANUFACTURER",
+            "Model": "$PRODUCT_PRODUCT_NAME",
+            "PartNumber": "$PRODUCT_PART_NUMBER",
+            "SerialNumber": "$PRODUCT_SERIAL_NUMBER"
+        }
+    }
+]

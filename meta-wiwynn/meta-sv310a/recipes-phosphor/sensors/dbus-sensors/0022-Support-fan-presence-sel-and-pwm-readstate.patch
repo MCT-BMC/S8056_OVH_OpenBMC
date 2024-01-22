@@ -1,0 +1,296 @@
+From 22c995080922971ecf2ec2db0371d7f21dda17f8 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Mon, 2 Aug 2021 11:26:41 +0800
+Subject: [PATCH] Support fan presence sel and pwm readstate
+
+---
+ include/PwmSensor.hpp  |  3 ++-
+ include/TachSensor.hpp | 32 +++++++++++++++++++++++++++++---
+ src/FanMain.cpp        | 31 ++++++++++++++++++++++++++++---
+ src/PSUSensorMain.cpp  |  3 ++-
+ src/PwmSensor.cpp      | 13 +++++++++++--
+ src/TachSensor.cpp     | 36 ++++++++++++++++++++++++++++--------
+ 6 files changed, 100 insertions(+), 18 deletions(-)
+
+diff --git a/include/PwmSensor.hpp b/include/PwmSensor.hpp
+index d78b8e9..cdbc9b5 100644
+--- a/include/PwmSensor.hpp
++++ b/include/PwmSensor.hpp
+@@ -13,7 +13,7 @@ class PwmSensor
+               std::shared_ptr<sdbusplus::asio::connection>& conn,
+               sdbusplus::asio::object_server& objectServer,
+               const std::string& sensorConfiguration,
+-              const std::string& sensorType);
++              const std::string& sensorType, const PowerState& readState);
+     ~PwmSensor();
+ 
+   private:
+@@ -24,6 +24,7 @@ class PwmSensor
+     std::shared_ptr<sdbusplus::asio::dbus_interface> controlInterface;
+     std::shared_ptr<sdbusplus::asio::dbus_interface> association;
+     double pwmMax;
++    PowerState readState;
+     void setValue(uint32_t value);
+     uint32_t getValue(bool errThrow = true);
+ };
+diff --git a/include/TachSensor.hpp b/include/TachSensor.hpp
+index e51f2ac..75c18b5 100644
+--- a/include/TachSensor.hpp
++++ b/include/TachSensor.hpp
+@@ -6,6 +6,7 @@
+ #include <boost/container/flat_map.hpp>
+ #include <boost/container/flat_set.hpp>
+ #include <gpiod.hpp>
++#include <openbmc/libobmcdbus.hpp>
+ #include <sdbusplus/asio/object_server.hpp>
+ #include <sensor.hpp>
+ 
+@@ -19,7 +20,8 @@ class PresenceSensor
+ {
+   public:
+     PresenceSensor(const std::string& pinName, bool inverted,
+-                   boost::asio::io_service& io, const std::string& name);
++                   boost::asio::io_service& io, const std::string& name,
++                   const std::string& selSensorName);
+     ~PresenceSensor();
+ 
+     void monitorPresence(void);
+@@ -32,6 +34,8 @@ class PresenceSensor
+     gpiod::line gpioLine;
+     boost::asio::posix::stream_descriptor gpioFd;
+     std::string name;
++    std::string selSensorName;
++    boost::asio::steady_timer delayTimer;
+ };
+ 
+ namespace redundancy
+@@ -104,18 +108,40 @@ class TachSensor :
+         int count = 0);
+ };
+ 
+-inline void logFanInserted(const std::string& device)
++inline void logFanInserted(const std::string& device,
++                           const std::string& selSensorName)
+ {
+     sd_journal_send("MESSAGE=%s", "Fan Inserted", "PRIORITY=%i", LOG_ERR,
+                     "REDFISH_MESSAGE_ID=%s", "OpenBMC.0.1.FanInserted",
+                     "REDFISH_MESSAGE_ARGS=%s", device.c_str(), NULL);
++
++    // Log IPMI SEL
++    if (!selSensorName.empty())
++    {
++        const std::string selAddMessage = device + " Inserted";
++        const std::string path =
++            sensorPathPrefix + ("discrete/" + selSensorName);
++        std::vector<uint8_t> eventData = {0x01, 0xFF, 0xFF};
++        ipmiSelAdd(selAddMessage, path, eventData, true);
++    }
+ }
+ 
+-inline void logFanRemoved(const std::string& device)
++inline void logFanRemoved(const std::string& device,
++                          const std::string& selSensorName)
+ {
+     sd_journal_send("MESSAGE=%s", "Fan Removed", "PRIORITY=%i", LOG_ERR,
+                     "REDFISH_MESSAGE_ID=%s", "OpenBMC.0.1.FanRemoved",
+                     "REDFISH_MESSAGE_ARGS=%s", device.c_str(), NULL);
++
++    // Log IPMI SEL
++    if (!selSensorName.empty())
++    {
++        const std::string selAddMessage = device + " Removed";
++        const std::string path =
++            sensorPathPrefix + ("discrete/" + selSensorName);
++        std::vector<uint8_t> eventData = {0x00, 0xFF, 0xFF};
++        ipmiSelAdd(selAddMessage, path, eventData, true);
++    }
+ }
+ 
+ inline void logFanRedundancyLost(void)
+diff --git a/src/FanMain.cpp b/src/FanMain.cpp
+index ad2f277..f65fe91 100644
+--- a/src/FanMain.cpp
++++ b/src/FanMain.cpp
+@@ -60,6 +60,9 @@ enum FanTypes
+     max,
+ };
+ 
++static boost::container::flat_map<std::string, std::shared_ptr<PresenceSensor>>
++    presenceSensors;
++
+ constexpr const char* redundancyConfiguration =
+     "xyz.openbmc_project.Configuration.FanRedundancy";
+ static std::regex inputRegex(R"(fan(\d+)_input)");
+@@ -253,13 +256,35 @@ void createSensors(
+                     }
+                     else
+                     {
++                        std::string selSensorName;
++                        auto findSelSensorName =
++                            presenceConfig->second.find("SelSensorName");
++                        if (findSelSensorName != presenceConfig->second.end())
++                        {
++                            selSensorName = std::get<std::string>(
++                                findSelSensorName->second);
++                        }
++
+                         bool inverted = std::get<std::string>(
+                                             findPolarity->second) == "Low";
+                         if (auto pinName =
+                                 std::get_if<std::string>(&findPinName->second))
+                         {
+-                            presenceSensor = std::make_shared<PresenceSensor>(
+-                                *pinName, inverted, io, sensorName);
++                            auto findPresenceSensor =
++                                presenceSensors.find(*pinName);
++                            if (findPresenceSensor == presenceSensors.end())
++                            {
++                                presenceSensor =
++                                    std::make_shared<PresenceSensor>(
++                                        *pinName, inverted, io, sensorName,
++                                        selSensorName);
++                                presenceSensors.emplace(*pinName,
++                                                        presenceSensor);
++                            }
++                            else
++                            {
++                                presenceSensor = findPresenceSensor->second;
++                            }
+                         }
+                         else
+                         {
+@@ -347,7 +372,7 @@ void createSensors(
+                 {
+                     pwmSensors[pwmPath] = std::make_shared<PwmSensor>(
+                         pwmName, pwmPath, dbusConnection, objectServer,
+-                        *interfacePath, "Fan");
++                        *interfacePath, "Fan", readState);
+                 }
+             }
+ 
+diff --git a/src/PSUSensorMain.cpp b/src/PSUSensorMain.cpp
+index 603e693..3dc45aa 100644
+--- a/src/PSUSensorMain.cpp
++++ b/src/PSUSensorMain.cpp
+@@ -247,7 +247,8 @@ void checkEventLimits(
+ 
+         pwmSensors[psuName + labelHead] = std::make_unique<PwmSensor>(
+             "Pwm_" + psuName + "_" + pwmName.second, pwmPathStr, dbusConnection,
+-            objectServer, interfacePath + "_" + pwmName.second, "PSU");
++            objectServer, interfacePath + "_" + pwmName.second, "PSU",
++            PowerState::always);
+     }
+ }
+ 
+diff --git a/src/PwmSensor.cpp b/src/PwmSensor.cpp
+index f76ea50..3c41a79 100644
+--- a/src/PwmSensor.cpp
++++ b/src/PwmSensor.cpp
+@@ -31,9 +31,10 @@ PwmSensor::PwmSensor(const std::string& name, const std::string& sysPath,
+                      std::shared_ptr<sdbusplus::asio::connection>& conn,
+                      sdbusplus::asio::object_server& objectServer,
+                      const std::string& sensorConfiguration,
+-                     const std::string& sensorType) :
++                     const std::string& sensorType,
++                     const PowerState& readState) :
+     sysPath(sysPath),
+-    objectServer(objectServer), name(name)
++    objectServer(objectServer), name(name), readState(readState)
+ {
+     // add interface under sensor and Control.FanPwm as Control is used
+     // in obmc project, also add sensor so it can be viewed as a sensor
+@@ -90,6 +91,14 @@ PwmSensor::PwmSensor(const std::string& name, const std::string& sysPath,
+             return 1;
+         },
+         [this](double& curVal) {
++            if (((this->readState == PowerState::on) && !isPowerOn()) ||
++                ((this->readState == PowerState::biosPost) &&
++                 (!hasBiosPost() || !isPowerOn())))
++            {
++                curVal = std::numeric_limits<double>::quiet_NaN();
++                return curVal;
++            }
++
+             double currScaled = (curVal / 100.0) * pwmMax;
+             auto currInt = static_cast<uint32_t>(std::round(currScaled));
+             auto getInt = getValue();
+diff --git a/src/TachSensor.cpp b/src/TachSensor.cpp
+index ccdc451..2075b05 100644
+--- a/src/TachSensor.cpp
++++ b/src/TachSensor.cpp
+@@ -88,7 +88,7 @@ TachSensor::TachSensor(const std::string& path, const std::string& objectType,
+         itemAssoc = objectServer.add_interface(
+             "/xyz/openbmc_project/inventory/" + name, association::interface);
+         itemAssoc->register_property(
+-            "associations",
++            "Associations",
+             std::vector<Association>{{"sensors", "inventory", dbusPath}});
+         itemAssoc->initialize();
+     }
+@@ -372,9 +372,11 @@ void TachSensor::checkThresholds(void)
+ 
+ PresenceSensor::PresenceSensor(const std::string& gpioName, bool inverted,
+                                boost::asio::io_service& io,
+-                               const std::string& name) :
++                               const std::string& name,
++                               const std::string& selSensorName) :
+     inverted(inverted),
+-    gpioLine(gpiod::find_line(gpioName)), gpioFd(io), name(name)
++    gpioLine(gpiod::find_line(gpioName)), gpioFd(io), name(name),
++    selSensorName(selSensorName), delayTimer(io)
+ {
+     if (!gpioLine)
+     {
+@@ -385,10 +387,15 @@ PresenceSensor::PresenceSensor(const std::string& gpioName, bool inverted,
+ 
+     try
+     {
+-        gpioLine.request({"FanSensor", gpiod::line_request::EVENT_BOTH_EDGES,
++        gpioLine.request({"fansensor", gpiod::line_request::EVENT_BOTH_EDGES,
+                           inverted ? gpiod::line_request::FLAG_ACTIVE_LOW : 0});
+         status = gpioLine.get_value();
+ 
++        if (!status)
++        {
++            logFanRemoved(name, selSensorName);
++        }
++
+         int gpioLineFd = gpioLine.event_get_fd();
+         if (gpioLineFd < 0)
+         {
+@@ -439,15 +446,28 @@ void PresenceSensor::monitorPresence(void)
+ void PresenceSensor::read(void)
+ {
+     gpioLine.event_read();
+-    status = gpioLine.get_value();
++    int currentStatus = gpioLine.get_value();
+     // Read is invoked when an edge event is detected by monitorPresence
+-    if (status)
++    if (currentStatus)
+     {
+-        logFanInserted(name);
++        // To prevent from logging lower critical threshold
++        delayTimer.expires_after(std::chrono::seconds(2));
++        delayTimer.async_wait(
++            [this, currentStatus](const boost::system::error_code& ec) {
++                if (ec == boost::asio::error::operation_aborted)
++                {
++                    return; // we're being canceled
++                }
++
++                status = currentStatus;
++            });
++
++        logFanInserted(name, selSensorName);
+     }
+     else
+     {
+-        logFanRemoved(name);
++        status = currentStatus;
++        logFanRemoved(name, selSensorName);
+     }
+ }
+ 
+-- 
+2.32.0
+

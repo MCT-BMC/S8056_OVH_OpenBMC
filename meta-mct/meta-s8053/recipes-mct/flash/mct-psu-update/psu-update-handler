@@ -1,0 +1,22 @@
+#! /bin/sh
+IMAGE_FILE=$1
+
+PSU_UPDATER_CMD="/usr/sbin/psu-update"
+
+PROGREE_ENABLE=$2
+
+SELECT_PSU=$3
+
+PSU_VERSION_ID=$(echo $IMAGE_FILE |cut -d / -f 4)
+
+if [ ! -n "$SELECT_PSU"  ]; then
+    SELECT_PSU=1
+fi
+
+if [  -n "$PROGREE_ENABLE"  ]; then
+    $PSU_UPDATER_CMD -P $PSU_VERSION_ID -p $IMAGE_FILE -s $SELECT_PSU
+else
+    $PSU_UPDATER_CMD -p $IMAGE_FILE -s $SELECT_PSU
+fi
+
+exit 0

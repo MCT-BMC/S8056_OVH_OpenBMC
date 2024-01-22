@@ -1,0 +1,70 @@
+From 92bfb9d029b4a0fe2a9f274c1b31a11b024aba90 Mon Sep 17 00:00:00 2001
+From: Eli Huang <Eli_Huang@wiwynn.com>
+Date: Mon, 19 Apr 2021 13:58:28 +0800
+Subject: [PATCH] Set system restart cause on dbus
+
+Description:
+- When BMC watchdog timout, setting system restart cause on dbus.
+---
+ src/watchdog.cpp | 31 +++++++++++++++++++++++++++++++
+ 1 file changed, 31 insertions(+)
+
+diff --git a/src/watchdog.cpp b/src/watchdog.cpp
+index 66dd97b..c07acb9 100644
+--- a/src/watchdog.cpp
++++ b/src/watchdog.cpp
+@@ -6,6 +6,7 @@
+ #include <phosphor-logging/log.hpp>
+ #include <sdbusplus/exception.hpp>
+ #include <xyz/openbmc_project/Common/error.hpp>
++#include <xyz/openbmc_project/State/Host/server.hpp>
+ 
+ namespace phosphor
+ {
+@@ -33,6 +34,14 @@ constexpr auto selAddMethod = "IpmiSelAdd";
+ constexpr uint8_t wdEventData1Header = 0xc0;
+ constexpr uint16_t selBMCGenID = 0x0020;
+ 
++constexpr auto RESTART_CAUSE_SERVICE = "xyz.openbmc_project.State.Host";
++constexpr auto RESTART_CAUSE_OBJ_PATH = "/xyz/openbmc_project/state/host0";
++constexpr auto RESTART_CAUSE_INTERFACE = "xyz.openbmc_project.State.Host";
++constexpr auto RESTART_CAUSE_PROPERTY = "RestartCause";
++constexpr auto PROP_INTF = "org.freedesktop.DBus.Properties";
++constexpr auto METHOD_SET = "Set";
++namespace State = sdbusplus::xyz::openbmc_project::State::server;
++
+ void Watchdog::resetTimeRemaining(bool enableWatchdog)
+ {
+     timeRemaining(interval());
+@@ -148,6 +157,28 @@ void Watchdog::timeOutHandler()
+             entry("TIMER_USE=%s", convertForMessage(expiredTimerUse()).c_str()),
+             entry("TARGET=%s", target->second.c_str()));
+ 
++        if ((expiredTimerUse() == TimerUse::BIOSFRB2) &&
++            (action == Action::HardReset || action == Action::PowerCycle))
++        {
++            try
++            {
++                std::string restartCauseStr =
++                    State::Host::convertRestartCauseToString(
++                        State::Host::RestartCause::WatchdogTimer);
++                auto method = bus.new_method_call(RESTART_CAUSE_SERVICE,
++                                                  RESTART_CAUSE_OBJ_PATH,
++                                                  PROP_INTF, METHOD_SET);
++                method.append(RESTART_CAUSE_INTERFACE, RESTART_CAUSE_PROPERTY,
++                              std::variant<std::string>(restartCauseStr));
++                bus.call_noreply(method);
++            }
++            catch (const std::exception& e)
++            {
++                log<level::ERR>("watchdog: Failed to set restart cause",
++                                entry("ERROR=%s", e.what()));
++            }
++        }
++
+         try
+         {
+             auto method = bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_ROOT,
+-- 
+2.28.0
+

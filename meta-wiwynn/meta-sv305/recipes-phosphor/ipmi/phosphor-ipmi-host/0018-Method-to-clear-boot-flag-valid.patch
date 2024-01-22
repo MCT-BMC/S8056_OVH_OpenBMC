@@ -1,0 +1,365 @@
+From a7d66fd645611c80646dc399a20f601d9da09581 Mon Sep 17 00:00:00 2001
+From: JarvisWang <Jarvis_Wang@wiwynn.com>
+Date: Mon, 8 Mar 2021 18:19:30 +0800
+Subject: [PATCH] Method to clear boot flag valid
+
+---
+ chassishandler.cpp | 220 ++++++++++++++++++++++++++++++++++++++++++++-
+ chassishandler.hpp |   2 +
+ 2 files changed, 219 insertions(+), 3 deletions(-)
+
+diff --git a/chassishandler.cpp b/chassishandler.cpp
+index 0926b54f..af95dc7b 100644
+--- a/chassishandler.cpp
++++ b/chassishandler.cpp
+@@ -44,6 +44,7 @@ static constexpr uint8_t setParmBootFlagsPermanent = 0x40;
+ static constexpr uint8_t setParmBootFlagsValidOneTime = 0x80;
+ static constexpr uint8_t setParmBootFlagsValidPermanent = 0xC0;
+ static constexpr uint8_t setParmBootFlagsBootTypeUefi = 0x20;
++static constexpr uint8_t setParmBootFlagsValidBit = 0x80;
+ 
+ // Set In Progress
+ static constexpr uint8_t setParmSetStatusComplete = 0x00;
+@@ -73,11 +74,33 @@ static constexpr size_t encIdentifyObjectsSize = 1;
+ static constexpr size_t chassisIdentifyReqLength = 2;
+ static constexpr size_t identifyIntervalPos = 0;
+ static constexpr size_t forceIdentifyPos = 1;
++static std::chrono::seconds maxValidTime = std::chrono::seconds(60);
+ 
+ static bool uefiboot = true;
+ static bool setInProgress = false;
+ static uint8_t bootInitiatorAckData = 0xff;
+ static bool biosCMOSclear = false;
++static uint8_t bootFlagValidBitClearingMask = 0x0;
++static bool bootFlagValid = false;
++static uint8_t bootFlagValidBitClearingChassisCtl = 0x08;
++static uint8_t bootFlagValidBitClearingUnsupport = 0xf0;
++static std::chrono::time_point<std::chrono::steady_clock> bootFlagValidTime;
++static bool restartAfterValidBit = false;
++
++constexpr auto RESTART_CAUSE_SERVICE = "xyz.openbmc_project.State.Host";
++constexpr auto RESTART_CAUSE_OBJ_PATH = "/xyz/openbmc_project/state/host0";
++constexpr auto RESTART_CAUSE_INTERFACE = "xyz.openbmc_project.State.Host";
++constexpr auto RESTART_CAUSE_PROPERTY = "RestartCause";
++constexpr auto RESTART_CAUSE_UNKNOWN = "xyz.openbmc_project.State.Host.RestartCause.Unknown";
++constexpr auto RESTART_CAUSE_POWER_BTN = "xyz.openbmc_project.State.Host.RestartCause.PowerButton";
++constexpr auto RESTART_CAUSE_RESET_BTN = "xyz.openbmc_project.State.Host.RestartCause.ResetButton";
++constexpr auto RESTART_CAUSE_WDT_RESET = "xyz.openbmc_project.State.Host.RestartCause.WatchdogTimer";
++constexpr auto RESTART_CAUSE_CHASSIS_CTL = "xyz.openbmc_project.State.Host.RestartCause.RemoteCommand";
++constexpr auto BOOT_OPTION_SERVICE = "xyz.openbmc_project.Settings";
++constexpr auto BOOT_OPTION_OBJ_PATH = "/xyz/openbmc_project/control/host0/boot_option";
++constexpr auto BOOT_OPTION_INTERFACE = "xyz.openbmc_project.Control.Boot.Option";
++constexpr auto FLAG_CLEAR_PROPERTY = "ClearBootFlagValid";
++constexpr auto VALID_CLEARING_PROPERTY = "BootFlagValidClearing";
+ 
+ namespace ipmi
+ {
+@@ -1408,6 +1431,46 @@ void indicate_no_softoff_needed()
+     std::ofstream(path.c_str());
+ }
+ 
++int clearBootFlagValidAndSetRestart()
++{
++    using namespace chassis::internal;
++
++    if ((bootFlagValidBitClearingMask & bootFlagValidBitClearingChassisCtl) == 0)
++    {
++        auto current = std::chrono::steady_clock::now();
++        std::chrono::seconds sec =
++        std::chrono::duration_cast<std::chrono::seconds>(current-bootFlagValidTime);
++
++        if (sec > maxValidTime)
++        {
++            bootFlagValid = false;
++            restartAfterValidBit = false;
++        }
++        else
++        {
++            bootFlagValidTime = current;
++            restartAfterValidBit = true;
++        }
++    }
++
++    try
++    {
++        auto method = dbus.new_method_call(RESTART_CAUSE_SERVICE, 
++                                        RESTART_CAUSE_OBJ_PATH,
++                                        ipmi::PROP_INTF, ipmi::METHOD_SET);
++        method.append(RESTART_CAUSE_INTERFACE, RESTART_CAUSE_PROPERTY, 
++                    std::variant<std::string>(RESTART_CAUSE_CHASSIS_CTL));
++        dbus.call_noreply(method);
++    }
++    catch(const std::exception& e)
++    {
++        std::cerr << "Fail to set restart cause:" << e.what() << '\n';
++        return -1;
++    }
++
++    return 0;
++}
++
+ /** @brief Implementation of chassis control command
+  *
+  *  @param - chassisControl command byte
+@@ -1421,6 +1484,7 @@ ipmi::RspType<> ipmiChassisControl(uint8_t chassisControl)
+     {
+         case CMD_POWER_ON:
+             rc = initiate_state_transition(State::Host::Transition::On);
++            clearBootFlagValidAndSetRestart();
+             break;
+         case CMD_POWER_OFF:
+             // This path would be hit in 2 conditions.
+@@ -1462,6 +1526,7 @@ ipmi::RspType<> ipmiChassisControl(uint8_t chassisControl)
+             // Start the system power reset service
+             std::string resetService("host-powerreset.service");
+             rc = startSystemdUnit(resetService);
++            clearBootFlagValidAndSetRestart();
+             break;
+         }
+         case CMD_POWER_CYCLE:
+@@ -1476,6 +1541,7 @@ ipmi::RspType<> ipmiChassisControl(uint8_t chassisControl)
+             indicate_no_softoff_needed();
+ 
+             rc = initiate_state_transition(State::Host::Transition::Reboot);
++            clearBootFlagValidAndSetRestart();
+             break;
+ 
+         case CMD_SOFT_OFF_VIA_OVER_TEMP:
+@@ -1718,6 +1784,81 @@ static ipmi::Cc setBootMode(const Mode::Modes& mode)
+     return ipmi::ccSuccess;
+ }
+ 
++static int checkBootFlagAfterRestart()
++{
++    using namespace chassis::internal;
++    bool flagClear = false;
++
++    try
++    {
++        auto method = dbus.new_method_call(BOOT_OPTION_SERVICE, 
++                                        BOOT_OPTION_OBJ_PATH,
++                                        ipmi::PROP_INTF, ipmi::METHOD_GET);
++        method.append(BOOT_OPTION_INTERFACE, FLAG_CLEAR_PROPERTY);
++        auto reply = dbus.call(method);
++
++        if (reply.is_method_error())
++        {
++            std::cerr << "Fail to get flag clear\n";
++            return -1;
++        }
++
++        std::variant<bool> result;
++        reply.read(result);
++        flagClear = std::get<bool>(result);
++    }
++    catch (const std::exception& e)
++    {
++        std::cerr << "Check boot flag clear exception:" << e.what() << '\n';
++        return -1;
++    }
++
++    if (flagClear)
++    {
++        bootFlagValid = false;
++        flagClear = false;
++        restartAfterValidBit = false;
++
++        try
++        {
++            auto method = dbus.new_method_call(BOOT_OPTION_SERVICE, 
++                                        BOOT_OPTION_OBJ_PATH,
++                                        ipmi::PROP_INTF, ipmi::METHOD_SET);
++            method.append(BOOT_OPTION_INTERFACE, FLAG_CLEAR_PROPERTY, std::variant<bool>(flagClear));
++            auto reply = dbus.call(method);
++
++            if (reply.is_method_error())
++            {
++                std::cerr << "Fail to set flag clear\n";
++                return -1;
++            }
++        }
++        catch(const std::exception& e)
++        {
++            std::cerr << "Set boot flag clear excpetion:" << e.what() << '\n';
++            return -1;
++        }
++    }
++    
++    return 0;
++}
++
++static int checkIsBootFlagTimeout()
++{
++    auto current = std::chrono::steady_clock::now();
++    std::chrono::seconds duration(0);
++    duration = std::chrono::duration_cast<std::chrono::seconds>(current-bootFlagValidTime);
++
++    if (!(bootFlagValidBitClearingMask & bootFlagValidBitClearingChassisCtl) &&
++        (restartAfterValidBit == false) && 
++        (duration > maxValidTime))
++    {
++        bootFlagValid = false;
++    }
++
++    return 0;
++}
++
+ /** @brief implements the Get Chassis system boot option
+  *  @param bootOptionParameter   - boot option parameter selector
+  *  @param reserved1    - reserved bit
+@@ -1843,6 +1984,18 @@ ipmi::RspType<ipmi::message::Payload>
+                 bootOptionParam |= setParmBootFlagsBootTypeUefi;
+             }
+ 
++            checkBootFlagAfterRestart();
++            checkIsBootFlagTimeout();
++
++            if (bootFlagValid)
++            {
++                bootOptionParam |= setParmBootFlagsValidBit;
++            }
++            else
++            {
++                bootOptionParam &= ~setParmBootFlagsValidBit;
++            }
++
+             response.pack(bootOptionParameter, reserved1, bootOptionParam,
+                           uint2_t{}, uint4_t{bootOption}, false, biosCMOSclear, uint8_t{},
+                           uint8_t{}, uint8_t{});
+@@ -1855,6 +2008,12 @@ ipmi::RspType<ipmi::message::Payload>
+             return ipmi::responseUnspecifiedError();
+         }
+     }
++    else if (static_cast<uint8_t>(bootOptionParameter) ==
++             static_cast<uint8_t>(BootOptionParameter::bootFlagValidBitClearing))
++    {
++        response.pack(bootOptionParameter, reserved1, bootFlagValidBitClearingMask);
++        return ipmi::responseSuccess(std::move(response));
++    }
+     else
+     {
+         if ((bootOptionParameter >= oemParmStart) &&
+@@ -1889,6 +2048,34 @@ ipmi::RspType<ipmi::message::Payload>
+     return ipmi::responseUnspecifiedError();
+ }
+ 
++static int setBootFlagValidClearing()
++{
++    using namespace chassis::internal;
++
++    try
++    {
++        auto method = dbus.new_method_call(BOOT_OPTION_SERVICE, 
++                                    BOOT_OPTION_OBJ_PATH,
++                                    ipmi::PROP_INTF, ipmi::METHOD_SET);
++        method.append(BOOT_OPTION_INTERFACE, VALID_CLEARING_PROPERTY, 
++                    std::variant<uint8_t>(bootFlagValidBitClearingMask));
++        auto reply = dbus.call(method);
++
++        if (reply.is_method_error())
++        {
++            std::cerr << "Fail to set valid bit clearing\n";
++            return -1;
++        }
++    }
++    catch(const std::exception& e)
++    {
++        std::cerr << "Set valid bit clearing excpetion:" << e.what() << '\n';
++        return -1;
++    }
++    
++    return 0;
++}
++
+ ipmi::RspType<> ipmiChassisSetSysBootOptions(ipmi::Context::ptr ctx,
+                                              uint7_t parameterSelector,
+                                              bool parameterIsValid,
+@@ -1934,7 +2121,7 @@ ipmi::RspType<> ipmiChassisSetSysBootOptions(ipmi::Context::ptr ctx,
+     else if (parameterSelector == static_cast<uint7_t>(BootOptionParameter::bootFlags))
+     {
+         uint5_t rsvd;
+-        bool validFlag;
++        //bool validFlag;
+         bool permanent;
+         bool biosBootType;
+         bool lockOutResetButton;
+@@ -1948,7 +2135,9 @@ ipmi::RspType<> ipmiChassisSetSysBootOptions(ipmi::Context::ptr ctx,
+         uint5_t deviceInstance;
+         uint3_t rsvd2;
+ 
+-        if (data.unpack(rsvd, biosBootType, permanent, validFlag,
++        checkBootFlagAfterRestart();
++
++        if (data.unpack(rsvd, biosBootType, permanent, bootFlagValid,
+                         lockOutResetButton, screenBlank, bootDeviceSelector,
+                         lockKeyboard, cmosClear, data3, biosInfo, rsvd1,
+                         deviceInstance, rsvd2) != 0 ||
+@@ -1969,12 +2158,15 @@ ipmi::RspType<> ipmiChassisSetSysBootOptions(ipmi::Context::ptr ctx,
+             "/xyz/openbmc_project/control/host0/boot/one_time";
+ 
+         /* make sure paremeter is valid */
+-        if (validFlag)
++        if (bootFlagValid)
+         {
+             uefiboot = biosBootType;
+             biosCMOSclear = cmosClear;
++            bootFlagValidTime = std::chrono::steady_clock::now();
+         }
+ 
++        restartAfterValidBit = false;
++
+         try
+         {
+             settings::Objects& objects = getObjects();
+@@ -2080,6 +2272,28 @@ ipmi::RspType<> ipmiChassisSetSysBootOptions(ipmi::Context::ptr ctx,
+         data.trailingOk = true;
+         return ipmi::responseSuccess();
+     }
++    else if (parameterSelector ==
++             static_cast<uint7_t>(BootOptionParameter::bootFlagValidBitClearing))
++    {
++        uint8_t input = 0;
++
++        if (data.unpack(input) != 0 || !data.fullyUnpacked())
++        {
++            return ipmi::responseReqDataLenInvalid();
++        }
++
++        if ((input & bootFlagValidBitClearingUnsupport) != 0)
++        {
++            return ipmi::responseInvalidFieldRequest();
++        }
++        else
++        {
++            bootFlagValidBitClearingMask = input;
++        }
++
++        setBootFlagValidClearing();
++        return ipmi::responseSuccess();
++    }
+     else
+     {
+         if ((parameterSelector >= static_cast<uint7_t>(oemParmStart)) &&
+diff --git a/chassishandler.hpp b/chassishandler.hpp
+index d80df136..509b2c2b 100644
+--- a/chassishandler.hpp
++++ b/chassishandler.hpp
+@@ -47,6 +47,7 @@ enum ipmi_chassis_control_cmds : uint8_t
+ enum class BootOptionParameter : size_t
+ {
+     setInProgress = 0x0,
++    bootFlagValidBitClearing = 0x3,
+     bootInfo = 0x4,
+     bootFlags = 0x5,
+     opalNetworkSettings = 0x61
+@@ -55,6 +56,7 @@ enum class BootOptionParameter : size_t
+ enum class BootOptionResponseSize : size_t
+ {
+     setInProgress = 1,
++    bootFlagValidBitClearing = 1,
+     bootFlags = 5,
+     opalNetworkSettings = 50
+ };
+-- 
+2.28.0
+

@@ -1,0 +1,10 @@
+[Unit]
+Description=Set Post Complete Deassert
+
+[Service]
+Type=oneshot
+
+ExecStart=/usr/bin/busctl set-property "org.openbmc.control.Power" "/org/openbmc/control/power0" "org.openbmc.control.PostComplete" "postcomplete" i 1
+ExecStart=/usr/bin/busctl call xyz.openbmc_project.Discrete.Sensor /xyz/openbmc_project/sensors/discrete/End_of_POST xyz.openbmc_project.Sensor.Value setEndofPOST iu 1 1
+
+ExecStopPost=/usr/bin/busctl set-property xyz.openbmc_project.GpioMonitor /xyz/openbmc_project/gpio/event xyz.openbmc_project.GpioEvent PostComplete s "Idle"

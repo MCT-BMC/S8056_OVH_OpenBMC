@@ -1,0 +1,78 @@
+From ce55f2232f67471cef1899694899eb03a3d5622d Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Mon, 20 Apr 2020 10:59:12 +0800
+Subject: [PATCH 07/11] Change to steady_timer used in NIC sensor
+
+---
+ include/NICSensor.hpp | 3 ++-
+ src/NICSensor.cpp     | 3 +--
+ src/NICSensorMain.cpp | 4 ++--
+ 3 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/include/NICSensor.hpp b/include/NICSensor.hpp
+index 3c6905e..b27ed40 100644
+--- a/include/NICSensor.hpp
++++ b/include/NICSensor.hpp
+@@ -3,6 +3,7 @@
+ #include <Thresholds.hpp>
+ #include <sdbusplus/asio/object_server.hpp>
+ #include <sensor.hpp>
++#include <boost/asio/steady_timer.hpp>
+ 
+ #define NIC_SLAVE_ADDRESS 0x1F
+ 
+@@ -28,7 +29,7 @@ public:
+ 
+ private:
+     sdbusplus::asio::object_server& objServer;
+-    boost::asio::deadline_timer waitTimer;
++    boost::asio::steady_timer waitTimer;
+     boost::asio::streambuf readBuf;
+     std::string path1;
+     std::string path2;
+diff --git a/src/NICSensor.cpp b/src/NICSensor.cpp
+index 4da7e08..323c555 100644
+--- a/src/NICSensor.cpp
++++ b/src/NICSensor.cpp
+@@ -21,7 +21,6 @@
+ #include <NICSensor.hpp>
+ #include <boost/algorithm/string/predicate.hpp>
+ #include <boost/algorithm/string/replace.hpp>
+-#include <boost/date_time/posix_time/posix_time.hpp>
+ #include <iostream>
+ #include <limits>
+ #include <sdbusplus/asio/connection.hpp>
+@@ -204,7 +203,7 @@ void NICSensor::handleResponse()
+         updateValueInvalid(false);
+     }
+ 
+-    waitTimer.expires_from_now(boost::posix_time::milliseconds(sensorPollMs));
++    waitTimer.expires_from_now(boost::asio::chrono::milliseconds(sensorPollMs));
+     waitTimer.async_wait([&](const boost::system::error_code& ec) {
+         if (ec == boost::asio::error::operation_aborted)
+         {
+diff --git a/src/NICSensorMain.cpp b/src/NICSensorMain.cpp
+index 72d27b9..fd4aa7e 100644
+--- a/src/NICSensorMain.cpp
++++ b/src/NICSensorMain.cpp
+@@ -227,7 +227,7 @@ int main()
+         createSensors(io, objectServer, sensors, systemBus, nullptr);
+     });
+ 
+-    boost::asio::deadline_timer filterTimer(io);
++    boost::asio::steady_timer filterTimer(io);
+     std::function<void(sdbusplus::message::message&)> eventHandler =
+     [&](sdbusplus::message::message & message) {
+         if (message.is_method_error())
+@@ -237,7 +237,7 @@ int main()
+         }
+         sensorsChanged->insert(message.get_path());
+         // this implicitly cancels the timer
+-        filterTimer.expires_from_now(boost::posix_time::seconds(1));
++        filterTimer.expires_from_now(boost::asio::chrono::seconds(1));
+ 
+         filterTimer.async_wait([&](const boost::system::error_code & ec) {
+             if (ec == boost::asio::error::operation_aborted)
+-- 
+2.24.1
+

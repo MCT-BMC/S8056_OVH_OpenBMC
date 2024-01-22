@@ -1,0 +1,10 @@
+[Unit]
+Description=Assert %I
+StartLimitIntervalSec=6
+StartLimitBurst=1
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env prochotThermtripHandler assert CPU_STATE %I
+SyslogIdentifier=gpio-prochot-thermtrip
+RemainAfterExit=true

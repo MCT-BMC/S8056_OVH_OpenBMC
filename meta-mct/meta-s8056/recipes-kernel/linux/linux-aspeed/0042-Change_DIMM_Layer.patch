@@ -1,0 +1,80 @@
+diff --git a/drivers/hwmon/sbrmi.c b/drivers/hwmon/sbrmi.c
+index 3fc161c6e4b6..f9eedcddcf0c 100644
+--- a/drivers/hwmon/sbrmi.c
++++ b/drivers/hwmon/sbrmi.c
+@@ -93,6 +93,10 @@ enum sbrmi_msg_id {
+ #define DIMM_PORT0_CHANNEL5_TEMP	0x05
+ #define DIMM_PORT0_CHANNEL6_TEMP	0x06
+ #define DIMM_PORT0_CHANNEL7_TEMP	0x07
++#define DIMM_PORT0_CHANNEL8_TEMP        0x08
++#define DIMM_PORT0_CHANNEL9_TEMP        0x09
++#define DIMM_PORT0_CHANNELA_TEMP        0x0A
++#define DIMM_PORT0_CHANNELB_TEMP        0x0B
+ #define DIMM_PORT1_CHANNEL0_TEMP	0x10
+ #define DIMM_PORT1_CHANNEL1_TEMP	0x11
+ #define DIMM_PORT1_CHANNEL2_TEMP	0x12
+@@ -101,16 +105,24 @@ enum sbrmi_msg_id {
+ #define DIMM_PORT1_CHANNEL5_TEMP	0x15
+ #define DIMM_PORT1_CHANNEL6_TEMP	0x16
+ #define DIMM_PORT1_CHANNEL7_TEMP	0x17
++#define DIMM_PORT1_CHANNEL8_TEMP        0x18
++#define DIMM_PORT1_CHANNEL9_TEMP        0x19
++#define DIMM_PORT1_CHANNELA_TEMP        0x1A
++#define DIMM_PORT1_CHANNELB_TEMP        0x1B
+ 
+ static const u32 platform_dimm_temp_regs[] = {
+ 	DIMM_PORT0_CHANNEL0_TEMP, DIMM_PORT0_CHANNEL1_TEMP,
+ 	DIMM_PORT0_CHANNEL2_TEMP, DIMM_PORT0_CHANNEL3_TEMP,
+ 	DIMM_PORT0_CHANNEL4_TEMP, DIMM_PORT0_CHANNEL5_TEMP,
+-	// DIMM_PORT0_CHANNEL6_TEMP, DIMM_PORT0_CHANNEL7_TEMP,
++	DIMM_PORT0_CHANNEL6_TEMP, DIMM_PORT0_CHANNEL7_TEMP,
++	DIMM_PORT0_CHANNEL8_TEMP, DIMM_PORT0_CHANNEL9_TEMP,
++	DIMM_PORT0_CHANNELA_TEMP, DIMM_PORT0_CHANNELB_TEMP,
+ 	DIMM_PORT1_CHANNEL0_TEMP, DIMM_PORT1_CHANNEL1_TEMP,
+ 	DIMM_PORT1_CHANNEL2_TEMP, DIMM_PORT1_CHANNEL3_TEMP,
+ 	DIMM_PORT1_CHANNEL4_TEMP, DIMM_PORT1_CHANNEL5_TEMP,
+-	// DIMM_PORT1_CHANNEL6_TEMP, DIMM_PORT1_CHANNEL7_TEMP,
++	DIMM_PORT1_CHANNEL6_TEMP, DIMM_PORT1_CHANNEL7_TEMP,
++	DIMM_PORT1_CHANNEL8_TEMP, DIMM_PORT1_CHANNEL9_TEMP,
++	DIMM_PORT1_CHANNELA_TEMP, DIMM_PORT1_CHANNELB_TEMP,
+ };
+ 
+ static const char *const platform_dimm_temp_labels[] = {
+@@ -126,6 +138,18 @@ static const char *const platform_dimm_temp_labels[] = {
+ 	"P0_DIMM_CH_J0",
+ 	"P0_DIMM_CH_K0",
+ 	"P0_DIMM_CH_L0",
++	"P0_DIMM_CH_A1",
++        "P0_DIMM_CH_B1",
++        "P0_DIMM_CH_C1",
++        "P0_DIMM_CH_D1",
++        "P0_DIMM_CH_E1",
++        "P0_DIMM_CH_F1",
++        "P0_DIMM_CH_G1",
++        "P0_DIMM_CH_H1",
++        "P0_DIMM_CH_I1",
++        "P0_DIMM_CH_J1",
++        "P0_DIMM_CH_K1",
++        "P0_DIMM_CH_L1",
+ 	// "P0_DIMM_CH_M0",
+ 	// "P0_DIMM_CH_N0",
+ 	// "P0_DIMM_CH_O0",
+@@ -272,6 +296,18 @@ static const struct hwmon_channel_info *sbrmi_info[] = {
+ 	HWMON_CHANNEL_INFO(power,
+ 			   HWMON_P_INPUT | HWMON_P_CAP | HWMON_P_CAP_MAX),
+ 	HWMON_CHANNEL_INFO(temp,
++			   HWMON_T_INPUT | HWMON_T_LABEL,
++                           HWMON_T_INPUT | HWMON_T_LABEL,
++                           HWMON_T_INPUT | HWMON_T_LABEL,
++                           HWMON_T_INPUT | HWMON_T_LABEL,
++                           HWMON_T_INPUT | HWMON_T_LABEL,
++                           HWMON_T_INPUT | HWMON_T_LABEL,
++                           HWMON_T_INPUT | HWMON_T_LABEL,
++                           HWMON_T_INPUT | HWMON_T_LABEL,
++                           HWMON_T_INPUT | HWMON_T_LABEL,
++                           HWMON_T_INPUT | HWMON_T_LABEL,
++                           HWMON_T_INPUT | HWMON_T_LABEL,
++                           HWMON_T_INPUT | HWMON_T_LABEL,
+ 			   HWMON_T_INPUT | HWMON_T_LABEL,
+ 			   HWMON_T_INPUT | HWMON_T_LABEL,
+ 			   HWMON_T_INPUT | HWMON_T_LABEL,

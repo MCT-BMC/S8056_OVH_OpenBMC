@@ -1,0 +1,27 @@
+From e97deec3cd69fbdc7dafda88f411c1ba1ae41267 Mon Sep 17 00:00:00 2001
+From: Ray Lue <ray.lue@mic.com.tw>
+Date: Thu, 8 Aug 2019 10:18:42 +0800
+Subject: [PATCH] remove the sesnor data scaling
+
+---
+ dbus/dbuspassive.cpp | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+ mode change 100644 => 100755 dbus/dbuspassive.cpp
+
+diff --git a/dbus/dbuspassive.cpp b/dbus/dbuspassive.cpp
+old mode 100644
+new mode 100755
+index c199563..4a77ccf
+--- a/dbus/dbuspassive.cpp
++++ b/dbus/dbuspassive.cpp
+@@ -154,8 +154,8 @@ int handleSensorValue(sdbusplus::message::message& msg, DbusPassive* owner)
+                 std::visit(VariantToDoubleVisitor(), valPropMap->second);
+ 
+             value *= std::pow(10, owner->getScale());
+-
+-            scaleSensorReading(owner->getMin(), owner->getMax(), value);
++            
++            //scaleSensorReading(owner->getMin(), owner->getMax(), value);
+ 
+             owner->setValue(value);
+         }

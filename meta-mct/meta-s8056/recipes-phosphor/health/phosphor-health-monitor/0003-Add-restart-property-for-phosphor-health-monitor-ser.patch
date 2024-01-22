@@ -1,0 +1,28 @@
+From f4db6dcf5a6f881aae98108648bf6d5ed4dd8099 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Wed, 16 Mar 2022 09:40:31 +0800
+Subject: [PATCH 3/5] Add restart property for phosphor-health-monitor service
+
+---
+ phosphor-health-monitor.service.in | 2 ++
+ 1 file changed, 2 insertions(+)
+ mode change 100644 => 100755 phosphor-health-monitor.service.in
+
+diff --git a/phosphor-health-monitor.service.in b/phosphor-health-monitor.service.in
+old mode 100644
+new mode 100755
+index 47b1532..60fad6f
+--- a/phosphor-health-monitor.service.in
++++ b/phosphor-health-monitor.service.in
+@@ -6,6 +6,8 @@ ExecStart=@bindir@/health-monitor
+ Type=dbus
+ BusName=xyz.openbmc_project.HealthMon
+ SyslogIdentifier=phosphor-health-monitor
++Restart=always
++RestartSec=5
+ 
+ [Install]
+ WantedBy=multi-user.target
+-- 
+2.7.4
+

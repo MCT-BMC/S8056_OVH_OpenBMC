@@ -1,0 +1,26 @@
+diff --git a/include/TachSensor.hpp b/include/TachSensor.hpp
+index 75dcd067..91bd3c2e 100644
+--- a/include/TachSensor.hpp
++++ b/include/TachSensor.hpp
+@@ -82,7 +82,7 @@ class TachSensor : public Sensor
+     std::shared_ptr<sdbusplus::asio::dbus_interface> itemAssoc;
+     boost::asio::streambuf readBuf;
+     boost::asio::posix::stream_descriptor inputDev;
+-    boost::asio::deadline_timer waitTimer;
++    boost::asio::steady_timer waitTimer;
+     std::string path;
+     std::optional<std::string> led;
+     bool ledState = false;
+diff --git a/src/TachSensor.cpp b/src/TachSensor.cpp
+index f6094108..76d11849 100644
+--- a/src/TachSensor.cpp
++++ b/src/TachSensor.cpp
+@@ -177,7 +177,7 @@ void TachSensor::handleResponse(const boost::system::error_code& err)
+         return; // we're no longer valid
+     }
+     inputDev.assign(fd);
+-    waitTimer.expires_from_now(boost::posix_time::milliseconds(pollTime));
++    waitTimer.expires_from_now(boost::asio::chrono::milliseconds(pollTime));
+     waitTimer.async_wait([&](const boost::system::error_code& ec) {
+         if (ec == boost::asio::error::operation_aborted)
+         {

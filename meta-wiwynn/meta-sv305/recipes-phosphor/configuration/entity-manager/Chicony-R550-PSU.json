@@ -1,0 +1,186 @@
+[
+    {
+        "Exposes": [
+            {
+                "Address": "$address",
+                "Bus": "$bus",
+                "Name": "Chicony R550 PSU FRU",
+                "Type": "EEPROM"
+            },
+            {
+                "Index": 0,
+                "Name": "PSU PIN",
+                "Label": "pin",
+                "SensorType": "power",
+                "PowerState": "BiosPost",
+                "Bus": "$bus",
+                "Address": "0x58",
+                "MaxReading": 1450,
+                "MinReading": 0,
+                "Thresholds": [
+                    {
+                        "Direction": "greater than",
+                        "Name": "upper critical",
+                        "Severity": 1,
+                        "Value": 1088.7
+                    }
+                ],
+                "Type": "pmbus"
+            },
+            {
+                "Index": 1,
+                "Name": "PSU POUT",
+                "Label": "pout1",
+                "SensorType": "power",
+                "PowerState": "BiosPost",
+                "Bus": "$bus",
+                "Address": "0x58",
+                "MaxReading": 1450,
+                "MinReading": 0,
+                "Thresholds": [
+                    {
+                        "Direction": "greater than",
+                        "Name": "upper critical",
+                        "Severity": 1,
+                        "Value": 1088.7
+                    }
+                ],
+                "Type": "pmbus"
+            },
+            {
+                "Index": 0,
+                "Name": "PSU VIN",
+                "Label": "vin",
+                "SensorType": "in",
+                "PowerState": "Always",
+                "Bus": "$bus",
+                "Address": "0x58",
+                "MaxReading": 350,
+                "MinReading": 0,
+                "Thresholds": [
+                    {
+                        "Direction": "greater than",
+                        "Name": "upper critical",
+                        "Severity": 1,
+                        "Value": 263.2
+                    },
+                    {
+                        "Direction": "less than",
+                        "Name": "lower critical",
+                        "Severity": 1,
+                        "Value": 81.2
+                    }
+                ],
+                "Type": "pmbus"
+            },
+            {
+                "Index": 1,
+                "Name": "PSU VOUT",
+                "Label": "vout1",
+                "SensorType": "in",
+                "PowerState": "BiosPost",
+                "Bus": "$bus",
+                "Address": "0x58",
+                "MaxReading": 31,
+                "MinReading": 0,
+                "Thresholds": [
+                    {
+                        "Direction": "greater than",
+                        "Name": "upper critical",
+                        "Severity": 1,
+                        "Value": 12.6
+                    },
+                    {
+                        "Direction": "less than",
+                        "Name": "lower critical",
+                        "Severity": 1,
+                        "Value": 11.8
+                    }
+                ],
+                "Type": "pmbus"
+            },
+            {
+                "Index": 1,
+                "Name": "PSU IOUT",
+                "Label": "iout1",
+                "SensorType": "curr",
+                "PowerState": "BiosPost",
+                "Bus": "$bus",
+                "Address": "0x58",
+                "MaxReading": 115,
+                "MinReading": 0,
+                "Thresholds": [
+                    {
+                        "Direction": "greater than",
+                        "Name": "upper critical",
+                        "Severity": 1,
+                        "Value": 86.4
+                    },
+                    {
+                        "Direction": "less than",
+                        "Name": "lower critical",
+                        "Severity": 1,
+                        "Value": 0.9
+                    }
+                ],
+                "Type": "pmbus"
+            },
+            {
+                "Index": 0,
+                "Name": "PSU Temp",
+                "Label": "temp1",
+                "SensorType": "temp",
+                "PowerState": "Always",
+                "Bus": "$bus",
+                "Address": "0x58",
+                "MaxReading": 255,
+                "MinReading": 0,
+                "Thresholds": [
+                    {
+                        "Direction": "greater than",
+                        "Name": "upper critical",
+                        "Severity": 1,
+                        "Value": 55
+                    }
+                ],
+                "Type": "pmbus"
+            },
+            {
+                "Index": 0,
+                "Name": "PSU FAN",
+                "Label": "fan1",
+                "SensorType": "fan",
+                "PowerState": "BiosPost",
+                "Bus": "$bus",
+                "Address": "0x58",
+                "MaxReading": 26000,
+                "MinReading": 0,
+                "Thresholds": [
+                    {
+                        "Direction": "greater than",
+                        "Name": "upper critical",
+                        "Severity": 1,
+                        "Value": 19840
+                    },
+                    {
+                        "Direction": "less than",
+                        "Name": "lower critical",
+                        "Severity": 1,
+                        "Value": 1920
+                    }
+                ],
+                "Type": "pmbus"
+            }
+        ],
+        "Name": "Chicony R550 PSU",
+        "Probe": "xyz.openbmc_project.FruDevice({'PRODUCT_PRODUCT_NAME': '.*R550*'})",
+        "Type": "PowerSupply",
+        "xyz.openbmc_project.Inventory.Decorator.Asset": {
+            "Manufacturer": "$PRODUCT_MANUFACTURER",
+            "Model": "$PRODUCT_PRODUCT_NAME",
+            "PartNumber": "$PRODUCT_PART_NUMBER",
+            "SerialNumber": "$PRODUCT_SERIAL_NUMBER"
+        }
+    }
+]
+

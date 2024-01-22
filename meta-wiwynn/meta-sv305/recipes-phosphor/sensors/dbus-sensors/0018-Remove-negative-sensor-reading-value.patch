@@ -1,0 +1,29 @@
+From a7bcc35eff1a342792bf325585623e68204960a0 Mon Sep 17 00:00:00 2001
+From: Eli Huang <Eli_Huang@wiwynn.com>
+Date: Thu, 4 Feb 2021 14:51:31 +0800
+Subject: [PATCH] Remove negative sensor reading value
+
+---
+ include/sensor.hpp | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/include/sensor.hpp b/include/sensor.hpp
+index 64fffae..e832903 100644
+--- a/include/sensor.hpp
++++ b/include/sensor.hpp
+@@ -463,6 +463,12 @@ struct Sensor
+             return;
+         }
+ 
++        if (newValue < 0)
++        {
++            incrementError();
++            return;
++        }
++
+         updateValueProperty(newValue);
+         updateInstrumentation(newValue);
+ 
+-- 
+2.28.0
+

@@ -1,0 +1,27 @@
+From ff06ea69253ee1ceb63483485c3cb65247727aa2 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Mon, 8 Nov 2021 15:38:10 +0800
+Subject: [PATCH] Revise i2c arbiter reset time to 500ms
+
+---
+ drivers/i2c/muxes/i2c-mux-pca9541.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/i2c/muxes/i2c-mux-pca9541.c b/drivers/i2c/muxes/i2c-mux-pca9541.c
+index 598a27bee843..4c2b60e55f24 100644
+--- a/drivers/i2c/muxes/i2c-mux-pca9541.c
++++ b/drivers/i2c/muxes/i2c-mux-pca9541.c
+@@ -96,8 +96,8 @@
+ #define lock_grant(x)  ((x) & PCA9641_CTL_LOCK_GRANT)
+ 
+ /* arbitration timeouts, in jiffies */
+-#define ARB_TIMEOUT	(HZ / 5)	/* 200 ms until forcing bus ownership */
+-#define ARB2_TIMEOUT	(HZ / 10) * 3	/* 300 ms until acquisition failure */
++#define ARB_TIMEOUT	(HZ / 2)	/* 500 ms until forcing bus ownership */
++#define ARB2_TIMEOUT	(HZ / 10) * 7	/* 700 ms until acquisition failure */
+ 
+ /* arbitration retry delays, in us */
+ #define SELECT_DELAY_SHORT	50
+-- 
+2.32.0
+

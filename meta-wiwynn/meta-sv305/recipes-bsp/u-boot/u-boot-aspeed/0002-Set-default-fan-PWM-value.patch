@@ -1,0 +1,160 @@
+From f9d1c500ce060c892740369b82fad6a3a04a36bb Mon Sep 17 00:00:00 2001
+From: JPChang <JP_Chang@wiwynn.com>
+Date: Mon, 16 Dec 2019 15:39:21 +0800
+Subject: [PATCH] Set default fan PWM value
+
+---
+ board/aspeed/ast-g5/ast-g5.c | 130 +++++++++++++++++++++++++++++++++++
+ 1 file changed, 130 insertions(+)
+
+diff --git a/board/aspeed/ast-g5/ast-g5.c b/board/aspeed/ast-g5/ast-g5.c
+index a4cca9476a..40acde422c 100644
+--- a/board/aspeed/ast-g5/ast-g5.c
++++ b/board/aspeed/ast-g5/ast-g5.c
+@@ -16,6 +16,135 @@
+ 
+ DECLARE_GLOBAL_DATA_PTR;
+ 
++#define PWM_REG_BASE              0x1e786000
++#define PWM_GEN_CONTROL           0x00
++#define PWM_GEN_CONTROL_EX        0x40
++#define DUTY_CONTROL_0            0x08
++#define DUTY_CONTROL_1            0x0c
++#define DUTY_CONTROL_2            0x48
++#define DUTY_CONTROL_3            0x4c
++#define PWM_GEN_PWM_EN            0x100
++#define PWM_GEN_PWM_TYPE          0x1000
++#define MAX_PWM_EX_CHANNEL        4
++#define DEFAULT_PWM               80
++#define USED_PWN_NUM              6
++#define PWM_DUTY_RISING           0
++#define PWM_DUTY_FALLING          8
++#define PWM_DUTY_ID_SHIFT         16
++#define PWM_DUTY_ID_PWM           0x0000ffff
++#define ENABLE_PWM_CLOCK          1
++#define PWM_TACH_CLOCK            0x04
++#define PWM_TACH_TYPE_M0          0x10
++#define PWM_TACH_TYPE_M1          0x14
++#define PWM_TACH_TYPE_N0          0x18
++#define PWM_TACH_TYPE_N1          0x1c
++#define PWM_TACH_SRC              0x20
++
++/*--------------------------------------------------------------------
++ * @fn Set_Default_Fan_PWM
++ * @brief Set default fan PWM
++ *
++ *--------------------------------------------------------------------*/
++void Set_Default_Fan_PWM(u8 pwm_value)
++{
++    int i = 0;
++    ulong temp = 0, reg_addr = 0, rising = 0, falling = 0;
++
++    printf("Set default Fan PWM: %d%\n", pwm_value);
++
++    /* Enable PWM clock */
++    reg_addr = PWM_REG_BASE + PWM_GEN_CONTROL;
++    *((volatile ulong *) reg_addr) |= ENABLE_PWM_CLOCK;
++
++    /* set clock division and period of type M/N */
++    reg_addr = PWM_REG_BASE + PWM_TACH_CLOCK;
++    /* 0xFF11 --> 24000000 / (2 * 2 * 256) = 23437.5 Hz */
++    *((volatile ulong *) reg_addr) = 0xFF11FF11;
++
++    reg_addr = PWM_REG_BASE + PWM_TACH_TYPE_M0;
++    *((volatile ulong *) reg_addr) = 0x10000001;
++
++    reg_addr = PWM_REG_BASE + PWM_TACH_TYPE_N0;
++    *((volatile ulong *) reg_addr) = 0x10000001;
++
++    reg_addr = PWM_REG_BASE + PWM_TACH_TYPE_M1;
++    *((volatile ulong *) reg_addr) = 0x10000000;
++
++    reg_addr = PWM_REG_BASE + PWM_TACH_TYPE_N1;
++    *((volatile ulong *) reg_addr) = 0x10000000;
++
++    reg_addr = PWM_REG_BASE + PWM_TACH_SRC;
++    *((volatile ulong *) reg_addr) = 0x0;
++
++    for (i=0; i<USED_PWN_NUM; i++)
++    {
++        if (i < MAX_PWM_EX_CHANNEL)
++        {
++            /* Enable PWM port */
++            reg_addr = PWM_REG_BASE + PWM_GEN_CONTROL;
++            temp = *((volatile ulong *) reg_addr);
++            temp |= (PWM_GEN_PWM_EN << i);
++            temp &= ~(PWM_GEN_PWM_TYPE << i);
++            *((volatile ulong *) reg_addr) = temp;
++
++            /* Set default PWM */
++            reg_addr = PWM_REG_BASE + DUTY_CONTROL_0 + ((i / 2) * 4);
++            temp =  *((volatile ulong *) reg_addr);
++            rising = 0;
++            falling = (pwm_value*255)/100;
++
++            if (i & 0x01)
++            {
++                /* odd */
++                rising <<= (PWM_DUTY_RISING + PWM_DUTY_ID_SHIFT);
++                falling <<= (PWM_DUTY_FALLING + PWM_DUTY_ID_SHIFT);
++                temp &= ~(PWM_DUTY_ID_PWM << PWM_DUTY_ID_SHIFT);
++            }
++            else
++            {
++                /* even */
++                rising <<= PWM_DUTY_RISING;
++                falling <<= PWM_DUTY_FALLING;
++                temp &= ~PWM_DUTY_ID_PWM;
++            }
++            temp |= falling | rising;
++            *((volatile ulong *) reg_addr) = temp;
++        }
++        else
++        {
++            /* Enable PWN port */
++            reg_addr = PWM_REG_BASE + PWM_GEN_CONTROL_EX;
++            temp = *((volatile ulong *) reg_addr);
++            temp |= (PWM_GEN_PWM_EN << (i-MAX_PWM_EX_CHANNEL));
++            temp &= ~(PWM_GEN_PWM_TYPE << (i-MAX_PWM_EX_CHANNEL));
++            *((volatile ulong *) reg_addr) = temp;
++
++            /* Set default PWM */
++            reg_addr = PWM_REG_BASE + DUTY_CONTROL_2 + (((i - MAX_PWM_EX_CHANNEL) / 2) * 4);
++            temp =  *((volatile ulong *) reg_addr);
++            rising = 0;
++            falling = (pwm_value*255)/100;
++
++            if (i & 0x01)
++            {
++                /* odd */
++                rising <<= (PWM_DUTY_RISING + PWM_DUTY_ID_SHIFT);
++                falling <<= (PWM_DUTY_FALLING + PWM_DUTY_ID_SHIFT);
++                temp &= ~(PWM_DUTY_ID_PWM << PWM_DUTY_ID_SHIFT);
++            }
++            else
++            {
++                /* even */
++                rising <<= PWM_DUTY_RISING;
++                falling <<= PWM_DUTY_FALLING;
++                temp &= ~PWM_DUTY_ID_PWM;
++            }
++            temp |= falling | rising;
++            *((volatile ulong *) reg_addr) = temp;
++        }
++    }
++}
++
+ /*--------------------------------------------------------------------
+  * @fn Set_Default_UART_Route
+  * @brief Set the default UART Route
+@@ -32,6 +161,7 @@ int board_init(void)
+ 	gd->bd->bi_boot_params = CONFIG_SYS_SDRAM_BASE + 0x100;
+ 	gd->flags = 0;
+ 
++	Set_Default_Fan_PWM(DEFAULT_PWM);
+ 	Set_Default_UART_Route();
+ 
+ 	return 0;
+-- 
+2.24.0
+

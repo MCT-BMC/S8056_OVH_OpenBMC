@@ -1,0 +1,11 @@
+[Unit]
+Description=Setting fan duty with OEM setting
+
+[Service]
+Restart=simple
+ExecStart=/usr/bin/env controlFan.sh %I
+SyslogIdentifier=setting-fan-oem
+TimeoutSec=infinity
+
+[Install]
+WantedBy=phosphor-pid-control.service

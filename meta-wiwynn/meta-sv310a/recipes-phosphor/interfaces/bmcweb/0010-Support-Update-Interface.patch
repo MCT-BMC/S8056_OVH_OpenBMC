@@ -1,0 +1,72 @@
+From db961b164c16e5590269e0bb837f621788b4da1d Mon Sep 17 00:00:00 2001
+From: Ren Chen <ren_chen@wiwynn.com>
+Date: Tue, 30 Nov 2021 13:24:18 +0800
+Subject: [PATCH] Support Update Interface
+
+---
+ redfish-core/include/utils/fw_utils.hpp |  3 +++
+ redfish-core/lib/update_service.hpp     | 13 ++++++++-----
+ 2 files changed, 11 insertions(+), 5 deletions(-)
+
+diff --git a/redfish-core/include/utils/fw_utils.hpp b/redfish-core/include/utils/fw_utils.hpp
+index c990023..5c557c2 100644
+--- a/redfish-core/include/utils/fw_utils.hpp
++++ b/redfish-core/include/utils/fw_utils.hpp
+@@ -364,6 +364,9 @@ inline void getFwStatus(const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
+             BMCWEB_LOG_DEBUG << "getFwStatus: Activation " << *swInvActivation;
+             asyncResp->res.jsonValue["Status"]["State"] =
+                 getRedfishFWState(*swInvActivation);
++            asyncResp->res.jsonValue["Updateable"] =
++                (getRedfishFWState(*swInvActivation) == "Updating") ? false
++                                                                    : true;
+             asyncResp->res.jsonValue["Status"]["Health"] =
+                 getRedfishFWHealth(*swInvActivation);
+         },
+diff --git a/redfish-core/lib/update_service.hpp b/redfish-core/lib/update_service.hpp
+index bfab6fb..53e53d7 100644
+--- a/redfish-core/lib/update_service.hpp
++++ b/redfish-core/lib/update_service.hpp
+@@ -78,7 +78,8 @@ static void
+     {
+         BMCWEB_LOG_DEBUG << "interface = " << interface.first;
+ 
+-        if (interface.first == "xyz.openbmc_project.Software.Activation")
++        if (interface.first ==
++            "xyz.openbmc_project.Software.ActivationProgress")
+         {
+             // Retrieve service and activate
+             crow::connections::systemBus->async_method_call(
+@@ -606,6 +607,11 @@ inline void requestRoutesUpdateService(App& app)
+                             return;
+                         }
+ 
++                        // The "ApplyTime" Porperty is read-only now.
++                        messages::propertyNotWritable(asyncResp->res,
++                                                      "ApplyTime");
++                        return;
++
+                         if (applyTime)
+                         {
+                             std::string applyTimeNewVal;
+@@ -663,7 +669,7 @@ inline void requestRoutesUpdateService(App& app)
+ 
+                 // Setup callback for when new software detected
+                 monitorForSoftwareAvailable(asyncResp, req,
+-                                            "/redfish/v1/UpdateService");
++                                            "/redfish/v1/UpdateService", 600);
+ 
+                 std::string filepath("/tmp/images/" +
+                                      boost::uuids::to_string(
+@@ -920,9 +926,6 @@ inline void requestRoutesSoftwareInventory(App& app)
+                         "#SoftwareInventory.v1_1_0.SoftwareInventory";
+                     asyncResp->res.jsonValue["Name"] = "Software Inventory";
+                     asyncResp->res.jsonValue["Status"]["HealthRollup"] = "OK";
+-
+-                    asyncResp->res.jsonValue["Updateable"] = false;
+-                    fw_util::getFwUpdateableStatus(asyncResp, swId);
+                 },
+                 "xyz.openbmc_project.ObjectMapper",
+                 "/xyz/openbmc_project/object_mapper",
+-- 
+2.34.1
+

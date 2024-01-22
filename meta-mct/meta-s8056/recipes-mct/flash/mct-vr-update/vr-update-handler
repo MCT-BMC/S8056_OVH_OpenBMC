@@ -1,0 +1,22 @@
+#! /bin/sh
+IMAGE_FILE=$1
+
+FW_UPDATER_CMD="/usr/sbin/vr-update"
+
+PROGREE_ENABLE=$2
+
+SELECT_FW=$3
+
+FW_VERSION_ID=$(echo $IMAGE_FILE |cut -d / -f 4)
+
+if [ ! -n "$SELECT_FW"  ]; then
+    SELECT_FW=0
+fi
+
+if [  -n "$PROGREE_ENABLE"  ]; then
+    $FW_UPDATER_CMD -P $FW_VERSION_ID -p $IMAGE_FILE -s $SELECT_FW
+else
+    $FW_UPDATER_CMD -p $IMAGE_FILE -s $SELECT_FW
+fi
+
+exit 0

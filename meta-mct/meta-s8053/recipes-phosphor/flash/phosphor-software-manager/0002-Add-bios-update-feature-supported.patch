@@ -1,0 +1,127 @@
+From 1790e7f548a1a4e256315231cbdf4ef54f6d89f2 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Thu, 18 Aug 2022 05:33:50 +0800
+Subject: [PATCH] Add bios update feature supported
+
+---
+ activation.cpp                   | 41 ++++++++++++++++++++++++++++++--
+ activation.hpp                   |  7 +++---
+ obmc-flash-host-bios@.service.in |  3 ++-
+ 3 files changed, 44 insertions(+), 7 deletions(-)
+
+diff --git a/activation.cpp b/activation.cpp
+index 94820aa..d830315 100644
+--- a/activation.cpp
++++ b/activation.cpp
+@@ -134,7 +134,7 @@ auto Activation::activation(Activations value) -> Activations
+             subscribeToSystemdSignals();
+ 
+             // Set initial progress
+-            activationProgress->progress(20);
++            activationProgress->progress(0);
+ 
+             // Initiate image writing to flash
+             flashWriteHost();
+@@ -395,9 +395,21 @@ bool Activation::checkApplyTimeImmediate()
+ #ifdef HOST_BIOS_UPGRADE
+ void Activation::flashWriteHost()
+ {
++    std::string biosImagePath;
++    auto ret = getBiosImagePath(biosImagePath);
++
++    if(ret!=0)
++    {
++        log<level::ERR>("Error in finding host bios path.");
++        report<InternalFailure>();
++        return;
++    }
++
++    std::replace( biosImagePath.begin(), biosImagePath.end(), '/', '-');
++
+     auto method = bus.new_method_call(SYSTEMD_BUSNAME, SYSTEMD_PATH,
+                                       SYSTEMD_INTERFACE, "StartUnit");
+-    auto biosServiceFile = "obmc-flash-host-bios@" + versionId + ".service";
++    auto biosServiceFile = "obmc-flash-host-bios@" + biosImagePath + ".service";
+     method.append(biosServiceFile, "replace");
+     try
+     {
+@@ -456,6 +468,31 @@ void Activation::onStateChangesBios(sdbusplus::message_t& msg)
+     return;
+ }
+ 
++int32_t Activation::getBiosImagePath(std::string& biosImagePath)
++{
++    fs::path dirPath(std::string{IMG_UPLOAD_DIR});
++    dirPath = dirPath / versionId;
++
++    int fileCounter = 0;
++    for (auto& it: fs::directory_iterator(dirPath))
++    {
++        if ( it.path().filename() != "MANIFEST" )
++        {
++            biosImagePath = it.path();
++        }
++        fileCounter++;
++    }
++
++    // The count of files should be 2 : BIOS firmware file and Manifest.
++    if (fileCounter != 2)
++    {
++        log<level::ERR>("Erro in number of files");
++        return -1;
++    }
++
++    return 0;
++}
++
+ #endif
+ 
+ void Activation::rebootBmc()
+diff --git a/activation.hpp b/activation.hpp
+index 94cc1bb..9b7a69c 100644
+--- a/activation.hpp
++++ b/activation.hpp
+@@ -12,9 +12,7 @@
+ #include <xyz/openbmc_project/Software/Activation/server.hpp>
+ #include <xyz/openbmc_project/Software/ActivationBlocksTransition/server.hpp>
+ 
+-#ifdef WANT_SIGNATURE_VERIFY
+ #include <filesystem>
+-#endif
+ 
+ namespace phosphor
+ {
+@@ -23,9 +21,7 @@ namespace software
+ namespace updater
+ {
+ 
+-#ifdef WANT_SIGNATURE_VERIFY
+ namespace fs = std::filesystem;
+-#endif
+ 
+ using AssociationList =
+     std::vector<std::tuple<std::string, std::string, std::string>>;
+@@ -245,6 +241,9 @@ class Activation : public ActivationInherit, public Flash
+ 
+     /** @brief Function that acts on Bios upgrade service file state changes */
+     void onStateChangesBios(sdbusplus::message_t&);
++
++    /** @brief Get the BIOS image path. */
++    int32_t getBiosImagePath(std::string&);
+ #endif
+ 
+     /** @brief Overloaded function that acts on service file state changes */
+diff --git a/obmc-flash-host-bios@.service.in b/obmc-flash-host-bios@.service.in
+index 13a01af..56676d0 100644
+--- a/obmc-flash-host-bios@.service.in
++++ b/obmc-flash-host-bios@.service.in
+@@ -4,4 +4,5 @@ Description=Flash Host Bios image %I to Host
+ [Service]
+ Type=oneshot
+ RemainAfterExit=no
+-ExecStart=echo Please add custom command for flashing image /tmp/image/%i
++ExecStart=/usr/sbin/bios-update-handler %I 1
++ExecStartPost=/usr/sbin/image-active %I Ready None
+-- 
+2.25.1
+

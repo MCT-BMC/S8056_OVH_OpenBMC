@@ -1,0 +1,24 @@
+From c993bfa50a7a6de361b9286925d055f4a88957cd Mon Sep 17 00:00:00 2001
+From: Ray Lue <ray.lue@mic.com.tw>
+Date: Tue, 4 Jun 2019 17:42:29 +0800
+Subject: [PATCH 1/1] [s7106]Enhance command response buffer size
+
+---
+ include/ipmid/api.h | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/include/ipmid/api.h b/include/ipmid/api.h
+index f08ee11..c5acec5 100644
+--- a/include/ipmid/api.h
++++ b/include/ipmid/api.h
+@@ -154,6 +154,6 @@ sd_bus_slot* ipmid_get_sd_bus_slot(void);
+ 
+ // move this from ipmid.hpp, which is now gone
+ // this should not be used. Use the channel API to get the channel size
+-#define MAX_IPMI_BUFFER 64
++#define MAX_IPMI_BUFFER 256
+ 
+ #endif
+-- 
+2.7.4
+

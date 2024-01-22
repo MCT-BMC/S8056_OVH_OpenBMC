@@ -1,0 +1,135 @@
+From 88ce1a3afb3def59668bc7182c9caa5a8bbb9edf Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Thu, 14 Nov 2019 15:20:26 +0800
+Subject: [PATCH] Add SEL entries for the power and the reset buttons pressed
+ events
+
+---
+ src/button_handler.cpp | 86 ++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 86 insertions(+)
+
+diff --git a/src/button_handler.cpp b/src/button_handler.cpp
+index 675f1ea..d6e2613 100644
+--- a/src/button_handler.cpp
++++ b/src/button_handler.cpp
+@@ -29,6 +29,10 @@ constexpr auto mapperObjPath = "/xyz/openbmc_project/object_mapper";
+ constexpr auto mapperService = "xyz.openbmc_project.ObjectMapper";
+ constexpr auto ledGroupBasePath = "/xyz/openbmc_project/led/groups/";
+ 
++static constexpr char const *ipmiSelService = "xyz.openbmc_project.Logging.IPMI";
++static constexpr char const *ipmiSelPath = "/xyz/openbmc_project/Logging/IPMI";
++static constexpr char const *ipmiSelAddInterface = "xyz.openbmc_project.Logging.IPMI";
++
+ Handler::Handler(sdbusplus::bus::bus& bus) : bus(bus)
+ {
+     try
+@@ -157,6 +161,31 @@ void Handler::powerPressed(sdbusplus::message::message& msg)
+         log<level::ERR>("Failed power state change on a power button press",
+                         entry("ERROR=%s", e.what()));
+     }
++
++    // Add power btn pressed SEL
++    uint16_t genId = 0x20;
++    bool assert = true;
++    std::string dbusPath("/xyz/openbmc_project/sensors/button/Button");
++    std::vector<uint8_t> eventData(3, 0xFF);
++
++    try
++    {
++        /* sensor type: Button / Switch (0x14)
++           sensor specific offset: 00h - Power Button pressed
++        */
++        eventData[0] = 0x0;
++
++        auto selWrite = bus.new_method_call(
++            ipmiSelService, ipmiSelPath, ipmiSelAddInterface, "IpmiSelAdd");
++        selWrite.append("SEL Entry", dbusPath, eventData, assert, genId);
++
++        bus.call(selWrite);
++    }
++    catch (SdBusError& e)
++    {
++        log<level::ERR>("Failed to log a power button press SEL",
++                        entry("ERROR=%s", e.what()));
++    }
+ }
+ 
+ void Handler::longPowerPressed(sdbusplus::message::message& msg)
+@@ -187,10 +216,39 @@ void Handler::longPowerPressed(sdbusplus::message::message& msg)
+         log<level::ERR>("Failed powering off on long power button press",
+                         entry("ERROR=%s", e.what()));
+     }
++
++    // Add long power btn pressed SEL
++    uint16_t genId = 0x20;
++    bool assert = true;
++    std::string dbusPath("/xyz/openbmc_project/sensors/acpi/ACPI_Power_State");
++    std::vector<uint8_t> eventData(3, 0xFF);
++
++    try
++    {
++        /* sensor type: System ACPI Power State (0x22)
++           sensor specific offset: 0Ah - S5 entered by override
++        */
++        eventData[0] = 0xA;
++
++        auto selWrite = bus.new_method_call(
++            ipmiSelService, ipmiSelPath, ipmiSelAddInterface, "IpmiSelAdd");
++        selWrite.append("SEL Entry", dbusPath, eventData, assert, genId);
++
++        bus.call(selWrite);
++    }
++    catch (SdBusError& e)
++    {
++        log<level::ERR>("Failed to log a long power button press SEL",
++                        entry("ERROR=%s", e.what()));
++    }
+ }
+ 
+ void Handler::resetPressed(sdbusplus::message::message& msg)
+ {
++    /* No need to call "Host::Transition::Reboot" method
++       since the reset button HW will do the work.
++    */
++#if 0
+     try
+     {
+         if (!poweredOn())
+@@ -217,6 +275,34 @@ void Handler::resetPressed(sdbusplus::message::message& msg)
+         log<level::ERR>("Failed power state change on a reset button press",
+                         entry("ERROR=%s", e.what()));
+     }
++#else
++    log<level::INFO>("Handling reset button press");
++#endif
++
++    // Add reset btn pressed SEL
++    uint16_t genId = 0x20;
++    bool assert = true;
++    std::string dbusPath("/xyz/openbmc_project/sensors/button/Button");
++    std::vector<uint8_t> eventData(3, 0xFF);
++
++    try
++    {
++        /* sensor type: Button / Switch (0x14)
++           sensor specific offset: 02h - Reset Button pressed
++        */
++        eventData[0] = 0x2;
++
++        auto selWrite = bus.new_method_call(
++            ipmiSelService, ipmiSelPath, ipmiSelAddInterface, "IpmiSelAdd");
++        selWrite.append("SEL Entry", dbusPath, eventData, assert, genId);
++
++        bus.call(selWrite);
++    }
++    catch (SdBusError& e)
++    {
++        log<level::ERR>("Failed to log a reset button press SEL",
++                        entry("ERROR=%s", e.what()));
++    }
+ }
+ 
+ void Handler::idPressed(sdbusplus::message::message& msg)
+-- 
+2.22.0
+

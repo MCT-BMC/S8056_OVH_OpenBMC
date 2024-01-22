@@ -1,0 +1,108 @@
+From c2799ef8a30b1dc8dafc8e29cc63dc230ad00799 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Wed, 6 Nov 2019 17:50:03 +0800
+Subject: [PATCH] Support non-volatile IPMI SEL record
+
+---
+ src/storagecommands.cpp | 52 +++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 52 insertions(+)
+
+diff --git a/src/storagecommands.cpp b/src/storagecommands.cpp
+index e7b598c..0716096 100644
+--- a/src/storagecommands.cpp
++++ b/src/storagecommands.cpp
+@@ -35,6 +35,7 @@
+ namespace intel_oem::ipmi::sel
+ {
+ static const std::filesystem::path selLogDir = "/var/log";
++static const std::filesystem::path selLogTargetDir = "/usr/share/sel";
+ static const std::string selLogFilename = "ipmi_sel";
+ 
+ static int getFileTimestamp(const std::filesystem::path& file)
+@@ -654,6 +655,28 @@ static bool getSELLogFiles(std::vector<std::filesystem::path>& selLogFiles)
+     return !selLogFiles.empty();
+ }
+ 
++static bool getSELLogTargetFiles(std::vector<std::filesystem::path>& selLogFiles)
++{
++    // Loop through the directory looking for ipmi_sel log files
++    for (const std::filesystem::directory_entry& dirEnt :
++         std::filesystem::directory_iterator(intel_oem::ipmi::sel::selLogTargetDir))
++    {
++        std::string filename = dirEnt.path().filename();
++        if (boost::starts_with(filename, intel_oem::ipmi::sel::selLogFilename))
++        {
++            // If we find an ipmi_sel log file, save the path
++            selLogFiles.emplace_back(intel_oem::ipmi::sel::selLogTargetDir /
++                                     filename);
++        }
++    }
++    // As the log files rotate, they are appended with a ".#" that is higher for
++    // the older logs. Since we don't expect more than 10 log files, we
++    // can just sort the list to get them in order from newest to oldest
++    std::sort(selLogFiles.begin(), selLogFiles.end());
++
++    return !selLogFiles.empty();
++}
++
+ static int countSELEntries()
+ {
+     // Get the list of ipmi_sel log files
+@@ -823,11 +846,28 @@ ipmi::RspType<uint16_t, // Next Record ID
+     if (targetID == ipmi::sel::firstEntry)
+     {
+         // The first entry will be at the top of the oldest log file
++        /*
+         std::ifstream logStream(selLogFiles.back());
+         if (!logStream.is_open())
+         {
+             return ipmi::responseUnspecifiedError();
+         }
++        */
++        std::ifstream logStream;
++        int logIdx;
++        for(logIdx = selLogFiles.size(); logIdx > 0; logIdx--)
++        {
++            logStream.open(selLogFiles[logIdx-1]);
++            if (logStream.is_open())
++            {
++                break;
++            }
++        }
++
++        if( 0 == logIdx)
++        {
++            return ipmi::responseUnspecifiedError();
++        }
+ 
+         if (!std::getline(logStream, targetEntry))
+         {
+@@ -1063,6 +1103,7 @@ ipmi::RspType<uint8_t> ipmiStorageClearSEL(ipmi::Context::ptr ctx,
+     intel_oem::ipmi::sel::erase_time::save();
+ 
+     // Clear the SEL by deleting the log files
++    /*
+     std::vector<std::filesystem::path> selLogFiles;
+     if (getSELLogFiles(selLogFiles))
+     {
+@@ -1072,6 +1113,17 @@ ipmi::RspType<uint8_t> ipmiStorageClearSEL(ipmi::Context::ptr ctx,
+             std::filesystem::remove(file, ec);
+         }
+     }
++    */
++    std::vector<std::filesystem::path> selLogTargetFiles;
++    if (getSELLogTargetFiles(selLogTargetFiles))
++    {
++        std::error_code ec;
++        for (const std::filesystem::path& file : selLogTargetFiles)
++        {
++            std::filesystem::remove(file, ec);
++        }
++    }
++
+ 
+     // Reload rsyslog so it knows to start new log files
+     std::shared_ptr<sdbusplus::asio::connection> dbus = getSdBus();
+-- 
+2.22.0
+

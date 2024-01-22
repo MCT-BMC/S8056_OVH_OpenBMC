@@ -1,0 +1,22 @@
+From 1acfd226b001fbda2f9fe626d9735cbf971d2ef9 Mon Sep 17 00:00:00 2001
+From: Janny Au <janny.au@mic.com.tw>
+Date: Thu, 10 Mar 2022 17:37:56 +0800
+Subject: [PATCH] Fix-adm1272-using-incorrect-i2c-write-command-cause-
+
+---
+ drivers/hwmon/pmbus/adm1275.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/hwmon/pmbus/adm1275.c b/drivers/hwmon/pmbus/adm1275.c
+index 0896cf7a87d2..aa37a9a38684 100644
+--- a/drivers/hwmon/pmbus/adm1275.c
++++ b/drivers/hwmon/pmbus/adm1275.c
+@@ -618,7 +618,7 @@ static int adm1275_probe(struct i2c_client *client)
+ 		if ((config & (ADM1278_VOUT_EN | ADM1278_TEMP1_EN)) !=
+ 		    (ADM1278_VOUT_EN | ADM1278_TEMP1_EN)) {
+ 			config |= ADM1278_VOUT_EN | ADM1278_TEMP1_EN;
+-			ret = i2c_smbus_write_byte_data(client,
++			ret = i2c_smbus_write_word_data(client,
+ 							ADM1275_PMON_CONFIG,
+ 							config);
+ 			if (ret < 0) {

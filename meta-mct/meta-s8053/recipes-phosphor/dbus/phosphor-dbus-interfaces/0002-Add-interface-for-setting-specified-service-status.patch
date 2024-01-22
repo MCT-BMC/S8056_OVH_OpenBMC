@@ -1,0 +1,101 @@
+From 0eace377d2166e5ae005e8e35f2b1e93d5357ce8 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Thu, 9 Apr 2020 15:43:30 +0800
+Subject: [PATCH] Add interface for setting specified service status
+
+---
+ gen/xyz/openbmc_project/OEM/ServiceStatus/meson.build | 13 +++++++++++++
+ gen/xyz/openbmc_project/OEM/meson.build               | 15 +++++++++++++++
+ gen/xyz/openbmc_project/meson.build                   |  1 +
+ xyz/openbmc_project/OEM/ServiceStatus.interface.yaml  |  17 +++++++++
+ 4 files changed, 46 insertions(+)
+ create mode 100755 gen/xyz/openbmc_project/OEM/ServiceStatus/meson.build
+ create mode 100755 gen/xyz/openbmc_project/OEM/meson.build
+ mode change 100644 => 100755 gen/xyz/openbmc_project/meson.build
+ create mode 100755 xyz/openbmc_project/OEM/ServiceStatus.interface.yaml
+
+diff --git a/gen/xyz/openbmc_project/OEM/ServiceStatus/meson.build b/gen/xyz/openbmc_project/OEM/ServiceStatus/meson.build
+new file mode 100755
+index 0000000..b6e640c
+--- /dev/null
++++ b/gen/xyz/openbmc_project/OEM/ServiceStatus/meson.build
+@@ -0,0 +1,13 @@
++# Generated file; do not modify.
++generated_sources += custom_target(
++    'xyz/openbmc_project/OEM/ServiceStatus__cpp'.underscorify(),
++    input: [ meson.source_root() / 'xyz/openbmc_project/OEM/ServiceStatus.interface.yaml',  ],
++    output: [ 'server.cpp', 'server.hpp', 'client.hpp',  ],
++    command: [
++        sdbuspp_gen_meson_prog, '--command', 'cpp',
++        '--output', meson.current_build_dir(),
++        '--tool', sdbusplusplus_prog,
++        '--directory', meson.source_root(),
++        'xyz/openbmc_project/OEM/ServiceStatus',
++    ],
++)
+diff --git a/gen/xyz/openbmc_project/OEM/meson.build b/gen/xyz/openbmc_project/OEM/meson.build
+new file mode 100755
+index 0000000..aecc4d7
+--- /dev/null
++++ b/gen/xyz/openbmc_project/OEM/meson.build
+@@ -0,0 +1,15 @@
++# Generated file; do not modify.
++subdir('ServiceStatus')
++generated_others += custom_target(
++    'xyz/openbmc_project/OEM/ServiceStatus__markdown'.underscorify(),
++    input: [ meson.source_root() / 'xyz/openbmc_project/OEM/ServiceStatus.interface.yaml',  ],
++    output: [ 'ServiceStatus.md' ],
++    command: [
++        sdbuspp_gen_meson_prog, '--command', 'markdown',
++        '--output', meson.current_build_dir(),
++        '--tool', sdbusplusplus_prog,
++        '--directory', meson.source_root(),
++        'xyz/openbmc_project/OEM/ServiceStatus',
++    ],
++    build_by_default: true,
++)
+\ No newline at end of file
+diff --git a/gen/xyz/openbmc_project/meson.build b/gen/xyz/openbmc_project/meson.build
+old mode 100644
+new mode 100755
+index 3c4750f..04afdb5
+--- a/gen/xyz/openbmc_project/meson.build
++++ b/gen/xyz/openbmc_project/meson.build
+@@ -87,6 +87,7 @@ generated_others += custom_target(
+     build_by_default: true,
+ )
+ 
++subdir('OEM')
+ subdir('PFR')
+ subdir('PLDM')
+ subdir('ScheduledTime')
+diff --git a/xyz/openbmc_project/OEM/ServiceStatus.interface.yaml b/xyz/openbmc_project/OEM/ServiceStatus.interface.yaml
+new file mode 100755
+index 0000000..cbb4559
+--- /dev/null
++++ b/xyz/openbmc_project/OEM/ServiceStatus.interface.yaml
+@@ -0,0 +1,21 @@
++description: >
++    Implement to provide status attributes for specified service.
++
++properties:
++    - name: WebService
++      type: boolean
++      description: >
++         Setting of bmc web 
++    - name: KvmService
++      type: boolean
++      description: >
++         Setting of bmc iKVM
++    - name: VmService
++      type: boolean
++      description: >
++         Setting of bmc virtual media
++    - name: RemoteDebugService
++      type: boolean
++      description: >
++         Setting of cpu remote debug
++# vim: tabstop=8 expandtab shiftwidth=4 softtabstop=4
+-- 
+2.7.4
+

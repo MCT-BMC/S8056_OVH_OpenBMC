@@ -1,0 +1,228 @@
+From 02154c658ebd6c851cf6c26f5e261c3e35c00106 Mon Sep 17 00:00:00 2001
+From: Eli Huang <Eli_Huang@wiwynn.com>
+Date: Fri, 3 Sep 2021 16:29:14 +0800
+Subject: [PATCH] Add mux lock for 48V PDB
+
+---
+ drivers/hwmon/ina2xx.c         | 11 +++++
+ drivers/hwmon/lm75.c           | 14 +++++-
+ drivers/hwmon/muxLock.h        | 82 ++++++++++++++++++++++++++++++++++
+ drivers/hwmon/pmbus/adm1275.c  | 11 +++++
+ drivers/hwmon/pmbus/isl68137.c | 12 +++++
+ 5 files changed, 129 insertions(+), 1 deletion(-)
+ create mode 100644 drivers/hwmon/muxLock.h
+
+diff --git a/drivers/hwmon/ina2xx.c b/drivers/hwmon/ina2xx.c
+index ca97f9e931bc..cad1d7e7a322 100644
+--- a/drivers/hwmon/ina2xx.c
++++ b/drivers/hwmon/ina2xx.c
+@@ -38,6 +38,7 @@
+ #include <linux/regmap.h>
+ 
+ #include <linux/platform_data/ina2xx.h>
++#include "muxLock.h"
+ 
+ /* common register definitions */
+ #define INA2XX_CONFIG			0x00
+@@ -625,6 +626,16 @@ static int ina2xx_probe(struct i2c_client *client)
+ 	int ret, group = 0;
+ 	enum ina2xx_ids chip;
+ 
++	char *ptr = strstr(client->adapter->name,"14");
++	if (ptr){
++		ret = checkCpldLock();
++		if(ret < 0)
++		{
++			dev_err(&client->dev, "Probe in application layer\n");
++			return 0;
++		}
++        }
++
+ 	if (client->dev.of_node)
+ 		chip = (enum ina2xx_ids)of_device_get_match_data(&client->dev);
+ 	else
+diff --git a/drivers/hwmon/lm75.c b/drivers/hwmon/lm75.c
+index e447febd121a..1e5cd6e969aa 100644
+--- a/drivers/hwmon/lm75.c
++++ b/drivers/hwmon/lm75.c
+@@ -18,7 +18,9 @@
+ #include <linux/regmap.h>
+ #include <linux/util_macros.h>
+ #include <linux/regulator/consumer.h>
++
+ #include "lm75.h"
++#include "muxLock.h"
+ 
+ /*
+  * This driver handles the LM75 and compatible digital temperature sensors.
+@@ -558,9 +560,19 @@ static int lm75_probe(struct i2c_client *client)
+ 	struct device *dev = &client->dev;
+ 	struct device *hwmon_dev;
+ 	struct lm75_data *data;
+-	int status, err;
++	int status, err, ret;
+ 	enum lm75_type kind;
+ 
++	char *ptr = strstr(client->adapter->name,"14");
++	if (ptr){
++		ret = checkCpldLock();
++		if(ret < 0)
++		{
++			dev_err(&client->dev, "Probe in application layer\n");
++			return 0;
++		}
++    }
++
+ 	if (client->dev.of_node)
+ 		kind = (enum lm75_type)of_device_get_match_data(&client->dev);
+ 	else
+diff --git a/drivers/hwmon/muxLock.h b/drivers/hwmon/muxLock.h
+new file mode 100644
+index 000000000000..0a2bf6f1d28e
+--- /dev/null
++++ b/drivers/hwmon/muxLock.h
+@@ -0,0 +1,82 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++/*
++ * lm75.h - Part of lm_sensors, Linux kernel modules for hardware monitoring
++ * Copyright (c) 2003 Mark M. Hoffman <mhoffman@lightlink.com>
++ */
++
++/*
++ * This file contains common code for encoding/decoding LM75 type
++ * temperature readings, which are emulated by many of the chips
++ * we support.  As the user is unlikely to load more than one driver
++ * which contains this code, we don't worry about the wasted space.
++ */
++
++#include <linux/kernel.h>
++#include <linux/i2c.h>
++#include <linux/gpio.h>
++#include <linux/of_gpio.h>
++
++static int checkCpldLock(void)
++{
++    u8 CPLD_BUS = 14;
++    u8 CPLD_ADDR = 0x5c;
++    u8 CPLD_LOCK_BYTE = 0x4;
++
++    u8 tx_buf[1] = {CPLD_LOCK_BYTE};
++    u8 rx_buf[1];
++
++    struct i2c_adapter *i2c_adap;
++    struct i2c_msg msg[2];
++    int gpio_number_base = 792;
++    int slot_id_1 = 123;
++    int gpio_number;
++    int gpio_value;
++    int ret;
++    u8 checkBit;
++
++    gpio_number = gpio_number_base + slot_id_1;
++    if (gpio_is_valid(gpio_number))
++    {
++        gpio_value = gpio_get_value(gpio_number);
++    }
++    else
++    {
++        printk("Invalid GPIO number: %d\n", gpio_number);
++        return -1;
++    }
++
++    i2c_adap = i2c_get_adapter(CPLD_BUS);
++    if (!i2c_adap)
++    {
++        printk("Fail in get adapter.\n");
++        return -1;
++    }
++
++    msg[0].addr = CPLD_ADDR;
++    msg[0].flags = 0;
++    msg[0].len = 1;
++    msg[0].buf = tx_buf;
++
++    msg[1].addr = CPLD_ADDR;
++    msg[1].flags = I2C_M_RD;
++    msg[1].len = 1;
++    msg[1].buf = rx_buf;
++
++    ret = i2c_transfer(i2c_adap, msg, 2);
++    if (ret < 0)
++    {
++        printk("i2c_transfer error");
++        i2c_put_adapter(i2c_adap);
++        return -1;
++    }
++
++    checkBit = (rx_buf[0] & 0x0C) >> 2;
++    if (checkBit != gpio_value + 1)
++    {
++        return -1;
++    }
++
++exit:
++    i2c_put_adapter(i2c_adap);
++    return 0;
++}
+diff --git a/drivers/hwmon/pmbus/adm1275.c b/drivers/hwmon/pmbus/adm1275.c
+index abbf9949fa23..184b3179c0ea 100644
+--- a/drivers/hwmon/pmbus/adm1275.c
++++ b/drivers/hwmon/pmbus/adm1275.c
+@@ -17,6 +17,7 @@
+ #include <linux/bitfield.h>
+ #include <linux/log2.h>
+ #include "pmbus.h"
++#include "../muxLock.h"
+ 
+ enum chips { adm1075, adm1272, adm1275, adm1276, adm1278, adm1293, adm1294 };
+ 
+@@ -476,6 +477,16 @@ static int adm1275_probe(struct i2c_client *client)
+ 	int tindex = -1;
+ 	u32 shunt;
+ 
++	char *ptr = strstr(client->adapter->name,"14");
++	if (ptr){
++		ret = checkCpldLock();
++		if(ret < 0)
++		{
++			dev_err(&client->dev, "Probe in application layer\n");
++			return 0;
++		}
++    }
++
+ 	if (!i2c_check_functionality(client->adapter,
+ 				     I2C_FUNC_SMBUS_READ_BYTE_DATA
+ 				     | I2C_FUNC_SMBUS_BLOCK_DATA))
+diff --git a/drivers/hwmon/pmbus/isl68137.c b/drivers/hwmon/pmbus/isl68137.c
+index 2bee930d3900..4f1b69aaba4e 100644
+--- a/drivers/hwmon/pmbus/isl68137.c
++++ b/drivers/hwmon/pmbus/isl68137.c
+@@ -17,6 +17,7 @@
+ #include <linux/sysfs.h>
+ 
+ #include "pmbus.h"
++#include "../muxLock.h"
+ 
+ #define ISL68137_VOUT_AVS	0x30
+ #define RAA_DMPVR2_READ_VMON	0xc8
+@@ -223,6 +224,17 @@ static struct pmbus_driver_info raa_dmpvr_info = {
+ static int isl68137_probe(struct i2c_client *client)
+ {
+ 	struct pmbus_driver_info *info;
++	int ret = 0;
++
++	char *ptr = strstr(client->adapter->name,"14");
++	if (ptr){
++		ret = checkCpldLock();
++		if(ret < 0)
++		{
++			dev_err(&client->dev, "Probe in application layer\n");
++			return 0;
++		}
++    }
+ 
+ 	info = devm_kzalloc(&client->dev, sizeof(*info), GFP_KERNEL);
+ 	if (!info)
+-- 
+2.32.0
+

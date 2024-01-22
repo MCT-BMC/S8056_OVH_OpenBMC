@@ -1,0 +1,26 @@
+From f74030667023943bdfcd571a67c4a86d27cffec2 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Fri, 20 Aug 2021 10:33:05 +0800
+Subject: [PATCH] Add bios2 property for version purpose
+
+---
+ yaml/xyz/openbmc_project/Software/Version.interface.yaml | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/yaml/xyz/openbmc_project/Software/Version.interface.yaml b/yaml/xyz/openbmc_project/Software/Version.interface.yaml
+index bc28479..139cbdb 100755
+--- a/yaml/xyz/openbmc_project/Software/Version.interface.yaml
++++ b/yaml/xyz/openbmc_project/Software/Version.interface.yaml
+@@ -39,6 +39,9 @@ enumerations:
+         - name: Host
+           description: >
+             The version is a version for a managed host.
++        - name: Host2
++          description: >
++            The version is a version for a managed host.
+         - name: PSU
+           description: >
+             The version is a version for a PSU.
+-- 
+2.7.4
+

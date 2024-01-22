@@ -1,0 +1,75 @@
+From 3103a620aebcbd556a52b4050b7b4291c95b271d Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Fri, 7 Jan 2022 14:52:33 +0800
+Subject: [PATCH] Support fan sensor fail
+
+%% original patch: 0034-Support-fan-sensor-fail.patch
+---
+ src/TachSensor.cpp | 23 ++++++++++++++++++-----
+ 1 file changed, 18 insertions(+), 5 deletions(-)
+
+diff --git a/src/TachSensor.cpp b/src/TachSensor.cpp
+index 64b8f94..0bd9efb 100644
+--- a/src/TachSensor.cpp
++++ b/src/TachSensor.cpp
+@@ -184,9 +184,6 @@ void TachSensor::hardOffInCaceSoftOffFail(
+ 
+ void TachSensor::fanFailHostPowerOff(void)
+ {
+-    // Do not power off host temporarily
+-    return;
+-
+     try
+     {
+         // Do host soft off
+@@ -331,7 +328,14 @@ void TachSensor::readFromTheOtherNode(size_t pollTime)
+                     double value = ((coefficientM * sensorReading) +
+                                     (coefficientB * std::pow(10, exponentB))) *
+                                    std::pow(10, exponentR);
+-                    updateValue(value);
++                    if ((sensorType != "pwm") && (value < 640))
++                    {
++                        updateValue(std::numeric_limits<double>::quiet_NaN());
++                    }
++                    else
++                    {
++                        updateValue(value);
++                    }
+                 }
+             }
+ 
+@@ -406,6 +410,10 @@ void TachSensor::handleResponse(const boost::system::error_code& err)
+                         rawValue =
+                             100.0 * (static_cast<double>(rawValue) / 255);
+                     }
++                    else if (rawValue < 640)
++                    {
++                        throw "Sensor Faiiure";
++                    }
+                     updateValue(rawValue);
+                 }
+                 catch (const std::invalid_argument&)
+@@ -413,6 +421,11 @@ void TachSensor::handleResponse(const boost::system::error_code& err)
+                     incrementError();
+                     pollTime = sensorFailedPollTimeMs;
+                 }
++                catch (const char*)
++                {
++                    incrementError();
++                    pollTime = sensorFailedPollTimeMs;
++                }
+             }
+             else
+             {
+@@ -425,7 +438,7 @@ void TachSensor::handleResponse(const boost::system::error_code& err)
+             updateValue(0);
+         }
+ 
+-        if (((errCount >= errorThreshold) || missing) && !thresholds.empty())
++        if ((errCount >= errorThreshold) && !missing && !thresholds.empty())
+         {
+             if (!fanFailSelLogged)
+             {
+-- 
+2.32.0
+

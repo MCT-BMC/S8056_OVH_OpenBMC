@@ -1,0 +1,85 @@
+From 612048fcf8ef6fa1d3864e8bfcaf055c2361b4aa Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Mon, 8 Jun 2020 07:51:02 +0800
+Subject: [PATCH] Support BIOS FW update with same version id already exists
+
+---
+ activation.cpp    |  9 +++++++--
+ image_manager.cpp | 19 +++++++++++++++++--
+ 2 files changed, 24 insertions(+), 4 deletions(-)
+
+diff --git a/activation.cpp b/activation.cpp
+index f5cf95b..1ace56d 100644
+--- a/activation.cpp
++++ b/activation.cpp
+@@ -498,7 +498,7 @@ void Activation::onStateChangesBios(sdbusplus::message::message& msg)
+         unsubscribeFromSystemdSignals();
+ 
+         // Remove version object from image manager
+-        deleteImageManagerObject();
++        // deleteImageManagerObject();
+ 
+         // Unset environment proeprty
+         auto unset_environment_method = bus.new_method_call(SYSTEMD_BUSNAME, SYSTEMD_PATH,
+@@ -523,7 +523,10 @@ void Activation::onStateChangesBios(sdbusplus::message::message& msg)
+             activationProgress->progress(100);
+ 
+             // Set Activation value to active
+-            activation(softwareServer::Activation::Activations::Active);
++            // activation(softwareServer::Activation::Activations::Active);
++            activation(softwareServer::Activation::Activations::Ready);
++            softwareServer::Activation::requestedActivation(
++              softwareServer::Activation::RequestedActivations::None);
+ 
+             log<level::INFO>("Bios upgrade completed successfully.");
+         }
+@@ -531,6 +534,8 @@ void Activation::onStateChangesBios(sdbusplus::message::message& msg)
+         {
+             // Set Activation value to Failed
+             activation(softwareServer::Activation::Activations::Failed);
++            softwareServer::Activation::requestedActivation(
++              softwareServer::Activation::RequestedActivations::None);
+ 
+             log<level::ERR>("Bios upgrade failed.");
+         }
+diff --git a/image_manager.cpp b/image_manager.cpp
+index e2a0037..c8c26c0 100644
+--- a/image_manager.cpp
++++ b/image_manager.cpp
+@@ -173,9 +173,18 @@ int Manager::processImage(const std::string& tarFilePath)
+ 
+     // Compute id
+     auto id = Version::getId(version);
++    int id_ext = 0;
+ 
+-    srand(time(NULL));
+-    id = id + "_" + std::to_string(rand());
++    if (purpose == Version::VersionPurpose::BMC)
++    {
++        srand(time(NULL));
++        id = id + "_" + std::to_string(rand());
++    }
++    else if (purpose == Version::VersionPurpose::Host)
++    {
++        id_ext = 1;
++        id = id + "__" + std::to_string(id_ext);
++    }
+ 
+     fs::path imageDirPath = std::string{IMG_UPLOAD_DIR};
+     imageDirPath /= id;
+@@ -212,6 +221,12 @@ int Manager::processImage(const std::string& tarFilePath)
+     }
+     else
+     {
++        /* Emit an object add signal to bmcweb uploadImageHandler */
++        if (purpose != Version::VersionPurpose::BMC)
++        {
++            bus.emit_object_added(objPath.c_str());
++        }
++
+         log<level::INFO>("Software Object with the same version already exists",
+                          entry("VERSION_ID=%s", id.c_str()));
+     }
+-- 
+2.24.1
+

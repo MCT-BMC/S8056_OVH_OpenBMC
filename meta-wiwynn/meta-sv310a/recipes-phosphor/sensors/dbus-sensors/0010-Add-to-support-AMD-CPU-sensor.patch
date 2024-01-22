@@ -1,0 +1,598 @@
+From e97694e53e4d8773de3f26cc9daf696aa16b6a93 Mon Sep 17 00:00:00 2001
+From: Ren_Chen <Ren_Chen@wiwynn.com>
+Date: Wed, 4 Nov 2020 11:21:46 +0800
+Subject: [PATCH] Add to support AMD CPU sensor
+
+Description:
+- Add new deamon to support AMD CPU sensor.
+
+Design:
+- Add daemon to support AMD CPU sensor.
+- Read the CPU temperature sensor value from the file exported by driver.
+---
+ include/AMDCPUSensor.hpp  |  47 +++++++
+ meson_options.txt         |   3 +-
+ service_files/meson.build |   1 +
+ src/AMDCPUSensor.cpp      | 177 ++++++++++++++++++++++++
+ src/AMDCPUSensorMain.cpp  | 280 ++++++++++++++++++++++++++++++++++++++
+ src/meson.build           |  16 +++
+ 6 files changed, 523 insertions(+), 1 deletion(-)
+ create mode 100644 include/AMDCPUSensor.hpp
+ create mode 100644 src/AMDCPUSensor.cpp
+ create mode 100644 src/AMDCPUSensorMain.cpp
+
+diff --git a/include/AMDCPUSensor.hpp b/include/AMDCPUSensor.hpp
+new file mode 100644
+index 0000000..a098df1
+--- /dev/null
++++ b/include/AMDCPUSensor.hpp
+@@ -0,0 +1,47 @@
++#pragma once
++
++#include "Thresholds.hpp"
++#include "Utils.hpp"
++#include "sensor.hpp"
++
++#include <boost/asio/streambuf.hpp>
++#include <boost/container/flat_map.hpp>
++#include <gpiod.hpp>
++#include <sdbusplus/asio/object_server.hpp>
++
++#include <filesystem>
++#include <fstream>
++#include <memory>
++#include <stdexcept>
++#include <string>
++#include <variant>
++#include <vector>
++
++class AMDCPUSensor :
++    public Sensor,
++    public std::enable_shared_from_this<AMDCPUSensor>
++{
++  public:
++    AMDCPUSensor(const std::string& path, const std::string& objectType,
++                 sdbusplus::asio::object_server& objectServer,
++                 std::shared_ptr<sdbusplus::asio::connection>& conn,
++                 boost::asio::io_service& io, const std::string& sensorName,
++                 std::vector<thresholds::Threshold>&& thresholds,
++                 PowerState readState, const std::string& sensorConfiguration,
++                 const double maxValue, const double minValue,
++                 unsigned int sensorPollMs,
++                 const std::optional<double>& tctlMax);
++    ~AMDCPUSensor();
++    void setupRead(void);
++
++  private:
++    sdbusplus::asio::object_server& objServer;
++    boost::asio::posix::stream_descriptor inputDev;
++    boost::asio::steady_timer waitTimer;
++    std::shared_ptr<boost::asio::streambuf> readBuf;
++    std::string path;
++    unsigned int sensorPollMs;
++    thresholds::ThresholdTimer thresholdTimer;
++    void handleResponse(const boost::system::error_code& err);
++    void checkThresholds(void) override;
++};
+diff --git a/meson_options.txt b/meson_options.txt
+index 4dbbb57..3e474f8 100644
+--- a/meson_options.txt
++++ b/meson_options.txt
+@@ -1,5 +1,6 @@
+ option('adc', type: 'feature', value: 'enabled', description: 'Enable ADC sensor.',)
+-option('cpu', type: 'feature', value: 'enabled', description: 'Enable CPU sensor.',)
++option('amdcpu', type: 'feature', value: 'disabled', description: 'Enable AMD CPU sensor.',)
++option('cpu', type: 'feature', value: 'enabled', description: 'Enable INTEL CPU sensor.',)
+ option('dimm', type: 'feature', value: 'disabled', description: 'Enable DIMM sensor.',)
+ option('exit-air', type: 'feature', value: 'enabled', description: 'Enable exit air sensor.',)
+ option('fan', type: 'feature', value: 'enabled', description: 'Enable fan sensor.',)
+diff --git a/service_files/meson.build b/service_files/meson.build
+index a149dea..cf59fdd 100644
+--- a/service_files/meson.build
++++ b/service_files/meson.build
+@@ -1,5 +1,6 @@
+ unit_files = [
+     ['adc', 'xyz.openbmc_project.adcsensor.service'],
++    ['amdcpu', 'xyz.openbmc_project.cpusensor.service'],
+     ['cpu', 'xyz.openbmc_project.cpusensor.service'],
+     ['dimm', 'xyz.openbmc_project.dimmsensor.service'],
+     ['exit-air', 'xyz.openbmc_project.exitairsensor.service'],
+diff --git a/src/AMDCPUSensor.cpp b/src/AMDCPUSensor.cpp
+new file mode 100644
+index 0000000..e739b46
+--- /dev/null
++++ b/src/AMDCPUSensor.cpp
+@@ -0,0 +1,177 @@
++#include "AMDCPUSensor.hpp"
++
++#include "Utils.hpp"
++
++#include <unistd.h>
++
++#include <boost/algorithm/string/predicate.hpp>
++#include <boost/algorithm/string/replace.hpp>
++#include <boost/asio/read_until.hpp>
++#include <sdbusplus/asio/connection.hpp>
++#include <sdbusplus/asio/object_server.hpp>
++
++#include <iostream>
++#include <istream>
++#include <limits>
++#include <memory>
++#include <stdexcept>
++#include <string>
++#include <vector>
++
++static constexpr const char* sensorPathPrefix = "/xyz/openbmc_project/sensors/";
++
++static constexpr unsigned int sensorScaleFactor = 1000;
++static constexpr double roundFactor = 10000;
++
++AMDCPUSensor::AMDCPUSensor(
++    const std::string& path, const std::string& objectType,
++    sdbusplus::asio::object_server& objectServer,
++    std::shared_ptr<sdbusplus::asio::connection>& conn,
++    boost::asio::io_service& io, const std::string& sensorName,
++    std::vector<thresholds::Threshold>&& _thresholds, PowerState readState,
++    const std::string& sensorConfiguration, const double maxValue,
++    const double minValue, unsigned int sensorPollMs,
++    const std::optional<double>& tctlMax) :
++    Sensor(boost::replace_all_copy(sensorName, " ", "_"),
++           std::move(_thresholds), sensorConfiguration, objectType, false,
++           maxValue, minValue, conn, readState),
++    std::enable_shared_from_this<AMDCPUSensor>(), objServer(objectServer),
++    inputDev(io, open(path.c_str(), O_RDONLY)), waitTimer(io), path(path),
++    sensorPollMs(sensorPollMs), thresholdTimer(io, this)
++{
++    std::string dbusPath(sensorPathPrefix + std::string("temperature/") + name);
++
++    sensorInterface = objectServer.add_interface(
++        dbusPath, "xyz.openbmc_project.Sensor.Value");
++    if (tctlMax.has_value())
++    {
++        sensorInterface->register_property("TctlMax", tctlMax.value());
++    }
++    if (thresholds::hasWarningInterface(thresholds))
++    {
++        thresholdInterfaceWarning = objectServer.add_interface(
++            dbusPath, "xyz.openbmc_project.Sensor.Threshold.Warning");
++    }
++    if (thresholds::hasCriticalInterface(thresholds))
++    {
++        thresholdInterfaceCritical = objectServer.add_interface(
++            dbusPath, "xyz.openbmc_project.Sensor.Threshold.Critical");
++    }
++
++    association = objectServer.add_interface(dbusPath, association::interface);
++
++    setInitialProperties(conn, sensor_paths::unitDegreesC);
++}
++
++AMDCPUSensor::~AMDCPUSensor()
++{
++    // close the input dev to cancel async operations
++    inputDev.close();
++    waitTimer.cancel();
++    objServer.remove_interface(thresholdInterfaceWarning);
++    objServer.remove_interface(thresholdInterfaceCritical);
++    objServer.remove_interface(sensorInterface);
++    objServer.remove_interface(association);
++}
++
++void AMDCPUSensor::setupRead(void)
++{
++    std::shared_ptr<boost::asio::streambuf> buffer =
++        std::make_shared<boost::asio::streambuf>();
++
++    std::weak_ptr<AMDCPUSensor> weakRef = weak_from_this();
++
++    boost::asio::async_read_until(
++        inputDev, *buffer, '\n',
++        [weakRef, buffer](const boost::system::error_code& ec,
++                          std::size_t /*bytes_transfered*/) {
++            std::shared_ptr<AMDCPUSensor> self = weakRef.lock();
++            if (self)
++            {
++                self->readBuf = buffer;
++                self->handleResponse(ec);
++            }
++        });
++}
++void AMDCPUSensor::handleResponse(const boost::system::error_code& err)
++{
++    std::weak_ptr<AMDCPUSensor> weakRef = weak_from_this();
++
++    if (err == boost::system::errc::bad_file_descriptor)
++    {
++        return; // we're being destroyed
++    }
++    std::istream responseStream(readBuf.get());
++
++    if (readingStateGood())
++    {
++        std::string response;
++        std::getline(responseStream, response);
++
++        // todo read scaling factors from configuration
++        try
++        {
++            rawValue = std::stod(response);
++            double nvalue = (rawValue / sensorScaleFactor);
++            nvalue = std::round(nvalue * roundFactor) / roundFactor;
++            updateValue(nvalue);
++        }
++        catch (std::invalid_argument&)
++        {
++            incrementError();
++        }
++    }
++    else
++    {
++        markAvailable(false);
++    }
++
++    responseStream.clear();
++    inputDev.close();
++
++    int fd = open(path.c_str(), O_RDONLY);
++    if (fd < 0)
++    {
++        std::cerr << "AMDCPUSensor " << name << " failed to open " << path
++                  << "\n";
++        return; // we're no longer valid
++    }
++    inputDev.assign(fd);
++    waitTimer.expires_from_now(std::chrono::milliseconds(sensorPollMs));
++    waitTimer.async_wait([weakRef](const boost::system::error_code& ec) {
++        std::shared_ptr<AMDCPUSensor> self = weakRef.lock();
++        if (ec == boost::asio::error::operation_aborted)
++        {
++            if (self)
++            {
++                std::cerr << "AMDCPUSensor " << self->name
++                          << " read cancelled\n";
++            }
++            else
++            {
++                std::cerr << "AMDCPUSensor read cancelled no self\n";
++            }
++            return; // we're being canceled
++        }
++
++        if (self)
++        {
++            self->setupRead();
++        }
++        else
++        {
++            std::cerr << "AMDCPUSensor weakref no self\n";
++        }
++    });
++}
++
++void AMDCPUSensor::checkThresholds(void)
++{
++    if (!readingStateGood())
++    {
++        markAvailable(false);
++        return;
++    }
++
++    thresholds::checkThresholdsPowerDelay(this, thresholdTimer);
++}
+diff --git a/src/AMDCPUSensorMain.cpp b/src/AMDCPUSensorMain.cpp
+new file mode 100644
+index 0000000..88fefb6
+--- /dev/null
++++ b/src/AMDCPUSensorMain.cpp
+@@ -0,0 +1,280 @@
++#include "AMDCPUSensor.hpp"
++#include "Utils.hpp"
++#include "VariantVisitors.hpp"
++
++#include <fcntl.h>
++
++#include <boost/algorithm/string/predicate.hpp>
++#include <boost/algorithm/string/replace.hpp>
++#include <boost/container/flat_map.hpp>
++#include <boost/container/flat_set.hpp>
++#include <boost/process/child.hpp>
++#include <sdbusplus/asio/connection.hpp>
++#include <sdbusplus/asio/object_server.hpp>
++#include <sdbusplus/bus/match.hpp>
++
++#include <array>
++#include <filesystem>
++#include <fstream>
++#include <functional>
++#include <memory>
++#include <regex>
++#include <sstream>
++#include <stdexcept>
++#include <string>
++#include <utility>
++#include <variant>
++#include <vector>
++
++static constexpr bool DEBUG = false;
++
++namespace fs = std::filesystem;
++
++static constexpr std::array<const char*, 1> sensorTypes = {
++    "xyz.openbmc_project.Configuration.CPU"};
++static std::regex inputRegex(R"(temp(\d+)_input)");
++
++unsigned int initSensorPollMs = 1000;
++static constexpr double maxReading = 127;
++static constexpr double minReading = -128;
++
++bool isCpu(const fs::path& parentPath)
++{
++    fs::path namePath = parentPath / "name";
++
++    std::ifstream nameFile(namePath);
++    if (!nameFile.good())
++    {
++        std::cerr << "Failure reading " << namePath.string() << "\n";
++        return false;
++    }
++
++    std::string name;
++    std::getline(nameFile, name);
++
++    return name == "sbtsi";
++}
++
++bool createSensors(
++    boost::asio::io_service& io, sdbusplus::asio::object_server& objectServer,
++    boost::container::flat_map<std::string, std::shared_ptr<AMDCPUSensor>>&
++        sensors,
++    std::shared_ptr<sdbusplus::asio::connection>& dbusConnection,
++    const std::shared_ptr<boost::container::flat_set<std::string>>&
++        sensorsChanged)
++{
++    auto getter = std::make_shared<GetSensorConfiguration>(
++        dbusConnection,
++        std::move([&io, &objectServer, &sensors, &dbusConnection,
++                   sensorsChanged](
++                      const ManagedObjectType& sensorConfigurations) {
++            bool firstScan = sensorsChanged == nullptr;
++            std::vector<fs::path> paths;
++            if (!findFiles(fs::path("/sys/class/hwmon"), R"(temp\d+_input)",
++                           paths))
++            {
++                std::cerr << "No temperature sensors in system\n";
++                return;
++            }
++
++            // iterate through all found cpu sensors, and try to match them with
++            // configuration
++            for (auto& path : paths)
++            {
++                if (!isCpu(path.parent_path()))
++                {
++                    continue;
++                }
++                std::smatch match;
++                std::string pathStr = path.string();
++
++                std::regex_search(pathStr, match, inputRegex);
++                std::string indexStr = *(match.begin() + 1);
++
++                auto directory = path.parent_path();
++
++                const SensorData* sensorData = nullptr;
++                const std::string* interfacePath = nullptr;
++                const char* sensorType = nullptr;
++                const std::pair<
++                    std::string,
++                    boost::container::flat_map<std::string, BasicVariantType>>*
++                    baseConfiguration;
++                for (const std::pair<sdbusplus::message::object_path,
++                                     SensorData>& sensor : sensorConfigurations)
++                {
++                    // clear it out each loop
++                    baseConfiguration = nullptr;
++
++                    // find base configuration
++                    for (const char* type : sensorTypes)
++                    {
++                        auto sensorBase = sensor.second.find(type);
++                        if (sensorBase != sensor.second.end())
++                        {
++                            baseConfiguration = &(*sensorBase);
++                            sensorType = type;
++                            break;
++                        }
++                    }
++                    if (baseConfiguration == nullptr)
++                    {
++                        continue;
++                    }
++
++                    sensorData = &(sensor.second);
++                    interfacePath = &(sensor.first.str);
++                    break;
++                }
++                if (sensorData == nullptr)
++                {
++                    std::cerr << "failed to find match for " << path.string()
++                              << "\n";
++                    continue;
++                }
++
++                if (baseConfiguration == nullptr)
++                {
++                    std::cerr << "error finding base configuration for"
++                              << path.string() << "\n";
++                    continue;
++                }
++
++                auto findSensorName = baseConfiguration->second.find("Name");
++                if (findSensorName == baseConfiguration->second.end())
++                {
++                    std::cerr << "could not determine configuration name for "
++                              << path.string() << "\n";
++                    continue;
++                }
++                std::string sensorName =
++                    std::get<std::string>(findSensorName->second);
++
++                // on rescans, only update sensors we were signaled by
++                auto findSensor = sensors.find(sensorName);
++                if (!firstScan && findSensor != sensors.end())
++                {
++                    bool found = false;
++                    for (auto it = sensorsChanged->begin();
++                         it != sensorsChanged->end(); it++)
++                    {
++                        if (findSensor->second &&
++                            boost::ends_with(*it, findSensor->second->name))
++                        {
++                            sensorsChanged->erase(it);
++                            findSensor->second = nullptr;
++                            found = true;
++                            break;
++                        }
++                    }
++                    if (!found)
++                    {
++                        continue;
++                    }
++                }
++                std::vector<thresholds::Threshold> sensorThresholds;
++                if (!parseThresholdsFromConfig(*sensorData, sensorThresholds))
++                {
++                    std::cerr << "error populating thresholds for "
++                              << sensorName << "\n";
++                }
++
++                std::optional<double> tctlMax = std::nullopt;
++                auto findTctlMax = baseConfiguration->second.find("TctlMax");
++                if (findTctlMax != baseConfiguration->second.end())
++                {
++                    tctlMax = std::visit(VariantToDoubleVisitor(),
++                                         findTctlMax->second);
++                }
++
++                auto findPowerOn = baseConfiguration->second.find("PowerState");
++                PowerState readState = PowerState::always;
++                if (findPowerOn != baseConfiguration->second.end())
++                {
++                    std::string powerState = std::visit(
++                        VariantToStringVisitor(), findPowerOn->second);
++                    setReadState(powerState, readState);
++                }
++
++                auto limits = std::make_pair(minReading, maxReading);
++                findLimits(limits, baseConfiguration);
++
++                unsigned int sensorPollMs = initSensorPollMs;
++                auto findPollingTime =
++                    baseConfiguration->second.find("PollingTime");
++                if (findPollingTime != baseConfiguration->second.end())
++                {
++                    sensorPollMs = std::visit(VariantToUnsignedIntVisitor(),
++                                              findPollingTime->second);
++                }
++
++                sensors[sensorName] = std::make_shared<AMDCPUSensor>(
++                    path.string(), sensorType, objectServer, dbusConnection, io,
++                    sensorName, std::move(sensorThresholds), readState,
++                    *interfacePath, limits.second, limits.first, sensorPollMs,
++                    tctlMax);
++                sensors[sensorName]->setupRead();
++            }
++        }));
++
++    getter->getConfiguration(
++        std::vector<std::string>{sensorTypes.begin(), sensorTypes.end()});
++    return true;
++}
++
++int main()
++{
++    boost::asio::io_service io;
++    auto systemBus = std::make_shared<sdbusplus::asio::connection>(io);
++    systemBus->request_name("xyz.openbmc_project.AMDCPUSensor");
++    sdbusplus::asio::object_server objectServer(systemBus);
++    boost::container::flat_map<std::string, std::shared_ptr<AMDCPUSensor>>
++        sensors;
++    std::vector<std::unique_ptr<sdbusplus::bus::match::match>> matches;
++    auto sensorsChanged =
++        std::make_shared<boost::container::flat_set<std::string>>();
++
++    io.post([&]() {
++        createSensors(io, objectServer, sensors, systemBus, nullptr);
++    });
++
++    boost::asio::steady_timer filterTimer(io);
++    std::function<void(sdbusplus::message::message&)> eventHandler =
++        [&](sdbusplus::message::message& message) {
++            if (message.is_method_error())
++            {
++                std::cerr << "callback method error\n";
++                return;
++            }
++            sensorsChanged->insert(message.get_path());
++            // this implicitly cancels the timer
++            filterTimer.expires_from_now(std::chrono::seconds(1));
++
++            filterTimer.async_wait([&](const boost::system::error_code& ec) {
++                if (ec == boost::asio::error::operation_aborted)
++                {
++                    /* we were canceled*/
++                    return;
++                }
++                if (ec)
++                {
++                    std::cerr << "timer error\n";
++                    return;
++                }
++                createSensors(io, objectServer, sensors, systemBus,
++                              sensorsChanged);
++            });
++        };
++
++    for (const char* type : sensorTypes)
++    {
++        auto match = std::make_unique<sdbusplus::bus::match::match>(
++            static_cast<sdbusplus::bus::bus&>(*systemBus),
++            "type='signal',member='PropertiesChanged',path_namespace='" +
++                std::string(inventoryPath) + "',arg0namespace='" + type + "'",
++            eventHandler);
++        matches.emplace_back(std::move(match));
++    }
++
++    io.run();
++}
+diff --git a/src/meson.build b/src/meson.build
+index 7bef669..5f17134 100644
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -41,6 +41,22 @@ if get_option('cpu').enabled()
+             utils_a,
+         ],
+     )
++elif get_option('amdcpu').enabled()
++    executable(
++        'cpusensor',
++        'AMDCPUSensor.cpp',
++        'AMDCPUSensorMain.cpp',
++        dependencies: [
++            sdbusplus
++        ],
++        implicit_include_directories: false,
++        include_directories: '../include',
++        install: true,
++        link_with: [
++            thresholds_a,
++            utils_a,
++        ],
++    )
+ endif
+ 
+ if get_option('dimm').enabled()
+-- 
+2.28.0
+

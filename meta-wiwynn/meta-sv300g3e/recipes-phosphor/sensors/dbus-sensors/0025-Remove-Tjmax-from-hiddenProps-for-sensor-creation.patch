@@ -1,0 +1,27 @@
+From e2eb0d246bcb931492173ba37749d040c09020d1 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Fri, 27 Mar 2020 13:18:33 +0800
+Subject: [PATCH] Remove Tjmax from hiddenProps for sensor creation
+
+---
+ src/CPUSensorMain.cpp | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/CPUSensorMain.cpp b/src/CPUSensorMain.cpp
+index 7587515..050b84f 100644
+--- a/src/CPUSensorMain.cpp
++++ b/src/CPUSensorMain.cpp
+@@ -94,8 +94,8 @@ namespace fs = std::filesystem;
+ static constexpr const char* configPrefix =
+     "xyz.openbmc_project.Configuration.";
+ static constexpr std::array<const char*, 1> sensorTypes = {"XeonCPU"};
+-static constexpr std::array<const char*, 3> hiddenProps = {
+-    CPUSensor::labelTcontrol, "Tthrottle", "Tjmax"};
++static constexpr std::array<const char*, 2> hiddenProps = {
++    CPUSensor::labelTcontrol, "Tthrottle"};
+ 
+ void detectCpuAsync(
+     boost::asio::deadline_timer& pingTimer,
+-- 
+2.24.1
+

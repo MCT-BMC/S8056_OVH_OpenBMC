@@ -1,0 +1,12 @@
+[Unit]
+Description=MiTAC SKU Manager
+Before=xyz.openbmc_project.EntityManager.service
+
+[Service]
+Restart=always
+ExecStart=/usr/bin/env mct-sku-manager
+SyslogIdentifier=mct-sku-manager
+TimeoutSec=infinity
+
+[Install]
+WantedBy={SYSTEMD_DEFAULT_TARGET}

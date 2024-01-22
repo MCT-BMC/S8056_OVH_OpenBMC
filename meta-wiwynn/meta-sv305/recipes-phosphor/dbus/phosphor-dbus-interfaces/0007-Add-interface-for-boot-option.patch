@@ -1,0 +1,81 @@
+From e117bcaf6b21ccdf5d2b56e22092004b88a63e91 Mon Sep 17 00:00:00 2001
+From: Ren_Chen <Ren_Chen@wiwynn.com>
+Date: Tue, 22 Jun 2021 14:04:20 +0800
+Subject: [PATCH 4/5] Add interface for boot option
+
+---
+ .../Control/Boot/Option/meson.build               | 13 +++++++++++++
+ gen/xyz/openbmc_project/Control/Boot/meson.build  | 14 ++++++++++++++
+ .../Control/Boot/Option.interface.yaml            | 15 +++++++++++++++
+ 3 files changed, 42 insertions(+)
+ create mode 100644 gen/xyz/openbmc_project/Control/Boot/Option/meson.build
+ create mode 100644 yaml/xyz/openbmc_project/Control/Boot/Option.interface.yaml
+
+diff --git a/gen/xyz/openbmc_project/Control/Boot/Option/meson.build b/gen/xyz/openbmc_project/Control/Boot/Option/meson.build
+new file mode 100644
+index 0000000..def0006
+--- /dev/null
++++ b/gen/xyz/openbmc_project/Control/Boot/Option/meson.build
+@@ -0,0 +1,13 @@
++# Generated file; do not modify.
++generated_sources += custom_target(
++    'xyz/openbmc_project/Control/Boot/Option__cpp'.underscorify(),
++    input: [ '../../../../../../yaml/xyz/openbmc_project/Control/Boot/Option.interface.yaml',  ],
++    output: [ 'server.cpp', 'server.hpp', 'client.hpp',  ],
++    command: [
++        sdbuspp_gen_meson_prog, '--command', 'cpp',
++        '--output', meson.current_build_dir(),
++        '--tool', sdbusplusplus_prog,
++        '--directory', meson.current_source_dir() / '../../../../../../yaml',
++        'xyz/openbmc_project/Control/Boot/Option',
++    ],
++)
+diff --git a/gen/xyz/openbmc_project/Control/Boot/meson.build b/gen/xyz/openbmc_project/Control/Boot/meson.build
+index 0945964..eebc1a4 100644
+--- a/gen/xyz/openbmc_project/Control/Boot/meson.build
++++ b/gen/xyz/openbmc_project/Control/Boot/meson.build
+@@ -13,6 +13,20 @@ generated_others += custom_target(
+     ],
+ )
+ 
++subdir('Option')
++generated_others += custom_target(
++    'xyz/openbmc_project/Control/Boot/Option__markdown'.underscorify(),
++    input: [ '../../../../../yaml/xyz/openbmc_project/Control/Boot/Option.interface.yaml',  ],
++    output: [ 'Option.md' ],
++    command: [
++        sdbuspp_gen_meson_prog, '--command', 'markdown',
++        '--output', meson.current_build_dir(),
++        '--tool', sdbusplusplus_prog,
++        '--directory', meson.current_source_dir() / '../../../../../yaml',
++        'xyz/openbmc_project/Control/Boot/Option',
++    ],
++)
++
+ subdir('RebootAttempts')
+ generated_others += custom_target(
+     'xyz/openbmc_project/Control/Boot/RebootAttempts__markdown'.underscorify(),
+diff --git a/yaml/xyz/openbmc_project/Control/Boot/Option.interface.yaml b/yaml/xyz/openbmc_project/Control/Boot/Option.interface.yaml
+new file mode 100644
+index 0000000..485b91e
+--- /dev/null
++++ b/yaml/xyz/openbmc_project/Control/Boot/Option.interface.yaml
+@@ -0,0 +1,15 @@
++ description: >
++     Implement to set boot options.
++ 
++ properties:
++     - name: ClearBootFlagValid
++       type: boolean
++       default: false
++       description: >
++           Notify whether boot flag should be cleared.
++ 
++     - name: BootFlagValidClearing
++       type: byte
++       default: 0
++       description: >
++           Mask for various conditions to clear boot flag.
+-- 
+2.28.0
+

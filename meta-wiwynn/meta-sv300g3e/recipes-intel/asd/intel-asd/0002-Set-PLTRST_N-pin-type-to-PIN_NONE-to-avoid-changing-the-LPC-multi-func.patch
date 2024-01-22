@@ -1,0 +1,25 @@
+From c0fdb6d3f156dbc17d7b7c03610d1407e14485e8 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Tue, 23 Jun 2020 10:58:46 +0800
+Subject: [PATCH] Set PLTRST_N pin type to PIN_NONE to avoid changing the LPC
+ multi-function setting
+
+---
+ target_handler.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/target_handler.c b/target_handler.c
+index d2740aa..5c6bb08 100644
+--- a/target_handler.c
++++ b/target_handler.c
+@@ -186,6 +186,7 @@ Target_Control_Handle* TargetHandler()
+                 sizeof("PLTRST_N"));
+     state->gpios[BMC_PLTRST_B].direction = GPIO_DIRECTION_IN;
+     state->gpios[BMC_PLTRST_B].edge = GPIO_EDGE_BOTH;
++    state->gpios[BMC_PLTRST_B].type = PIN_NONE;
+ 
+     strcpy_safe(state->gpios[BMC_SYSPWROK].name,
+                 sizeof(state->gpios[BMC_SYSPWROK].name), "SYSPWROK",
+-- 
+2.24.1
+

@@ -1,0 +1,25 @@
+From 729a8772bb0d0d7cb129da05083a6cb6aa5c8f78 Mon Sep 17 00:00:00 2001
+From: JPChang <JP_Chang@wiwynn.com>
+Date: Mon, 16 Dec 2019 15:41:31 +0800
+Subject: [PATCH] Change default fan PWM to 80%
+
+---
+ drivers/hwmon/aspeed-pwm-tacho.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/hwmon/aspeed-pwm-tacho.c b/drivers/hwmon/aspeed-pwm-tacho.c
+index 40c489be62ea..35d2f9b2c381 100644
+--- a/drivers/hwmon/aspeed-pwm-tacho.c
++++ b/drivers/hwmon/aspeed-pwm-tacho.c
+@@ -160,7 +160,7 @@
+  */
+ #define M_TACH_MODE 0x02 /* 10b */
+ #define M_TACH_UNIT 0x0210
+-#define INIT_FAN_CTRL 0xFF
++#define INIT_FAN_CTRL 0xCC /* Set default PWM 80% */
+ 
+ /* How long we sleep in us while waiting for an RPM result. */
+ #define ASPEED_RPM_STATUS_SLEEP_USEC	500
+-- 
+2.24.0
+

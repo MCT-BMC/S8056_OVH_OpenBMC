@@ -1,0 +1,5 @@
+DEVPATH=/dev/input/by-path/platform-gpio-keys-event
+KEY=22
+TARGET=xyz.openbmc_project.prochot0_deassert.service
+POLARITY=0
+EXTRA_ARGS=--continue

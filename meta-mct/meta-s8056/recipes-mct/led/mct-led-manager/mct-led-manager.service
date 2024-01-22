@@ -1,0 +1,11 @@
+[Unit]
+Description=MiTAC LED Manager
+
+[Service]
+Restart=always
+ExecStart=/usr/bin/env mct-led-manager
+SyslogIdentifier=mct-led-manager
+TimeoutSec=infinity
+
+[Install]
+WantedBy={SYSTEMD_DEFAULT_TARGET}

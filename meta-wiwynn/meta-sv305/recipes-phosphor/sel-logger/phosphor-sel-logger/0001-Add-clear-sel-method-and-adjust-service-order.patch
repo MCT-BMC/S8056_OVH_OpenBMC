@@ -1,0 +1,154 @@
+From 3d608d08d609795558a11c72a0b58f7ee17d0567 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Thu, 29 Oct 2020 17:41:22 +0800
+Subject: [PATCH 1/6] Add clear sel method and adjust service order
+
+%% original patch: 0001-Add-clear-sel-method-and-adjust-service-order.patch
+---
+ include/sel_logger.hpp                        |  6 +-
+ .../xyz.openbmc_project.Logging.IPMI.service  |  1 +
+ src/sel_logger.cpp                            | 91 +++++++++++++++++++
+ 3 files changed, 97 insertions(+), 1 deletion(-)
+
+diff --git a/include/sel_logger.hpp b/include/sel_logger.hpp
+index 35f8b95..4aa3b6d 100644
+--- a/include/sel_logger.hpp
++++ b/include/sel_logger.hpp
+@@ -34,9 +34,13 @@ static constexpr size_t selEvtDataMaxSize = 3;
+ static constexpr size_t selOemDataMaxSize = 13;
+ static constexpr uint8_t selEvtDataUnspecified = 0xFF;
+ 
+-static const std::filesystem::path selLogDir = "/var/log";
++static const std::filesystem::path selLogDir = "/usr/share/sel";
+ static const std::string selLogFilename = "ipmi_sel";
+ 
++constexpr int waitSystemdJobPreDelay = 100;
++constexpr int waitSystemdJobDelay = 300;
++constexpr int waitSystemdJobMaxRetry = 3;
++
+ template <typename... T>
+ static uint16_t
+     selAddSystemRecord(const std::string& message, const std::string& path,
+diff --git a/service_files/xyz.openbmc_project.Logging.IPMI.service b/service_files/xyz.openbmc_project.Logging.IPMI.service
+index 9b8ae41..5f3906b 100644
+--- a/service_files/xyz.openbmc_project.Logging.IPMI.service
++++ b/service_files/xyz.openbmc_project.Logging.IPMI.service
+@@ -1,5 +1,6 @@
+ [Unit]
+ Description=IPMI SEL Logging Service
++Before=xyz.openbmc_project.EntityManager.service
+ 
+ [Service]
+ Restart=always
+diff --git a/src/sel_logger.cpp b/src/sel_logger.cpp
+index 83d487a..d76cebf 100644
+--- a/src/sel_logger.cpp
++++ b/src/sel_logger.cpp
+@@ -207,6 +207,95 @@ static uint16_t selAddOemRecord(const std::string& message,
+ #endif
+ }
+ 
++static int selClear()
++{
++    std::error_code ec;
++    for (const auto& dirEntry : std::filesystem::directory_iterator(selLogDir))
++    {
++        std::string filename = dirEntry.path().filename();
++        if (boost::starts_with(filename, selLogFilename))
++        {
++            if (std::filesystem::remove(selLogDir / filename, ec) == false)
++            {
++                std::cerr << "Failed to remove SEL file: " << filename
++                          << ", error code: " << ec << "\n";
++                return ec.value();
++            }
++        }
++    }
++
++    auto bus = sdbusplus::bus::new_system();
++    sdbusplus::message::object_path reloadJobPath;
++
++    // Reload rsyslog so it knows to start new log files
++    auto rsyslogReloadMsg = bus.new_method_call(
++        "org.freedesktop.systemd1", "/org/freedesktop/systemd1",
++        "org.freedesktop.systemd1.Manager", "ReloadUnit");
++    rsyslogReloadMsg.append("rsyslog.service", "replace");
++    try
++    {
++        auto reloadResponse = bus.call(rsyslogReloadMsg);
++        reloadResponse.read(reloadJobPath);
++    }
++    catch (sdbusplus::exception_t& e)
++    {
++        throw;
++    }
++
++    sdbusplus::message::message rsyslogReloadJobMsg = bus.new_method_call(
++        "org.freedesktop.systemd1", reloadJobPath.str.c_str(),
++        "org.freedesktop.DBus.Introspectable", "Introspect");
++    std::this_thread::sleep_for(
++        std::chrono::milliseconds(waitSystemdJobPreDelay));
++
++    // If Dbus call failed means rsyslog reloadUnit is done.
++    bool reloadDone = false;
++    for (int retryCount = 0; retryCount < waitSystemdJobMaxRetry; ++retryCount)
++    {
++        try
++        {
++            bus.call(rsyslogReloadJobMsg);
++            std::this_thread::sleep_for(
++                std::chrono::milliseconds(waitSystemdJobDelay));
++        }
++        catch (sdbusplus::exception_t& e)
++        {
++            reloadDone = true;
++            break;
++        }
++    }
++    if (reloadDone == false)
++    {
++        std::cerr << "Wait for rsyslog reload unit timeout\n";
++        return -ETIME;
++    }
++
++    // Add a SEL about SEL is cleared.
++    std::string path("/xyz/openbmc_project/sensors/discrete/Event_Logging");
++    std::vector<uint8_t> eventData{0x02, 0xFF, 0xFF};
++    const std::string ipmiSELAddMessage = "SEL Clear";
++    bool assert = true;
++    constexpr uint16_t sleBMCGenID = 0x0020;
++
++    try
++    {
++        uint16_t recordID = selAddSystemRecord(ipmiSELAddMessage, path,
++                                               eventData, assert, sleBMCGenID);
++        if (recordID == selInvalidRecID)
++        {
++            std::cerr << "Failed to add SEL clear: Got invalid record ID\n";
++            return -EBADFD;
++        }
++    }
++    catch (const std::invalid_argument& e)
++    {
++        std::cerr << "Failed to add SEL clear: " << e.what() << "\n";
++        return -EINVAL;
++    }
++
++    return 0;
++}
++
+ int main(int argc, char* argv[])
+ {
+     // setup connection to dbus
+@@ -235,6 +324,8 @@ int main(int argc, char* argv[])
+            const uint8_t& recordType) {
+             return selAddOemRecord(message, selData, recordType);
+         });
++    // Clear all SEL entries.
++    ifaceAddSel->register_method("IpmiSelClear", []() { return selClear(); });
+     ifaceAddSel->initialize();
+ 
+ #ifdef SEL_LOGGER_MONITOR_THRESHOLD_EVENTS
+-- 
+2.28.0
+

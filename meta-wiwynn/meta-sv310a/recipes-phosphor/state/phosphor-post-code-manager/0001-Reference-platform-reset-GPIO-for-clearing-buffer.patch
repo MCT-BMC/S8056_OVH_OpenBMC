@@ -1,0 +1,141 @@
+From d9fe9ac0fd7889d6387c184a019a0d706906c8d2 Mon Sep 17 00:00:00 2001
+From: Ren_Chen <Ren_Chen@wiwynn.com>
+Date: Thu, 29 Jul 2021 22:15:40 +0800
+Subject: [PATCH] Reference platform reset GPIO for clearing buffer
+
+---
+ CMakeLists.txt    | 10 ++++++++++
+ inc/post_code.hpp | 42 ++++++++++++------------------------------
+ src/post_code.cpp |  4 ++++
+ 3 files changed, 26 insertions(+), 30 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 7c68a66..d76d120 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -47,8 +47,18 @@ add_executable(${PROJECT_NAME} ${SRC_FILES})
+ target_link_libraries(${PROJECT_NAME} ${DBUSINTERFACE_LIBRARIES} )
+ target_link_libraries(${PROJECT_NAME} "${SDBUSPLUSPLUS_LIBRARIES} -lstdc++fs -lphosphor_dbus")
+ 
++if(NOT DEFINED MAX_POST_CODE_CYCLES)
++set(MAX_POST_CODE_CYCLES 5)
++endif(NOT DEFINED MAX_POST_CODE_CYCLES)
++
++if(NOT DEFINED MAX_POST_CODE_SIZE_PER_CYCLE)
++set(MAX_POST_CODE_SIZE_PER_CYCLE 512)
++endif(NOT DEFINED MAX_POST_CODE_SIZE_PER_CYCLE)
++
+ install (TARGETS ${PROJECT_NAME} DESTINATION ${CMAKE_INSTALL_BINDIR})
+ target_compile_definitions (
+     ${PROJECT_NAME} PRIVATE $<$<BOOL:${ENABLE_BIOS_POST_CODE_LOG}>: -DENABLE_BIOS_POST_CODE_LOG>
++    $<$<BOOL:${MAX_POST_CODE_CYCLES}>: -DMAX_POST_CODE_CYCLES=${MAX_POST_CODE_CYCLES}>
++    $<$<BOOL:${MAX_POST_CODE_SIZE_PER_CYCLE}>: -DMAX_POST_CODE_SIZE_PER_CYCLE=${MAX_POST_CODE_SIZE_PER_CYCLE}>
+ )
+ install (FILES ${SERVICE_FILES} DESTINATION /lib/systemd/system/)
+diff --git a/inc/post_code.hpp b/inc/post_code.hpp
+index 05ce284..9609aae 100644
+--- a/inc/post_code.hpp
++++ b/inc/post_code.hpp
+@@ -33,13 +33,13 @@
+ #include <xyz/openbmc_project/State/Boot/PostCode/server.hpp>
+ #include <xyz/openbmc_project/State/Host/server.hpp>
+ 
+-#define MaxPostCodeCycles 100
+-
+ const static constexpr char *CurrentBootCycleCountName =
+     "CurrentBootCycleCount";
+ const static constexpr char *CurrentBootCycleIndexName =
+     "CurrentBootCycleIndex";
+ 
++static constexpr auto GpioStatusPath = "/xyz/openbmc_project/gpio/status";
++
+ // Singleton holder to store host/node and other path information
+ class PostCodeDataHolder
+ {
+@@ -118,42 +118,24 @@ struct PostCode : sdbusplus::server::object_t<post_code, delete_all>
+                     }
+                 }
+             }),
+-        propertiesChangedSignalCurrentHostState(
++        propertiesChangedSignalPlatformReset(
+             bus,
+             sdbusplus::bus::match::rules::type::signal() +
+                 sdbusplus::bus::match::rules::member("PropertiesChanged") +
+-                sdbusplus::bus::match::rules::path(
+-                    postcodeDataHolderObj->HostStatePathPrefix +
+-                    std::to_string(postcodeDataHolderObj->node)) +
++                sdbusplus::bus::match::rules::path(GpioStatusPath) +
+                 sdbusplus::bus::match::rules::interface(
+                     postcodeDataHolderObj->PropertiesIntf),
+             [this](sdbusplus::message::message &msg) {
+                 std::string objectName;
+-                std::map<std::string, std::variant<std::string>> msgData;
++                std::map<std::string, std::variant<bool>> msgData;
+                 msg.read(objectName, msgData);
+-                // Check if it was the Value property that changed.
+-                auto valPropMap = msgData.find("CurrentHostState");
++                // Check if it was the PlatformReset property that changed.
++                auto valPropMap = msgData.find("PlatformReset");
++                if (valPropMap != msgData.end())
+                 {
+-                    if (valPropMap != msgData.end())
++                    if (!std::get<bool>(valPropMap->second))
+                     {
+-                        StateServer::Host::HostState currentHostState =
+-                            StateServer::Host::convertHostStateFromString(
+-                                std::get<std::string>(valPropMap->second));
+-                        if (currentHostState ==
+-                            StateServer::Host::HostState::Off)
+-                        {
+-                            if (this->postCodes.empty())
+-                            {
+-                                std::cerr << "HostState changed to OFF. Empty "
+-                                             "postcode log, keep boot cycle at "
+-                                          << this->currentBootCycleIndex
+-                                          << std::endl;
+-                            }
+-                            else
+-                            {
+-                                this->postCodes.clear();
+-                            }
+-                        }
++                        this->postCodes.clear();
+                     }
+                 }
+             })
+@@ -177,7 +159,7 @@ struct PostCode : sdbusplus::server::object_t<post_code, delete_all>
+             fs::path(strPostCodeListPath + strCurrentBootCycleCountName),
+             count);
+         currentBootCycleCount(count);
+-        maxBootCycleNum(MaxPostCodeCycles);
++        maxBootCycleNum(MAX_POST_CODE_CYCLES);
+     }
+     ~PostCode()
+     {
+@@ -202,7 +184,7 @@ struct PostCode : sdbusplus::server::object_t<post_code, delete_all>
+     std::string strCurrentBootCycleCountName;
+     void savePostCodes(postcode_t code);
+     sdbusplus::bus::match_t propertiesChangedSignalRaw;
+-    sdbusplus::bus::match_t propertiesChangedSignalCurrentHostState;
++    sdbusplus::bus::match_t propertiesChangedSignalPlatformReset;
+     fs::path serialize(const std::string &path);
+     bool deserialize(const fs::path &path, uint16_t &index);
+     bool deserializePostCodes(const fs::path &path,
+diff --git a/src/post_code.cpp b/src/post_code.cpp
+index 31c3e16..402847d 100644
+--- a/src/post_code.cpp
++++ b/src/post_code.cpp
+@@ -95,6 +95,10 @@ void PostCode::savePostCodes(postcode_t code)
+     }
+ 
+     postCodes.insert(std::make_pair(tsUS, code));
++    if (postCodes.size() > MAX_POST_CODE_SIZE_PER_CYCLE)
++    {
++        postCodes.erase(postCodes.begin());
++    }
+     serialize(fs::path(strPostCodeListPath));
+ 
+ #ifdef ENABLE_BIOS_POST_CODE_LOG
+-- 
+2.32.0
+

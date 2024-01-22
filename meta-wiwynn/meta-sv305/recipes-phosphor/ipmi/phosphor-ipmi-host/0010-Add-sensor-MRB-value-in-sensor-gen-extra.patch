@@ -1,0 +1,57 @@
+From b7a040c6fab41a4c4266377bfae55adf382078ee Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Thu, 19 Nov 2020 10:07:04 +0800
+Subject: [PATCH] Add sensor MRB value in sensor gen extra
+
+---
+ scripts/writesensor_extra.mako.cpp | 23 +++++++++++++++++++----
+ 1 file changed, 19 insertions(+), 4 deletions(-)
+
+diff --git a/scripts/writesensor_extra.mako.cpp b/scripts/writesensor_extra.mako.cpp
+index 3a3fcd0..9ad75e4 100644
+--- a/scripts/writesensor_extra.mako.cpp
++++ b/scripts/writesensor_extra.mako.cpp
+@@ -8,9 +8,16 @@
+ 
+ struct SensorInfo
+ {
+-	uint8_t sensorNumber;
+-	uint8_t sensorType;
+-	uint8_t sensorReadingType;
++  uint8_t sensorNumber;
++  uint8_t sensorType;
++  uint8_t sensorReadingType;
++  uint16_t coefficientM;
++  int16_t coefficientB;
++  int8_t exponentB;
++  double scaledOffset;
++  int8_t exponentR;
++  bool hasScale;
++  int16_t scale;
+ };
+ 
+ using extraIdInfoMap = std::multimap<std::string, SensorInfo>;
+@@ -32,11 +39,19 @@ inline const extraIdInfoMap sensorsInfo = {
+             path = sensor["path"]
+             sensorType = sensor["sensorType"]
+             sensorReadingType = sensor["sensorReadingType"]
++            multiplier = sensor.get("multiplierM", 1)
++            offsetB = sensor.get("offsetB", 0)
++            bExp = sensor.get("bExp", 0)
++            rExp = sensor.get("rExp", 0)
++            scale = sensor.get("scale", 0)
++            hasScale = "true" if "scale" in sensor.keys() else "false"
+ %>
+             {
+                "${path}",
+                {
+-                   ${key}, ${sensorType}, ${sensorReadingType}
++                   ${key}, ${sensorType}, ${sensorReadingType}, ${multiplier},
++                   ${offsetB}, ${bExp}, ${offsetB * pow(10,bExp)}, ${rExp},
++                   ${hasScale}, ${scale}
+                }
+             },
+         % endfor
+-- 
+2.28.0
+

@@ -1,0 +1,314 @@
+From d3adf2eda8f3a4eb42c384bedf0dcdfc4b39afeb Mon Sep 17 00:00:00 2001
+From: Janny Au <janny.au@mic.com.tw>
+Date: Thu, 10 Mar 2022 15:34:51 +0800
+Subject: [PATCH] soc-aspeed-Miscellaneous-control-interfaces
+
+---
+ drivers/soc/aspeed/Kconfig           |   9 +
+ drivers/soc/aspeed/Makefile          |   1 +
+ drivers/soc/aspeed/aspeed-bmc-misc.c | 266 +++++++++++++++++++++++++++
+ 3 files changed, 276 insertions(+)
+ create mode 100755 drivers/soc/aspeed/aspeed-bmc-misc.c
+
+diff --git a/drivers/soc/aspeed/Kconfig b/drivers/soc/aspeed/Kconfig
+index f941c41b84dc..32594d212baa 100644
+--- a/drivers/soc/aspeed/Kconfig
++++ b/drivers/soc/aspeed/Kconfig
+@@ -62,6 +62,15 @@ config ASPEED_XDMA
+ 	  SoCs. The XDMA engine can perform PCIe DMA operations between the BMC
+ 	  and a host processor.
+ 
++config ASPEED_BMC_MISC
++    bool "Miscellaneous ASPEED BMC interfaces"
++    depends on ARCH_ASPEED || COMPILE_TEST
++    default ARCH_ASPEED
++    help
++      Say yes to expose VGA and LPC scratch registers, and other
++      miscellaneous control interfaces specific to the ASPEED BMC SoCs
++
++
+ endmenu
+ 
+ endif
+diff --git a/drivers/soc/aspeed/Makefile b/drivers/soc/aspeed/Makefile
+index 8fb73cede4bf..1990d4091778 100644
+--- a/drivers/soc/aspeed/Makefile
++++ b/drivers/soc/aspeed/Makefile
+@@ -1,4 +1,5 @@
+ # SPDX-License-Identifier: GPL-2.0-only
++obj-$(CONFIG_ASPEED_BMC_MISC)	+= aspeed-bmc-misc.o
+ obj-$(CONFIG_ASPEED_LPC_CTRL)		+= aspeed-lpc-ctrl.o
+ obj-$(CONFIG_ASPEED_LPC_SNOOP)		+= aspeed-lpc-snoop.o
+ obj-$(CONFIG_ASPEED_UART_ROUTING)	+= aspeed-uart-routing.o
+diff --git a/drivers/soc/aspeed/aspeed-bmc-misc.c b/drivers/soc/aspeed/aspeed-bmc-misc.c
+new file mode 100755
+index 000000000000..d2508c44de53
+--- /dev/null
++++ b/drivers/soc/aspeed/aspeed-bmc-misc.c
+@@ -0,0 +1,266 @@
++// SPDX-License-Identifier: GPL-2.0+
++// Copyright 2018 IBM Corp.
++
++#include <linux/kobject.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/platform_device.h>
++#include <linux/regmap.h>
++#include <linux/mfd/syscon.h>
++#include <linux/interrupt.h>
++#include <linux/irq.h>
++#include <linux/irqchip/chained_irq.h>
++#include <linux/of_irq.h>
++#include <linux/of_platform.h>
++#include <linux/mutex.h>
++
++#define DEVICE_NAME "aspeed-bmc-misc"
++
++struct aspeed_bmc_ctrl {
++	const char *name;
++	u32 offset;
++	u32 mask;
++	u32 shift;
++	struct regmap *map;
++	struct kobj_attribute attr;
++};
++
++struct aspeed_bmc_misc {
++	struct device *dev;
++	struct regmap *map;
++	struct aspeed_bmc_ctrl *ctrls;
++	int nr_ctrls;
++	struct mutex irq_lock;
++	struct kernfs_node *kn;
++};
++
++static int irq;
++static int irq_status;
++
++static int aspeed_bmc_misc_parse_dt_child(struct device_node *child,
++					  struct aspeed_bmc_ctrl *ctrl)
++{
++	int rc;
++
++	/* Example child:
++	 *
++	 * ilpc2ahb {
++	 *     offset = <0x80>;
++	 *     bit-mask = <0x1>;
++	 *     bit-shift = <6>;
++	 *     label = "foo";
++	 * }
++	 */
++	if (of_property_read_string(child, "label", &ctrl->name))
++		ctrl->name = child->name;
++
++	rc = of_property_read_u32(child, "offset", &ctrl->offset);
++	if (rc < 0)
++		return rc;
++
++	rc = of_property_read_u32(child, "bit-mask", &ctrl->mask);
++	if (rc < 0)
++		return rc;
++
++	rc = of_property_read_u32(child, "bit-shift", &ctrl->shift);
++	if (rc < 0)
++		return rc;
++
++	ctrl->mask <<= ctrl->shift;
++
++	return 0;
++}
++
++static int aspeed_bmc_misc_parse_dt(struct aspeed_bmc_misc *bmc,
++				    struct device_node *parent)
++{
++	struct aspeed_bmc_ctrl *ctrl;
++	struct device_node *child;
++	int rc;
++
++	bmc->nr_ctrls = of_get_child_count(parent);
++	bmc->ctrls = devm_kcalloc(bmc->dev, bmc->nr_ctrls, sizeof(*bmc->ctrls),
++				  GFP_KERNEL);
++	if (!bmc->ctrls)
++		return -ENOMEM;
++
++	ctrl = bmc->ctrls;
++	for_each_child_of_node(parent, child) {
++		rc = aspeed_bmc_misc_parse_dt_child(child, ctrl++);
++		if (rc < 0) {
++			of_node_put(child);
++			return rc;
++		}
++	}
++
++	return 0;
++}
++
++static ssize_t aspeed_bmc_misc_show(struct kobject *kobj,
++				    struct kobj_attribute *attr, char *buf)
++{
++	struct aspeed_bmc_ctrl *ctrl;
++	unsigned int val;
++	int rc;
++
++	ctrl = container_of(attr, struct aspeed_bmc_ctrl, attr);
++	rc = regmap_read(ctrl->map, ctrl->offset, &val);
++	if (rc)
++		return rc;
++
++	val &= ctrl->mask;
++	val >>= ctrl->shift;
++
++	return sprintf(buf, "%u\n", val);
++}
++
++static ssize_t aspeed_bmc_misc_store(struct kobject *kobj,
++				     struct kobj_attribute *attr,
++				     const char *buf, size_t count)
++{
++	struct aspeed_bmc_ctrl *ctrl;
++	long val;
++	int rc;
++
++	rc = kstrtol(buf, 0, &val);
++	if (rc)
++		return rc;
++
++	ctrl = container_of(attr, struct aspeed_bmc_ctrl, attr);
++	val <<= ctrl->shift;
++	rc = regmap_update_bits(ctrl->map, ctrl->offset, ctrl->mask, val);
++
++	return rc < 0 ? rc : count;
++}
++
++static ssize_t interrupt_show(struct kobject *kobj,
++				    struct kobj_attribute *attr, char *buf)
++{
++	return sprintf(buf, "%d\n", irq_status);
++}
++
++static ssize_t interrupt_store(struct kobject *kobj,
++				     struct kobj_attribute *attr,
++				     const char *buf, size_t count)
++{
++	int ret;
++
++	ret = kstrtoint(buf, 10, &irq_status);
++	if (ret < 0)
++		return ret;
++
++	return count;
++}
++
++static int aspeed_bmc_misc_add_sysfs_attr(struct aspeed_bmc_misc *bmc,
++					  struct aspeed_bmc_ctrl *ctrl)
++{
++	ctrl->map = bmc->map;
++
++	sysfs_attr_init(&ctrl->attr.attr);
++	ctrl->attr.attr.name = ctrl->name;
++	ctrl->attr.attr.mode = 0664;
++	ctrl->attr.show = aspeed_bmc_misc_show;
++	ctrl->attr.store = aspeed_bmc_misc_store;
++
++	return sysfs_create_file(&bmc->dev->kobj, &ctrl->attr.attr);
++}
++
++static int aspeed_bmc_misc_populate_sysfs(struct aspeed_bmc_misc *bmc)
++{
++	int rc;
++	int i;
++
++	for (i = 0; i < bmc->nr_ctrls; i++) {
++		rc = aspeed_bmc_misc_add_sysfs_attr(bmc, &bmc->ctrls[i]);
++		if (rc < 0)
++			return rc;
++	}
++
++	return 0;
++}
++
++static irqreturn_t aspeed_misc_irq(int irq, void *arg)
++{
++	struct aspeed_bmc_misc *bmc = arg;
++
++	mutex_lock(&bmc->irq_lock);
++
++	dev_dbg(bmc->dev, "Aspeed BMC MISC IRQ\n");
++
++	irq_status = 1;
++	sysfs_notify_dirent(bmc->kn);
++
++	mutex_unlock(&bmc->irq_lock);
++
++	return IRQ_HANDLED;
++}
++
++static int aspeed_bmc_misc_probe(struct platform_device *pdev)
++{
++	struct aspeed_bmc_misc *bmc;
++	int rc;
++
++	bmc = devm_kzalloc(&pdev->dev, sizeof(*bmc), GFP_KERNEL);
++	if (!bmc)
++		return -ENOMEM;
++
++	bmc->dev = &pdev->dev;
++	bmc->map = syscon_node_to_regmap(pdev->dev.parent->of_node);
++	if (IS_ERR(bmc->map))
++		return PTR_ERR(bmc->map);
++
++	rc = aspeed_bmc_misc_parse_dt(bmc, pdev->dev.of_node);
++	if (rc < 0)
++		return rc;
++
++	mutex_init(&bmc->irq_lock);
++
++	irq = platform_get_irq(pdev, 0);
++	if (irq) {
++		irq_status=0;
++
++		static struct kobj_attribute interrupt_attribute =
++			__ATTR(interrupt, 0664, interrupt_show, interrupt_store);
++		rc = sysfs_create_file(&bmc->dev->kobj,&interrupt_attribute.attr);
++		if (rc < 0)
++			return rc;
++
++		bmc->kn =sysfs_get_dirent(bmc->dev->kobj.sd, "interrupt");
++
++		rc = request_irq(irq, aspeed_misc_irq, 0, DEVICE_NAME, bmc);
++		if (rc < 0) {
++			dev_err(bmc->dev, "Unable to request IRQ %d\n", irq);
++			return rc;
++		}
++	}
++
++	return aspeed_bmc_misc_populate_sysfs(bmc);
++}
++
++static int aspeed_bmc_misc_remove(struct platform_device *pdev)
++{
++	if (irq) {
++		free_irq(irq, pdev);
++	}
++	return 0;
++}
++
++static const struct of_device_id aspeed_bmc_misc_match[] = {
++	{ .compatible = "aspeed,bmc-misc" },
++	{ },
++};
++
++static struct platform_driver aspeed_bmc_misc = {
++	.driver = {
++		.name		= DEVICE_NAME,
++		.of_match_table = aspeed_bmc_misc_match,
++	},
++	.probe = aspeed_bmc_misc_probe,
++	.remove = aspeed_bmc_misc_remove,
++};
++
++module_platform_driver(aspeed_bmc_misc);
++
++MODULE_LICENSE("GPL");
++MODULE_AUTHOR("Andrew Jeffery <andrew@aj.id.au>");

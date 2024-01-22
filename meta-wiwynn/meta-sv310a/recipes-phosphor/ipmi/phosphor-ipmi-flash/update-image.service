@@ -1,0 +1,10 @@
+[Unit]
+Description=Update BMC Image File
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env update_image.sh
+
+[Install]
+RequiredBy=phosphor-ipmi-flash-bmc-update.target
+

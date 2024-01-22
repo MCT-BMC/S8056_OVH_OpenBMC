@@ -1,0 +1,25 @@
+From d7d90896b4f569e244db2568cd578bf27d5a94ab Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Mon, 31 Oct 2022 15:05:50 +0800
+Subject: [PATCH] Revert openBMC upstream lastID modification
+
+---
+ dbus-sdr/storagecommands.cpp | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/dbus-sdr/storagecommands.cpp b/dbus-sdr/storagecommands.cpp
+index 04d6b1a..30fbd4c 100755
+--- a/dbus-sdr/storagecommands.cpp
++++ b/dbus-sdr/storagecommands.cpp
+@@ -197,7 +197,7 @@ bool writeFru()
+     {
+         return true;
+     }
+-    lastDevId = 0xFF;
++    //lastDevId = 0xFF;
+     std::shared_ptr<sdbusplus::asio::connection> dbus = getSdBus();
+     sdbusplus::message::message writeFru = dbus->new_method_call(
+         fruDeviceServiceName, "/xyz/openbmc_project/FruDevice",
+-- 
+2.7.4
+

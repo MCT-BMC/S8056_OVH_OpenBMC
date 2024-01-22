@@ -1,0 +1,26 @@
+# Using graph-easy to generate ASCII flow chart
+# Command : graph-easy dual-bios-flow-chart.txt > output.txt
+# Check ouput file to get the ASCII flow chart
+
+graph {flow: south;}
+[Start]
+[Start] -> [Host power on]
+[Host power on] ->
+{
+    label:"Create timer with 10 sencond \ntimeout time for monitoring\n post start.\n
+           Create timer with 900 sencond \ntimeout time for monitoring\n post end.\n";
+}[BIOS start to send post code]
+[BIOS start to send post code] -> {label:"Yes";}[BIOS recovery mode]
+[BIOS start to send post code] -> {label:"No";}[Log current BIOS failed to boot SEL]
+[BIOS recovery mode] -> {label:"No";}[FRB2 watchdog timeout]
+[BIOS recovery mode] -> {label:"Yes";}[Log current BIOS failed to boot SEL]
+[FRB2 watchdog timeout] -> {label:"No";}[BIOS post end GPIO enable]
+[FRB2 watchdog timeout] -> {label:"Yes";}[Log current BIOS failed to boot SEL]
+[BIOS post end GPIO enable] -> {label:"Yes";}[Boot complete]
+[BIOS post end GPIO enable] -> {label:"No";}[Log current BIOS failed to boot SEL]
+[Log current BIOS failed to boot SEL] -> [Already in Golden BIOS]
+[Already in Golden BIOS] -> {label:"Yes";}[System hang. Waiting for FA]
+[Already in Golden BIOS] -> {label:"No";}[Switch to Golden BIOS]
+[Switch to Golden BIOS] -> [Log 2nd BIOS swithcing SEL]
+[Log 2nd BIOS swithcing SEL] -> [Restart host]
+[Restart host] -> [Host power on]

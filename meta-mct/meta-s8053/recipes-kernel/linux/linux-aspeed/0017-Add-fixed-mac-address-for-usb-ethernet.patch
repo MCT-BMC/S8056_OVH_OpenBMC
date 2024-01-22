@@ -1,0 +1,37 @@
+From 758e763de74047e9e7030b6108cb6185a4931d95 Mon Sep 17 00:00:00 2001
+From: Janny Au <janny.au@mic.com.tw>
+Date: Thu, 10 Mar 2022 17:39:58 +0800
+Subject: [PATCH] Add-fixed-mac-address-for-usb-ethernet
+
+---
+ drivers/usb/gadget/function/u_ether.c | 16 ++++++++++++++--
+ 1 file changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/usb/gadget/function/u_ether.c b/drivers/usb/gadget/function/u_ether.c
+index d15a54f6c24b..97ce5eae16fe 100644
+--- a/drivers/usb/gadget/function/u_ether.c
++++ b/drivers/usb/gadget/function/u_ether.c
+@@ -840,9 +840,21 @@ struct net_device *gether_setup_name_default(const char *netname)
+ 	dev->qmult = QMULT_DEFAULT;
+ 	snprintf(net->name, sizeof(net->name), "%s%%d", netname);
+ 
+-	eth_random_addr(dev->dev_mac);
++	//eth_random_addr(dev->dev_mac);
++	dev->dev_mac[0] = 0xA0;
++	dev->dev_mac[1] = 0x42;
++	dev->dev_mac[2] = 0x3F;
++	dev->dev_mac[3] = 0x3B;
++	dev->dev_mac[4] = 0x66;
++	dev->dev_mac[5] = 0x89;	
+ 	pr_warn("using random %s ethernet address\n", "self");
+-	eth_random_addr(dev->host_mac);
++	//eth_random_addr(dev->host_mac);
++	dev->host_mac[0] = 0xA0;
++	dev->host_mac[1] = 0x42;
++	dev->host_mac[2] = 0x3F;
++	dev->host_mac[3] = 0x3B;
++	dev->host_mac[4] = 0x66;
++	dev->host_mac[5] = 0x8A;	
+ 	pr_warn("using random %s ethernet address\n", "host");
+ 
+ 	net->netdev_ops = &eth_netdev_ops;

@@ -1,0 +1,43 @@
+From 4d3e12b6c024294445cf23aa1f29f22a25075799 Mon Sep 17 00:00:00 2001
+From: Eli Huang <Eli_Huang@wiwynn.com>
+Date: Tue, 16 Mar 2021 14:52:46 +0800
+Subject: [PATCH 09/10] Get fru name from json setting
+
+---
+ sensorhandler.cpp | 12 +++++++++++-
+ 1 file changed, 11 insertions(+), 1 deletion(-)
+
+diff --git a/sensorhandler.cpp b/sensorhandler.cpp
+index 4495029..cb721f5 100644
+--- a/sensorhandler.cpp
++++ b/sensorhandler.cpp
+@@ -1198,8 +1198,14 @@ ipmi_ret_t ipmi_fru_get_sdr(ipmi_request_t request, ipmi_response_t response,
+ 
+     std::string deviceID;
+     auto findProductName = fruData->second.find("BOARD_PRODUCT_NAME");
++    auto findName = fruData->second.find("NAME");
+     auto findBoardName = fruData->second.find("PRODUCT_PRODUCT_NAME");
+-    if (findProductName != fruData->second.end())
++
++    if (findName != fruData->second.end())
++    {
++        deviceID = std::get<std::string>(findName->second);
++    }
++    else if (findProductName != fruData->second.end())
+     {
+         deviceID = std::get<std::string>(findProductName->second);
+     }
+@@ -1236,6 +1242,10 @@ ipmi_ret_t ipmi_fru_get_sdr(ipmi_request_t request, ipmi_response_t response,
+     record.body.entityInstance = 0x1;
+     record.body.oem = 0x0;
+     record.body.deviceIDLen = deviceID.size();
++
++    std::memset(record.body.deviceID, '\0',
++        get_sdr::FRU_RECORD_DEVICE_ID_MAX_LENGTH);
++
+     deviceID.copy(record.body.deviceID, deviceID.size());
+ 
+     /* Set next record id */
+-- 
+2.32.0
+

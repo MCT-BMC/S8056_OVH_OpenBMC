@@ -1,0 +1,6 @@
+---
+/xyz/openbmc_project/oem/SensorStatus:
+    - Interface: xyz.openbmc_project.OEM.SensorStatus
+      Properties:
+          DIMMSensorStatus:
+              Default: 0

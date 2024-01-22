@@ -1,0 +1,116 @@
+From 0869c60aa709475e5440adaddbb9b5a99ef494fe Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Mon, 20 Apr 2020 11:12:05 +0800
+Subject: [PATCH 11/11] Change to steady_timer used in PSU sensor
+
+---
+ include/PSUSensor.hpp |  3 ++-
+ src/PSUSensor.cpp     |  5 ++---
+ src/PSUSensorMain.cpp | 18 +++++++++---------
+ 3 files changed, 13 insertions(+), 13 deletions(-)
+
+diff --git a/include/PSUSensor.hpp b/include/PSUSensor.hpp
+index f3364a6..b51c6df 100644
+--- a/include/PSUSensor.hpp
++++ b/include/PSUSensor.hpp
+@@ -7,6 +7,7 @@
+ #include <memory>
+ #include <sdbusplus/asio/object_server.hpp>
+ #include <string>
++#include <boost/asio/steady_timer.hpp>
+ 
+ class PSUSensor : public Sensor
+ {
+@@ -24,7 +25,7 @@ class PSUSensor : public Sensor
+   private:
+     sdbusplus::asio::object_server& objServer;
+     boost::asio::posix::stream_descriptor inputDev;
+-    boost::asio::deadline_timer waitTimer;
++    boost::asio::steady_timer waitTimer;
+     boost::asio::streambuf readBuf;
+     std::string path;
+     size_t errCount;
+diff --git a/src/PSUSensor.cpp b/src/PSUSensor.cpp
+index 19ee547..e21ce72 100644
+--- a/src/PSUSensor.cpp
++++ b/src/PSUSensor.cpp
+@@ -20,7 +20,6 @@
+ 
+ #include <boost/algorithm/string/predicate.hpp>
+ #include <boost/algorithm/string/replace.hpp>
+-#include <boost/date_time/posix_time/posix_time.hpp>
+ #include <iostream>
+ #include <istream>
+ #include <limits>
+@@ -141,7 +140,7 @@ void PSUSensor::handleResponse(const boost::system::error_code& err)
+         invalidResponseStream.clear();
+ 
+         lseek(fd, 0, SEEK_SET);
+-        waitTimer.expires_from_now(boost::posix_time::milliseconds(sensorPollMs));
++        waitTimer.expires_from_now(boost::asio::chrono::milliseconds(sensorPollMs));
+         waitTimer.async_wait([&](const boost::system::error_code& ec) {
+             if (ec == boost::asio::error::operation_aborted)
+             {
+@@ -208,7 +207,7 @@ void PSUSensor::handleResponse(const boost::system::error_code& err)
+     }
+ 
+     lseek(fd, 0, SEEK_SET);
+-    waitTimer.expires_from_now(boost::posix_time::milliseconds(sensorPollMs));
++    waitTimer.expires_from_now(boost::asio::chrono::milliseconds(sensorPollMs));
+     waitTimer.async_wait([&](const boost::system::error_code& ec) {
+         if (ec == boost::asio::error::operation_aborted)
+         {
+diff --git a/src/PSUSensorMain.cpp b/src/PSUSensorMain.cpp
+index 16ad94d..09dbfa9 100644
+--- a/src/PSUSensorMain.cpp
++++ b/src/PSUSensorMain.cpp
+@@ -814,13 +814,13 @@ void propertyInitialize(void)
+                    {"in", "voltage/"},
+                    {"fan", "fan_tach/"}};
+ 
+-    labelMatch = {{"pin", PSUProperty("Input Power", 3000, 0, 6)},
+-                  {"pout1", PSUProperty("Output Power", 3000, 0, 6)},
+-                  {"pout2", PSUProperty("Output Power", 3000, 0, 6)},
+-                  {"pout3", PSUProperty("Output Power", 3000, 0, 6)},
+-                  {"power1", PSUProperty("Output Power", 3000, 0, 6)},
++    labelMatch = {{"pin", PSUProperty("Input Power", 1000, 0, 6)},
++                  {"pout1", PSUProperty("Output Power", 1000, 0, 6)},
++                  {"pout2", PSUProperty("Output Power", 1000, 0, 6)},
++                  {"pout3", PSUProperty("Output Power", 1000, 0, 6)},
++                  {"power1", PSUProperty("Output Power", 1000, 0, 6)},
+                   {"vin", PSUProperty("Input Voltage", 300, 0, 3)},
+-                  {"vout1", PSUProperty("Output Voltage", 255, 0, 3)},
++                  {"vout1", PSUProperty("Output Voltage", 15, 0, 3)},
+                   {"vout2", PSUProperty("Output Voltage", 255, 0, 3)},
+                   {"vout3", PSUProperty("Output Voltage", 255, 0, 3)},
+                   {"vout4", PSUProperty("Output Voltage", 255, 0, 3)},
+@@ -838,7 +838,7 @@ void propertyInitialize(void)
+                   {"vout16", PSUProperty("Output Voltage", 255, 0, 3)},
+                   {"in1", PSUProperty("Output Voltage", 255, 0, 3)},
+                   {"iin", PSUProperty("Input Current", 20, 0, 3)},
+-                  {"iout1", PSUProperty("Output Current", 255, 0, 3)},
++                  {"iout1", PSUProperty("Output Current", 100, 0, 3)},
+                   {"iout2", PSUProperty("Output Current", 255, 0, 3)},
+                   {"iout3", PSUProperty("Output Current", 255, 0, 3)},
+                   {"iout4", PSUProperty("Output Current", 255, 0, 3)},
+@@ -888,7 +888,7 @@ int main()
+     propertyInitialize();
+ 
+     io.post([&]() { createSensors(io, objectServer, systemBus); });
+-    boost::asio::deadline_timer filterTimer(io);
++    boost::asio::steady_timer filterTimer(io);
+     std::function<void(sdbusplus::message::message&)> eventHandler =
+         [&](sdbusplus::message::message& message) {
+             if (message.is_method_error())
+@@ -896,7 +896,7 @@ int main()
+                 std::cerr << "callback method error\n";
+                 return;
+             }
+-            filterTimer.expires_from_now(boost::posix_time::seconds(3));
++            filterTimer.expires_from_now(boost::asio::chrono::seconds(3));
+             filterTimer.async_wait([&](const boost::system::error_code& ec) {
+                 if (ec == boost::asio::error::operation_aborted)
+                 {
+-- 
+2.24.1
+

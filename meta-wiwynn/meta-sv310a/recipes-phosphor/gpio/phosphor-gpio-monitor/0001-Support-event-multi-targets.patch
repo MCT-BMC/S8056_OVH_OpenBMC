@@ -1,0 +1,256 @@
+From 01a070c6abe905587eaa53c79229a8b2109bf74e Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Thu, 15 Oct 2020 16:35:21 +0800
+Subject: [PATCH] Support event multi targets
+
+The origin multi-gpio-monitor doesn't detect the comming events are
+rising or falling and it can only start one service after events
+triggered.
+
+We need to do corresponding actions when gpio pin rising or falling.
+So we modify multi-gpio-monitor config json and read the rising
+actions and falling actions in it.
+
+When service monitored one gpio status is changed,
+service will detect that it is a rising or falling event and then
+call systemd startUnit to start services that set in config json.
+
+For example with config json below:
+When PowerGood is falling, "PowerGoodFalling.service"
+and "PowerOff.service" will start.
+
+[
+	{
+		"Name": "PowerButton",
+		"LineName": "POWER_BUTTON",
+		"EventMon": "FALLING",
+		"Target":
+		{
+		    "FALLING": [
+			"PowerButtonDown.service"
+		    ]
+		},
+		"Continue": true
+	},
+	{
+		"Name": "PowerGood",
+		"ChipId": "0",
+		"GpioNum": 14,
+		"EventMon": "BOTH",
+		"Target":
+		{
+		    "FALLING": [
+			"PowerGoodFalling.service",
+			"PowerOff.service"
+		    ],
+		    "RISING": [
+			"PowerGoodRising.service",
+			"PowerOn.service"
+		    ]
+		},
+		"Continue": true
+	}
+]
+---
+ README.md                        | 49 ++++++++++++++++++--------------
+ gpioMon.cpp                      | 33 ++++++++++++++++-----
+ gpioMon.hpp                      |  7 +++--
+ gpioMonMain.cpp                  |  4 +--
+ phosphor-multi-gpio-monitor.json | 10 ++++++-
+ 5 files changed, 69 insertions(+), 34 deletions(-)
+
+diff --git a/README.md b/README.md
+index df55110..f5b63e2 100644
+--- a/README.md
++++ b/README.md
+@@ -32,9 +32,10 @@ Following are fields in json file
+            ("gpiochip0"). This field is not required if LineName is defined.
+ 5. EventMon: Event of gpio to be monitored. This can be "FALLING", "RISING"
+              OR "BOTH". Default value for this is "BOTH".
+-6. Target: This is an optional systemd service which will get started after
+-           triggering event. A journal entry will be added for every event
+-           occurs irrespective of this definition.
++6. Target: These are optional systemd services which will get started after
++           triggering corresponding event(RASING or FALLING).
++           A journal entry will be added for every event occurs irrespective
++           of this definition.
+ 7. Continue: This is a optional flag and if it is defined as true then this
+              gpio will be monitored continously. If not defined then
+              monitoring of this gpio will stop after first event.
+@@ -42,23 +43,27 @@ Following are fields in json file
+ ## Sample config file
+ 
+ [
+-	{
+-		"Name": "PowerButton",
+-		"LineName": "POWER_BUTTON",
+-		"GpioNum": 34,
+-		"ChipId": "gpiochip0",
+-		"EventMon": "BOTH",
+-		"Continue": true
+-	},
+-	{
+-		"Name": "PowerGood",
+-		"LineName": "PS_PWROK",
+-		"EventMon": "FALLING",
+-		"Continue": false
+-	},
+-	{
+-		"Name": "SystemReset",
+-		"GpioNum": 46,
+-		"ChipId": "0"
+-	}
++    {
++        "Name": "PowerButton",
++        "LineName": "POWER_BUTTON",
++        "GpioNum": 34,
++        "ChipId": "gpiochip0",
++        "EventMon": "BOTH",
++        "Target": {
++            "FALLING": [ "PowerButtonRising.service" ],
++            "RISING": [ "PowerButtonFalling.service" ]
++        },
++        "Continue": true
++    },
++    {
++        "Name": "PowerGood",
++        "LineName": "PS_PWROK",
++        "EventMon": "FALLING",
++        "Continue": false
++    },
++    {
++        "Name": "SystemReset",
++        "GpioNum": 46,
++        "ChipId": "0"
++    }
+ ]
+diff --git a/gpioMon.cpp b/gpioMon.cpp
+index 2ab079a..3087fb5 100644
+--- a/gpioMon.cpp
++++ b/gpioMon.cpp
+@@ -68,15 +68,34 @@ void GpioMonitor::gpioEventHandler()
+     log<level::INFO>(logMessage.c_str());
+ 
+     /* Execute the target if it is defined. */
+-    if (!target.empty())
++    std::vector<std::string> targetsToStart;
++    if (gpioLineEvent.event_type == GPIOD_LINE_EVENT_RISING_EDGE)
+     {
+-        auto bus = sdbusplus::bus::new_default();
+-        auto method = bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_ROOT,
+-                                          SYSTEMD_INTERFACE, "StartUnit");
+-        method.append(target);
+-        method.append("replace");
++        auto risingFind = target.find("RISING");
++        if (risingFind != target.end())
++        {
++            targetsToStart = risingFind->second;
++        }
++    }
++    else
++    {
++        auto fallingFind = target.find("FALLING");
++        if (fallingFind != target.end())
++        {
++            targetsToStart = fallingFind->second;
++        }
++    }
+ 
+-        bus.call_noreply(method);
++    if (!targetsToStart.empty())
++    {
++        auto bus = sdbusplus::bus::new_default();
++        for (auto& tar : targetsToStart)
++        {
++            auto method = bus.new_method_call(SYSTEMD_SERVICE, SYSTEMD_ROOT,
++                                              SYSTEMD_INTERFACE, "StartUnit");
++            method.append(tar, "replace");
++            bus.call_noreply(method);
++        }
+     }
+ 
+     /* if not required to continue monitoring then return */
+diff --git a/gpioMon.hpp b/gpioMon.hpp
+index b07bb40..7da7490 100644
+--- a/gpioMon.hpp
++++ b/gpioMon.hpp
+@@ -4,6 +4,8 @@
+ 
+ #include <boost/asio/io_service.hpp>
+ #include <boost/asio/posix/stream_descriptor.hpp>
++#include <map>
++#include <vector>
+ 
+ namespace phosphor
+ {
+@@ -35,7 +37,8 @@ class GpioMonitor
+      *  @param[in] continueRun - Whether to continue after event occur
+      */
+     GpioMonitor(gpiod_line* line, gpiod_line_request_config& config,
+-                boost::asio::io_service& io, const std::string& target,
++                boost::asio::io_service& io,
++                std::map<std::string, std::vector<std::string>> target,
+                 const std::string& lineMsg, bool continueRun) :
+         gpioLine(line),
+         gpioConfig(config), gpioEventDescriptor(io), target(target),
+@@ -55,7 +58,7 @@ class GpioMonitor
+     boost::asio::posix::stream_descriptor gpioEventDescriptor;
+ 
+     /** @brief Systemd unit to be started when the condition is met */
+-    const std::string target;
++    std::map<std::string, std::vector<std::string>> target;
+ 
+     /** @brief GPIO line name message */
+     std::string gpioLineMsg;
+diff --git a/gpioMonMain.cpp b/gpioMonMain.cpp
+index 4b8b052..c896423 100644
+--- a/gpioMonMain.cpp
++++ b/gpioMonMain.cpp
+@@ -101,7 +101,7 @@ int main(int argc, char** argv)
+         bool flag = false;
+ 
+         /* target to start */
+-        std::string target;
++        std::map<std::string, std::vector<std::string>> target;
+ 
+         if (obj.find("LineName") == obj.end())
+         {
+@@ -170,7 +170,7 @@ int main(int argc, char** argv)
+          */
+         if (obj.find("Target") != obj.end())
+         {
+-            target = obj["Target"];
++            obj.at("Target").get_to(target);
+         }
+ 
+         /* Create a monitor object and let it do all the rest */
+diff --git a/phosphor-multi-gpio-monitor.json b/phosphor-multi-gpio-monitor.json
+index 3508995..a622e12 100644
+--- a/phosphor-multi-gpio-monitor.json
++++ b/phosphor-multi-gpio-monitor.json
+@@ -2,13 +2,21 @@
+ 	{
+ 		"Name": "PowerButton",
+ 		"LineName": "POWER_BUTTON",
+-		"EventMon": "BOTH",
++		"EventMon": "FALLING",
++		"Target": {
++		    "FALLING": [ "PowerButtonDown.service" ]
++		},
+ 		"Continue": true
+ 	},
+ 	{
+ 		"Name": "PowerGood",
+ 		"ChipId": "0",
+ 		"GpioNum": 14,
++		"EventMon": "BOTH",
++		"Target": {
++		    "FALLING": [ "PowerGoodFalling.service", "PowerOff.service" ],
++		    "RISING": [ "PowerGoodRising.service", "PowerOn.service" ]
++		},
+ 		"Continue": true
+ 	}
+ ]
+-- 
+2.28.0
+

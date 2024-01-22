@@ -1,0 +1,303 @@
+From 0e09a37b29dd3e86c379164c5646cb698e58f954 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Wed, 23 Mar 2022 15:19:09 +0800
+Subject: [PATCH] Add fan tach sensor supported
+
+[PATCH] Add fan tach sensor supported
+(Tacho side)[PATCH] Modify fan presence sensor to discrete sensor and add presence detect for tech sensor
+[PATCH] Add power state checking function for fan sensor
+---
+ include/TachSensor.hpp                             |  12 ++-
+ .../xyz.openbmc_project.fansensor.service          |   1 +
+ src/FanMain.cpp                                    |   9 +-
+ src/TachSensor.cpp                                 | 119 +++++++++++++++++++--
+ 4 files changed, 131 insertions(+), 10 deletions(-)
+ mode change 100644 => 100755 include/TachSensor.hpp
+ mode change 100644 => 100755 service_files/xyz.openbmc_project.fansensor.service
+ mode change 100644 => 100755 src/FanMain.cpp
+ mode change 100644 => 100755 src/TachSensor.cpp
+
+diff --git a/include/TachSensor.hpp b/include/TachSensor.hpp
+old mode 100644
+new mode 100755
+index 75dcd06..554b63a
+--- a/include/TachSensor.hpp
++++ b/include/TachSensor.hpp
+@@ -14,6 +14,9 @@
+ #include <utility>
+ #include <vector>
+ 
++constexpr auto MAX_COLLECTION_VALUE_SIZE = 10;
++constexpr auto DEFAULT_TACH_VALUE= 6000;
++
+ class PresenceSensor
+ {
+   public:
+@@ -58,7 +61,7 @@ class RedundancySensor
+     boost::container::flat_map<std::string, bool> statuses;
+ };
+ 
+-class TachSensor : public Sensor
++class TachSensor : public Sensor, public std::enable_shared_from_this<TachSensor>
+ {
+   public:
+     TachSensor(const std::string& path, const std::string& objectType,
+@@ -71,6 +74,7 @@ class TachSensor : public Sensor
+                const std::string& sensorConfiguration,
+                const std::pair<double, double>& limits,
+                const PowerState& powerState,
++               const std::string& presenceSensorName,
+                const std::optional<std::string>& led);
+     ~TachSensor() override;
+ 
+@@ -82,13 +86,17 @@ class TachSensor : public Sensor
+     std::shared_ptr<sdbusplus::asio::dbus_interface> itemAssoc;
+     boost::asio::streambuf readBuf;
+     boost::asio::posix::stream_descriptor inputDev;
+-    boost::asio::deadline_timer waitTimer;
++    boost::asio::steady_timer waitTimer;
+     std::string path;
++    std::string presenceSensorName;
+     std::optional<std::string> led;
+     bool ledState = false;
+     void setupRead(void);
+     void handleResponse(const boost::system::error_code& err);
+     void checkThresholds(void) override;
++    bool checkFanPresence(void);
++    thresholds::ThresholdTimer thresholdTimer;
++    std::vector<double> collectedValue;
+ };
+ 
+ inline void logFanInserted(const std::string& device)
+diff --git a/service_files/xyz.openbmc_project.fansensor.service b/service_files/xyz.openbmc_project.fansensor.service
+old mode 100644
+new mode 100755
+index f452ebf..e21e18e
+--- a/service_files/xyz.openbmc_project.fansensor.service
++++ b/service_files/xyz.openbmc_project.fansensor.service
+@@ -3,6 +3,7 @@ Description=Fan Sensor
+ StopWhenUnneeded=false
+ Requires=xyz.openbmc_project.EntityManager.service
+ After=xyz.openbmc_project.EntityManager.service
++After=xyz.openbmc_project.fanpresencesensor.service
+ 
+ [Service]
+ Restart=always
+diff --git a/src/FanMain.cpp b/src/FanMain.cpp
+old mode 100644
+new mode 100755
+index 112848b..7f25a2e
+--- a/src/FanMain.cpp
++++ b/src/FanMain.cpp
+@@ -442,12 +442,19 @@ void createSensors(
+                     }
+                 }
+ 
++                std::string presenceSensorName = "";
++                auto findPresence = baseConfiguration->second.find("PresenceSensorName");
++                if (findPresence != baseConfiguration->second.end())
++                {
++                    presenceSensorName = std::get<std::string>(findPresence->second);
++                }
++
+                 findLimits(limits, baseConfiguration);
+                 tachSensors[sensorName] = std::make_unique<TachSensor>(
+                     path.string(), baseType, objectServer, dbusConnection,
+                     std::move(presenceSensor), redundancy, io, sensorName,
+                     std::move(sensorThresholds), *interfacePath, limits,
+-                    powerState, led);
++                    powerState, presenceSensorName, led);
+ 
+                 if (!pwmPath.empty() && fs::exists(pwmPath) &&
+                     !pwmSensors.count(pwmPath))
+diff --git a/src/TachSensor.cpp b/src/TachSensor.cpp
+old mode 100644
+new mode 100755
+index f609410..1856884
+--- a/src/TachSensor.cpp
++++ b/src/TachSensor.cpp
+@@ -38,6 +38,16 @@
+ 
+ static constexpr unsigned int pwmPollMs = 500;
+ 
++namespace discrete
++{
++enum deviceState
++{
++    reserved = 0,
++    Absent,
++    Present,
++};
++}// namespace discrete
++
+ TachSensor::TachSensor(const std::string& path, const std::string& objectType,
+                        sdbusplus::asio::object_server& objectServer,
+                        std::shared_ptr<sdbusplus::asio::connection>& conn,
+@@ -48,13 +58,14 @@ TachSensor::TachSensor(const std::string& path, const std::string& objectType,
+                        const std::string& sensorConfiguration,
+                        const std::pair<double, double>& limits,
+                        const PowerState& powerState,
++                       const std::string& presenceSensorName,
+                        const std::optional<std::string>& ledIn) :
+     Sensor(escapeName(fanName), std::move(thresholdsIn), sensorConfiguration,
+            objectType, false, false, limits.second, limits.first, conn,
+-           powerState),
++           powerState), std::enable_shared_from_this<TachSensor>(),
+     objServer(objectServer), redundancy(redundancy),
+     presence(std::move(presenceSensor)), inputDev(io), waitTimer(io),
+-    path(path), led(ledIn)
++    path(path), presenceSensorName(presenceSensorName), led(ledIn), thresholdTimer(io)
+ {
+     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
+     int fd = open(path.c_str(), O_RDONLY);
+@@ -97,6 +108,7 @@ TachSensor::TachSensor(const std::string& path, const std::string& objectType,
+                  "/xyz/openbmc_project/sensors/fan_tach/" + name}});
+         itemAssoc->initialize();
+     }
++    collectedValue.assign(MAX_COLLECTION_VALUE_SIZE,DEFAULT_TACH_VALUE);
+     setInitialProperties(sensor_paths::unitRPMs);
+     setupRead();
+ }
+@@ -126,6 +138,8 @@ void TachSensor::setupRead(void)
+ 
+ void TachSensor::handleResponse(const boost::system::error_code& err)
+ {
++    std::weak_ptr<TachSensor> weakRef = weak_from_this();
++
+     if (err == boost::system::errc::bad_file_descriptor)
+     {
+         return; // we're being destroyed
+@@ -153,7 +167,54 @@ void TachSensor::handleResponse(const boost::system::error_code& err)
+                 std::getline(responseStream, response);
+                 rawValue = std::stod(response);
+                 responseStream.clear();
+-                updateValue(rawValue);
++                double averageCount = 0;
++                double average =0;
++
++                if((rawValue == 0 && checkFanPresence()) || !readingStateGood())
++                {
++                    markAvailable(false);
++
++                    responseStream.clear();
++                    inputDev.close();
++                    int fd = open(path.c_str(), O_RDONLY);
++                    if (fd < 0)
++                    {
++                        return; // we're no longer valid
++                    }
++                    inputDev.assign(fd);
++                    waitTimer.expires_from_now(boost::asio::chrono::milliseconds(pollTime));
++                    waitTimer.async_wait([weakRef](const boost::system::error_code& ec) {
++                        if (ec == boost::asio::error::operation_aborted)
++                        {
++                            return; // we're being canceled
++                        }
++                        std::shared_ptr<TachSensor> self = weakRef.lock();
++                        if (!self)
++                        {
++                            return;
++                        }
++                        self->setupRead();
++                    });
++                    return;
++                }
++
++                if(collectedValue.size() >= MAX_COLLECTION_VALUE_SIZE){
++                    collectedValue.erase(collectedValue.begin());
++                    collectedValue.push_back(rawValue);
++                }
++                else{
++                    collectedValue.push_back(rawValue);
++                }
++                for (auto it = collectedValue.begin(); it != collectedValue.end(); it++)
++                {
++                    average = average + *it;
++                    averageCount++;
++                }
++                if(averageCount){
++                    average = average/averageCount;
++                }
++                updateValue(average);
++
+             }
+             catch (const std::invalid_argument&)
+             {
+@@ -177,19 +238,31 @@ void TachSensor::handleResponse(const boost::system::error_code& err)
+         return; // we're no longer valid
+     }
+     inputDev.assign(fd);
+-    waitTimer.expires_from_now(boost::posix_time::milliseconds(pollTime));
+-    waitTimer.async_wait([&](const boost::system::error_code& ec) {
++    waitTimer.expires_from_now(boost::asio::chrono::milliseconds(pollTime));
++    waitTimer.async_wait([weakRef](const boost::system::error_code& ec) {
+         if (ec == boost::asio::error::operation_aborted)
+         {
+             return; // we're being canceled
+         }
+-        setupRead();
++        std::shared_ptr<TachSensor> self = weakRef.lock();
++        if (!self)
++        {
++            return;
++        }
++        self->setupRead();
+     });
+ }
+ 
+ void TachSensor::checkThresholds(void)
+ {
+-    bool status = thresholds::checkThresholds(this);
++    if (!readingStateGood())
++    {
++        return;
++    }
++
++    thresholds::checkThresholdsPowerDelay(weak_from_this(), thresholdTimer);
++#if 0
++    bool status = thresholds::checkThresholdsPowerDelay(weak_from_this(), thresholdTimer);
+ 
+     if (redundancy && *redundancy)
+     {
+@@ -203,6 +276,38 @@ void TachSensor::checkThresholds(void)
+         ledState = curLed;
+         setLed(dbusConnection, *led, curLed);
+     }
++#endif
++}
++
++bool TachSensor::checkFanPresence(void)
++{
++    if (presenceSensorName.size() != 0)
++    {
++        const std::string fanFanPresencePath = "/run/fanpresencesensor/";
++        std::string line;
++
++        std::ifstream initfile(fanFanPresencePath + presenceSensorName);
++        if(!initfile.good())
++        {
++            return false;
++        }
++
++        getline(initfile, line);
++        try
++        {
++            uint8_t deviceState = std::stoi(line);
++            if(deviceState == discrete::deviceState::Absent)
++            {
++                return true;
++            }
++        }
++        catch (std::exception &e)
++        {
++            return false;
++        }
++    }
++
++    return false;
+ }
+ 
+ PresenceSensor::PresenceSensor(const std::string& gpioName, bool inverted,
+-- 
+2.7.4
+

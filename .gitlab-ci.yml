@@ -1,0 +1,268 @@
+image: johnchung/openbmc-buildserver:latest
+
+stages:
+  - build
+  - sanity_test
+
+build_s8056_release:
+  stage: build
+  tags:
+    - twitter_openbmc
+  only:
+    - tags
+  only:
+    variables:
+      - $CI_COMMIT_TAG =~ /^\w*-s8056-\w*\W\w*-release$/i
+  before_script:
+    - export HOME="/mnt/docker/auto-build-ubuntu-20-04"
+    - git config --global --add safe.directory `pwd`
+    - git config --global credential.helper store
+    - echo "Export system proxy"
+    - export http_proxy="http://10.99.12.3:808/" https_proxy="http://10.99.12.3:808/"
+    - export DL_DIR="${HOME}/yocto"
+    - export BB_ENV_EXTRAWHITE="$BB_ENV_EXTRAWHITE DL_DIR"
+    - export SSTATE_DIR="${HOME}/Yocto_SSTATE"
+    - export BB_ENV_EXTRAWHITE="$BB_ENV_EXTRAWHITE SSTATE_DIR"
+    - export BB_NUMBER_THREADS=${BB_THREADS_NUM}
+  script:
+    - mkdir output
+    - pwd
+    - prjCode=`echo $CI_COMMIT_TAG | awk -F '-' '{print $1}'`
+    - machine=`echo $CI_COMMIT_TAG | awk -F '-' '{print $2}' | tr '[A-Z]' '[a-z]'`
+    - bmcFwVer=`echo $CI_COMMIT_TAG | awk -F '-' '{print $3}'`
+    - bmcFwVerMajor=`echo ${bmcFwVer} | awk -F 'v' '{print $2}' | awk -F '.' '{print $1}'`
+    - bmcFwVerMinor=`echo ${bmcFwVer} | awk -F '.' '{print $2}'`
+    - bmcFwVer="${bmcFwVerMajor}.${bmcFwVerMinor}"
+    - bmcFwName="${prjCode}_${machine}_v${bmcFwVer}"
+    - echo "Auto build machine ${machine}"
+    - export TEMPLATECONF="meta-mct/meta-${machine}/conf/"
+    - . openbmc-env
+    # - echo "Enable AMD YAAP utility and copy necessary file to codebase."
+    # - cp ${HOME}/yaap/yaap.bb ../meta-mct/meta-common/recipes-amd/yaap/yaap.bb
+    # - cp ${HOME}/yaap/yaapd.tar.gz ../meta-mct/meta-common/recipes-amd/yaap/yaap/yaapd.tar.gz
+    - pwd
+    # - echo "DL_DIR ?= \"~/Yocto_DL\"" >> ./conf/local.conf
+    # - echo "SSTATE_DIR ?= \"~/Yocto_SSTATE\"" >> ./conf/local.conf
+    - bitbake obmc-phosphor-image
+    - pwd
+    - cp ./tmp/deploy/images/${machine}/image-bmc ../output/${bmcFwName}
+    - cp ./tmp/deploy/images/${machine}/image-bmc ${HOME}/auto-test/test_images/image-bmc
+    - cp ./tmp/deploy/images/${machine}/obmc-phosphor-image-${machine}.static.mtd.all.tar ../output/${bmcFwName}.tar
+    - tar xvf ./tmp/deploy/images/${machine}/obmc-phosphor-image-${machine}.static.mtd.all.tar
+    - cp ./image-bmc.sig ../output/${bmcFwName}.sig
+    - cp ./image-bmc.sig ${HOME}/auto-test/test_images/image-bmc.sig
+  timeout: 4h
+
+  artifacts:
+    paths:
+      - output
+    expire_in: 5 yrs
+
+build_dryrun:
+  stage: build
+  tags:
+    - twitter_openbmc
+  only:
+    variables:
+        - $CI_PRERUN_TEST
+  script:
+    - pwd
+    - ls
+    - mkdir output/ && cp ${HOME}/auto-test/test_images/${CI_PRERUN_TEST} output/ && ls output -al
+  artifacts:
+    paths:
+      - output
+    expire_in: 3 days
+
+Sanity_test_release:
+  stage: sanity_test
+  tags:
+    - twitter_openbmc
+  only:
+    - tags
+  only:
+    variables:
+      - $CI_COMMIT_TAG =~ /^\w*-s8056-\w*\W\w*-release$/i
+  before_script:
+    - export HOME="/mnt/docker/auto-build-ubuntu-20-04"
+    - echo "Unset system proxy"
+    - unset http_proxy https_proxy
+  script:
+    - echo "Enter Sanity test stage"
+    - prjCode=`echo $CI_COMMIT_TAG | awk -F '-' '{print $1}'`
+    - machine=`echo $CI_COMMIT_TAG | awk -F '-' '{print $2}' | tr '[A-Z]' '[a-z]'`
+    - bmcFwVer=`echo $CI_COMMIT_TAG | awk -F '-' '{print $3}'`
+    - bmcFwVerMajor=`echo ${bmcFwVer} | awk -F 'v' '{print $2}' | awk -F '.' '{print $1}'`
+    - bmcFwVerMinor=`echo ${bmcFwVer} | awk -F '.' '{print $2}'`
+    - bmcFwVer="${bmcFwVerMajor}.${bmcFwVerMinor}"
+    - bmcFwName="${prjCode}_${machine}_v${bmcFwVer}"
+    - echo "Auto sanity test machine ${machine}"
+    - fw_file_path=`pwd`"/output/${bmcFwName}"
+    - online_fw_file_path=`pwd`"/output/${bmcFwName}.tar"
+    - SUT_BMCIP=SUT_BMC_IP_$machine
+    - SUT_BMCIP=$(eval echo "\$$SUT_BMCIP")
+    - SUT_OSIP=SUT_OS_IP_$machine
+    - SUT_OSIP=$(eval echo "\$$SUT_OSIP")
+    - json="${HOME}/auto-test/json/${machine}.json"
+    - fw_spec="${HOME}/auto-test/fw_spec/${machine}.pdf"
+    - fw_update_script="${HOME}/auto-test/test_scripts/mct_fw_updater"
+    - newman_test_script="${HOME}/auto-test/test_scripts/newman_test.sh"
+    - profile_json="${HOME}/auto-test/json/${machine}_profile_test.postman_collection.json"
+    - env_json="${HOME}/auto-test/json/${machine}.postman_environment.json"
+    - bios_image_path="${HOME}/auto-test/test_images/${machine}-bios-image/"
+    - bios_image="${HOME}/auto-test/test_images/active-bios"
+    - bios_image_local="${HOME}/auto-test/test_images/active-bios-local"
+    - dcscm_cpld_image_path="${HOME}/auto-test/test_images/${machine}-dcscm-cpld-image/"
+    - dcscm_cpld_image="${HOME}/auto-test/test_images/active-dcscm-cpld.jed"
+    - dcscm_cpld_image_local="${HOME}/auto-test/test_images/active-dcscm-cpld-local.jed"
+    - mb_cpld_image_path="${HOME}/auto-test/test_images/${machine}-mb-cpld-image/"
+    - mb_cpld_image="${HOME}/auto-test/test_images/active-mb-cpld.jed"
+    - mb_cpld_image_local="${HOME}/auto-test/test_images/active-mb-cpld-local.jed"
+    - mct_fw_updater_image="${HOME}/auto-test/test_scripts/mct_fw_updater"
+    - burn_my_bmc_image="${HOME}/auto-test/test_scripts/burn_my_bmc"
+    - bmc_image="${HOME}/auto-test/test_images/image-bmc"
+    - image_sig="${HOME}/auto-test/test_images/image-bmc.sig"
+    - runtype=$TEST_RUN_TYPE
+    - echo "---------------------------"
+    - echo $bios_image_path
+    - echo $dcscm_cpld_image_path
+    - echo $mb_cpld_image_path
+    - cp $bios_image_path`ls $bios_image_path` $bios_image
+    - cp $bios_image_path`ls $bios_image_path` $bios_image_local
+    - cp $dcscm_cpld_image_path`ls $dcscm_cpld_image_path` $dcscm_cpld_image
+    - cp $dcscm_cpld_image_path`ls $dcscm_cpld_image_path` $dcscm_cpld_image_local
+    - cp $mb_cpld_image_path`ls $mb_cpld_image_path` $mb_cpld_image
+    - cp $mb_cpld_image_path`ls $mb_cpld_image_path` $mb_cpld_image_local
+    - echo "---------------------------"
+    - echo 'Project name='$machine
+    - echo 'BMC version='$bmcFwVer
+    - echo 'fw_file_path='$fw_file_path
+    - echo 'online_fw_file_path='$online_fw_file_path
+    - echo 'BMC IP='$SUT_BMCIP
+    - echo 'OS IP='$SUT_OSIP
+    - echo 'Json='$json
+    - echo 'FW_SPEC='$fw_spec
+    - echo 'runtype='$runtype
+
+    - Run_Triger="curl ${TEST_SERVER_URI_PREFIX}${runtype}/${SUT_OSIP}/${SUT_BMCIP}/${machine}/BMC_Sanity_Test/${bmcFwName}/${bmcFwName}/${machine}.pdf/${bmcFwVer}/${bmcFwVer} -H Content-Type:application/json -X PUT -d @$json"
+    - UploadMctFWTool="curl -F file=@${mct_fw_updater_image} ${TEST_SERVER_URI_PREFIX}FILE/UPLOAD/SINGLE/${machine}/BMC_Sanity_Test"
+    - UploadObmcFWTool="curl -F file=@${burn_my_bmc_image} ${TEST_SERVER_URI_PREFIX}FILE/UPLOAD/SINGLE/${machine}/BMC_Sanity_Test"
+    - UploadFWImage="curl -F file=@${fw_file_path} ${TEST_SERVER_URI_PREFIX}FILE/UPLOAD/SINGLE/${machine}/BMC_Sanity_Test"
+    - UploadBiosFWImage="curl -F file=@${bios_image} ${TEST_SERVER_URI_PREFIX}FILE/UPLOAD/SINGLE/${machine}/BMC_Sanity_Test"
+    - UploadBiosLocalFWImage="curl -F file=@${bios_image_local} ${TEST_SERVER_URI_PREFIX}FILE/UPLOAD/SINGLE/${machine}/BMC_Sanity_Test"
+    - UploadDcscmCpldFWImage="curl -F file=@${dcscm_cpld_image} ${TEST_SERVER_URI_PREFIX}FILE/UPLOAD/SINGLE/${machine}/BMC_Sanity_Test"
+    - UploadDcscmCpldLocalFWImage="curl -F file=@${dcscm_cpld_image_local} ${TEST_SERVER_URI_PREFIX}FILE/UPLOAD/SINGLE/${machine}/BMC_Sanity_Test"
+    - UploadMbCpldFWImage="curl -F file=@${mb_cpld_image} ${TEST_SERVER_URI_PREFIX}FILE/UPLOAD/SINGLE/${machine}/BMC_Sanity_Test"
+    - UploadMbCpldLocalFWImage="curl -F file=@${mb_cpld_image_local} ${TEST_SERVER_URI_PREFIX}FILE/UPLOAD/SINGLE/${machine}/BMC_Sanity_Test"
+    - UploadOnlineFWImage="curl -F file=@${online_fw_file_path} ${TEST_SERVER_URI_PREFIX}FILE/UPLOAD/SINGLE/${machine}/BMC_Sanity_Test"
+    - UploadFWSpec="curl -F file=@${fw_spec} ${TEST_SERVER_URI_PREFIX}FILE/UPLOAD/SINGLE/${machine}/BMC_Sanity_Test"
+    - UploadFWUpdateScript="curl -F file=@${fw_update_script} ${TEST_SERVER_URI_PREFIX}FILE/UPLOAD/SINGLE/${machine}/BMC_Sanity_Test"
+    - UploadSolTestScript="curl -s -F file=@${sol_test_script} ${TEST_SERVER_URI_PREFIX}FILE/UPLOAD/SINGLE/${machine}/BMC_Sanity_Test"
+    - UploadNewmanTestScript="curl -F file=@${newman_test_script} ${TEST_SERVER_URI_PREFIX}FILE/UPLOAD/SINGLE/${machine}/BMC_Sanity_Test"
+    - UploadProfileJson="curl -s -F file=@${profile_json} ${TEST_SERVER_URI_PREFIX}FILE/UPLOAD/SINGLE/${machine}/BMC_Sanity_Test"
+    - UploadEnvJson="curl -s -F file=@${env_json} ${TEST_SERVER_URI_PREFIX}FILE/UPLOAD/SINGLE/${machine}/BMC_Sanity_Test"
+    - UploadImageSig="curl -F file=@${image_sig} ${TEST_SERVER_URI_PREFIX}FILE/UPLOAD/SINGLE/${machine}/BMC_Sanity_Test"
+    - UploadBmcImage="curl -F file=@${bmc_image} ${TEST_SERVER_URI_PREFIX}FILE/UPLOAD/SINGLE/${machine}/BMC_Sanity_Test"
+    - CheckProgress="${HOME}/auto-test/check_at_status.sh ${TEST_SERVER_URI_PREFIX} ${SUT_OSIP} ${machine}"
+
+    - echo "Run_Triger=$Run_Triger"
+    - echo "UploadMctFWTool=$UploadMctFWTool"
+    - echo "UploadObmcFWTool=$UploadObmcFWTool"
+    - echo "UploadFWImage=$UploadFWImage"
+    - echo "UploadBiosFWImage=$UploadBiosFWImage"
+    - echo "UploadBiosLocalFWImage=$UploadBiosLocalFWImage"
+    - echo "UploadDcscmCpldFWImage=$UploadDcscmCpldFWImage"
+    - echo "UploadDcscmCpldLocalFWImage=$UploadDcscmCpldLocalFWImage"
+    - echo "UploadMbCpldFWImage=$UploadMbCpldFWImage"
+    - echo "UploadMbCpldLocalFWImage=$UploadMbCpldLocalFWImage"
+    - echo "UploadOnlineFWImage=$UploadOnlineFWImage"
+    - echo "UploadFWSpec=$UploadFWSpec"
+    - echo "UploadFWUpdateScript=$UploadFWUpdateScript"
+    - echo "UploadSolTestScript=$UploadSolTestScript"
+    - echo "UploadNewmanTestScript=$UploadNewmanTestScript"
+    - echo "UploadProfileJson=$UploadProfileJson"
+    - echo "UploadEnvJson=$UploadEnvJson"
+    - echo "UploadImageSig=$UploadImageSig"
+    - echo "UploadBmcImage=$UploadBmcImage"
+    - echo "CheckProgress=$CheckProgress"
+
+    - echo "---------------------------"
+    - echo "@@@@@@@@ Start run auto test @@@@@@@@"
+
+    - $UploadFWImage
+    - $UploadDcscmCpldLocalFWImage
+    - $UploadObmcFWTool
+    - $UploadBiosFWImage
+    - $UploadBiosLocalFWImage
+    - $UploadDcscmCpldFWImage
+    - $UploadDcscmCpldLocalFWImage
+    - $UploadMbCpldFWImage
+    - $UploadMbCpldLocalFWImage
+    - $UploadOnlineFWImage
+    - $UploadFWSpec
+    - $UploadFWUpdateScript
+    # - $UploadSolTestScript
+    - $UploadNewmanTestScript
+    - $UploadProfileJson
+    - $UploadEnvJson
+    - $UploadImageSig
+    - $UploadBmcImage
+    - result=`$Run_Triger`
+    - echo 'result='$result
+
+    - echo "@@@@@@@@ Check the progress and test for Auto Test  @@@@@@@@"
+    - $CheckProgress "$result"
+
+  artifacts:
+    when: always
+    paths:
+      - report_output
+    expire_in: 4 weeks
+    
+Sanity_test_dryrun:
+  stage: sanity_test
+  tags:
+    - twitter_openbmc
+  only:
+    variables:
+        - $CI_PRERUN_TEST
+  script:
+    - echo "Enter Sanity test stage"
+    - HOME="/mnt/docker/auto-build-ubuntu-20-04"
+    - machine=s8056
+    - bmcFwVer="0.15"
+    - fw_file_path=`pwd`"/output/${CI_PRERUN_TEST}"
+    - SUT_BMCIP=SUT_BMC_IP_$machine
+    - SUT_BMCIP="10.99.241.15"
+    - SUT_OSIP=SUT_OS_IP_$machine
+    - SUT_OSIP="10.99.240.197"
+    - json="${HOME}//auto-test/json/${machine}.json"
+    - fw_spec="${HOME}//auto-test/fw_spec/${machine}.pdf"
+    - runtype=$TEST_RUN_TYPE
+    - echo "---------------------------"
+    - echo 'Project name='$machine
+    - echo 'BMC version='$bmcFwVer
+    - echo 'fw_file_path='$fw_file_path
+    - echo 'BMC IP='$SUT_BMCIP
+    - echo 'OS IP='$SUT_OSIP
+    - echo 'Json='$json
+    - echo 'FW_SPEC='$fw_spec
+    - echo 'runtype='$runtype
+    - echo 'Run_Triger=curl '$TEST_SERVER_URI_PREFIX$runtype'/'$SUT_OSIP'/'$SUT_BMCIP'/'$machine'/BMC_Sanity_Test/'$CI_PRERUN_TEST'/'$CI_PRERUN_TEST'/'$machine'.pdf/'$bmcFwVer'/'$bmcFwVer ' -H "Content-Type:application/json" -X PUT -d @'$machine'.json'
+    - echo 'UploadFWImage=curl -F file=@'$fw_file_path $TEST_SERVER_URI_PREFIX'FILE/UPLOAD/SINGLE/'$machine'/BMC_Sanity_Test'
+    - echo 'UploadFWSpec=curl -F file=@'$fw_spec $TEST_SERVER_URI_PREFIX'FILE/UPLOAD/SINGLE/'$machine'/BMC_Sanity_Test'
+    - echo "---------------------------"
+    - echo "@@@@@@@@ Start run auto test @@@@@@@@"
+    - curl -s -F file=@$fw_file_path $TEST_SERVER_URI_PREFIX'FILE/UPLOAD/SINGLE/'$machine'/BMC_Sanity_Test'
+    - curl -s -F file=@$fw_spec $TEST_SERVER_URI_PREFIX'FILE/UPLOAD/SINGLE/'$machine'/BMC_Sanity_Test'
+    - echo curl -s $TEST_SERVER_URI_PREFIX$runtype'/'$SUT_OSIP'/'$SUT_BMCIP'/'$machine'/BMC_Sanity_Test/'$CI_PRERUN_TEST'/'$CI_PRERUN_TEST'/'$machine'.pdf/'$bmcFwVer'/'$bmcFwVer -H "Content-Type:application/json" -X PUT -d @$json
+    - result=`curl -s $TEST_SERVER_URI_PREFIX$runtype'/'$SUT_OSIP'/'$SUT_BMCIP'/'$machine'/BMC_Sanity_Test/'$CI_PRERUN_TEST'/'$CI_PRERUN_TEST'/'$machine'.pdf/'$bmcFwVer'/'$bmcFwVer -H "Content-Type:application/json" -X PUT -d @$json`
+    - echo 'result='$result
+    - echo "@@@@@@@@ Check the progress and test for Auto Test  @@@@@@@@"
+    - ${HOME}/auto-test/check_at_status.sh $TEST_SERVER_URI_PREFIX $SUT_OSIP $machine "$result"
+
+  artifacts:
+    when: always
+    paths:
+      - report_output
+    expire_in: 2 weeks

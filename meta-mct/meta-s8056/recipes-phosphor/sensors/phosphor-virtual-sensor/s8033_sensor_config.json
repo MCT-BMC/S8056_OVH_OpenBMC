@@ -1,0 +1,75 @@
+  
+[
+    {
+        "Desc" :
+        {
+            "Name" : "PSU1_PWR_12VOUT",
+            "SensorType" : "power",
+            "MaxValue": 3000,
+            "MinValue": 0
+        },
+        "Params":
+        {
+            "DbusParam" :
+            [
+                {
+                    "ParamName" : "P1",
+                    "Desc" :
+                    {
+                        "Name" : "PSU1_VOL_12VOUT",
+                        "SensorType" : "voltage"
+                    }
+                },
+                {
+                    "ParamName" : "P2",
+                    "Desc" :
+                    {
+                        "Name" : "PSU1_I_12VOUT",
+                        "SensorType" : "current"
+                    }
+                }
+            ]
+        },
+        "Expression" : "(P1 * P2)"
+    },
+    {
+        "Desc" :
+        {
+            "Name" : "DCMI_POWER",
+            "SensorType" : "power",
+            "MaxValue": 3000,
+            "MinValue": 0
+        },
+        "Params":
+        {
+            "DbusParam" :
+            [
+                {
+                    "ParamName" : "P1",
+                    "Desc" :
+                    {
+                        "Name" : "PSU1_PWR_48VIN",
+                        "SensorType" : "power"
+                    }
+                },
+                {
+                    "ParamName" : "P2",
+                    "Desc" :
+                    {
+                        "Name" : "PSU1 Input Power",
+                        "SensorType" : "power"
+                    }
+                },
+                {
+                    "ParamName" : "P3",
+                    "Desc" :
+                    {
+                        "Name" : "PSU2 Input Power",
+                        "SensorType" : "power"
+                    }
+                }
+            ]
+        },
+        "Expression" : "(P1 + P2 + P3)"
+    }
+]

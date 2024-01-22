@@ -1,0 +1,32 @@
+From 3ecb6ae03f10f66be661da3e3027f6b2a3fea47c Mon Sep 17 00:00:00 2001
+From: Jason <Jason_YX_Chang@wiwynn.com>
+Date: Thu, 21 Nov 2019 10:25:55 +0800
+Subject: [PATCH] Add sensor type system event
+
+---
+ include/sdrutils.hpp | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/include/sdrutils.hpp b/include/sdrutils.hpp
+index 9df66df..713e670 100644
+--- a/include/sdrutils.hpp
++++ b/include/sdrutils.hpp
+@@ -165,6 +165,7 @@ enum class SensorTypeCodes : uint8_t
+     other = 0xB,
+     memory = 0xC,
+     watchdog1 = 0x11,
++    systemevent = 0x12,
+     button = 0x14,
+     acpi = 0x22,
+     watchdog2 = 0x23,
+@@ -180,6 +181,7 @@ const static boost::container::flat_map<const char*, SensorTypeCodes, CmpStr>
+                  {"power", SensorTypeCodes::other},
+                  {"pattern", SensorTypeCodes::other},
+                  {"acpi", SensorTypeCodes::acpi},
++                 {"systemevent", SensorTypeCodes::systemevent},
+                  {"button", SensorTypeCodes::button}}};
+ 
+ inline static std::string getSensorTypeStringFromPath(const std::string& path)
+-- 
+1.9.1
+

@@ -1,0 +1,172 @@
+From 5b20e38495f15058247dfdf7df2ac4ba75a2b46c Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Wed, 11 Jan 2023 11:31:33 +0800
+Subject: [PATCH] Add bios2 update supported
+
+---
+ activation.cpp                    | 43 ++++++++++++++++++++++++++-----
+ activation.hpp                    |  4 +--
+ item_updater.cpp                  |  1 +
+ meson.build                       |  1 +
+ obmc-flash-host-bios2@.service.in |  8 ++++++
+ 5 files changed, 48 insertions(+), 9 deletions(-)
+ create mode 100644 obmc-flash-host-bios2@.service.in
+
+diff --git a/activation.cpp b/activation.cpp
+index 6eaa099..fb946d0 100644
+--- a/activation.cpp
++++ b/activation.cpp
+@@ -174,7 +174,7 @@ auto Activation::activation(Activations value) -> Activations
+ 
+ #ifdef HOST_BIOS_UPGRADE
+         auto purpose = parent.versions.find(versionId)->second->purpose();
+-        if (purpose == VersionPurpose::Host)
++        if (purpose == VersionPurpose::Host || purpose == VersionPurpose::Host2)
+         {
+             // Enable systemd signals
+             subscribeToSystemdSignals();
+@@ -183,7 +183,14 @@ auto Activation::activation(Activations value) -> Activations
+             activationProgress->progress(0);
+ 
+             // Initiate image writing to flash
+-            flashWriteHost();
++            if(purpose == VersionPurpose::Host)
++            {
++                flashWriteHost(0);
++            }
++            else if(purpose == VersionPurpose::Host2)
++            {
++                flashWriteHost(1);
++            }
+ 
+             return softwareServer::Activation::activation(value);
+         }
+@@ -360,7 +367,12 @@ void Activation::unitStateChange(sdbusplus::message_t& msg)
+     auto purpose = parent.versions.find(versionId)->second->purpose();
+     if (purpose == VersionPurpose::Host)
+     {
+-        onStateChangesBios(msg);
++        onStateChangesBios(msg,0);
++        return;
++    }
++    if (purpose == VersionPurpose::Host2)
++    {
++        onStateChangesBios(msg,1);
+         return;
+     }
+ #endif
+@@ -457,9 +469,10 @@ bool Activation::checkApplyTimeImmediate()
+ }
+ 
+ #ifdef HOST_BIOS_UPGRADE
+-void Activation::flashWriteHost()
++void Activation::flashWriteHost(uint8_t selectBios)
+ {
+     std::string biosImagePath;
++    std::string biosServiceFile;
+     auto ret = getBiosImagePath(biosImagePath);
+ 
+     if(ret!=0)
+@@ -473,7 +486,15 @@ void Activation::flashWriteHost()
+ 
+     auto method = bus.new_method_call(SYSTEMD_BUSNAME, SYSTEMD_PATH,
+                                       SYSTEMD_INTERFACE, "StartUnit");
+-    auto biosServiceFile = "obmc-flash-host-bios@" + biosImagePath + ".service";
++    if(selectBios == 0)
++    {
++        biosServiceFile = "obmc-flash-host-bios@" + biosImagePath + ".service";
++    }
++    else
++    {
++        biosServiceFile = "obmc-flash-host-bios2@" + biosImagePath + ".service";
++    }
++
+     method.append(biosServiceFile, "replace");
+     try
+     {
+@@ -486,17 +507,25 @@ void Activation::flashWriteHost()
+     }
+ }
+ 
+-void Activation::onStateChangesBios(sdbusplus::message_t& msg)
++void Activation::onStateChangesBios(sdbusplus::message_t& msg, uint8_t selectBios)
+ {
+     uint32_t newStateID{};
+     sdbusplus::message::object_path newStateObjPath;
+     std::string newStateUnit{};
+     std::string newStateResult{};
++    std::string biosServiceFile{};
+ 
+     // Read the msg and populate each variable
+     msg.read(newStateID, newStateObjPath, newStateUnit, newStateResult);
+ 
+-    auto biosServiceFile = "obmc-flash-host-bios@" + versionId + ".service";
++    if(selectBios == 0)
++    {
++        biosServiceFile = "obmc-flash-host-bios@" + versionId + ".service";
++    }
++    else
++    {
++        biosServiceFile = "obmc-flash-host-bios2@" + versionId + ".service";
++    }
+ 
+     if (newStateUnit == biosServiceFile)
+     {
+diff --git a/activation.hpp b/activation.hpp
+index 3a23637..cb4f05c 100644
+--- a/activation.hpp
++++ b/activation.hpp
+@@ -242,10 +242,10 @@ class Activation : public ActivationInherit, public Flash
+ 
+ #ifdef HOST_BIOS_UPGRADE
+     /* @brief write to Host flash function */
+-    void flashWriteHost();
++    void flashWriteHost(uint8_t selectBios);
+ 
+     /** @brief Function that acts on Bios upgrade service file state changes */
+-    void onStateChangesBios(sdbusplus::message_t&);
++    void onStateChangesBios(sdbusplus::message_t&, uint8_t selectBios);
+ 
+     /** @brief Get the BIOS image path. */
+     int32_t getBiosImagePath(std::string&);
+diff --git a/item_updater.cpp b/item_updater.cpp
+index cd39c65..b35103d 100644
+--- a/item_updater.cpp
++++ b/item_updater.cpp
+@@ -71,6 +71,7 @@ void ItemUpdater::createActivation(sdbusplus::message_t& msg)
+                     if (value == VersionPurpose::BMC ||
+ #ifdef HOST_BIOS_UPGRADE
+                         value == VersionPurpose::Host ||
++                        value == VersionPurpose::Host2 ||
+ #endif
+ #ifdef CPLD_UPGRADE
+                         value == VersionPurpose::CPLD ||
+diff --git a/meson.build b/meson.build
+index 83c8e72..e72bc3c 100644
+--- a/meson.build
++++ b/meson.build
+@@ -207,6 +207,7 @@ endif
+ 
+ if get_option('host-bios-upgrade').enabled()
+     unit_files += 'obmc-flash-host-bios@.service.in'
++    unit_files += 'obmc-flash-host-bios2@.service.in'
+ endif
+ 
+ if get_option('bmc-static-dual-image').enabled()
+diff --git a/obmc-flash-host-bios2@.service.in b/obmc-flash-host-bios2@.service.in
+new file mode 100644
+index 0000000..d2eeca2
+--- /dev/null
++++ b/obmc-flash-host-bios2@.service.in
+@@ -0,0 +1,8 @@
++[Unit]
++Description=Flash Host Bios2 image %I to Host
++
++[Service]
++Type=oneshot
++RemainAfterExit=no
++ExecStart=/usr/sbin/bios-update-handler %I 1 1
++ExecStartPost=/usr/sbin/image-active %I Ready None
+-- 
+2.25.1
+

@@ -1,0 +1,47 @@
+From 0cd9c5e0d0112e5949f3e6ba16b95f7eca7572fe Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Mon, 11 Nov 2019 14:08:01 +0800
+Subject: [PATCH] Support the reading unavailable bit of IPMI Get Sensor
+ Reading command.
+
+---
+ src/sensorcommands.cpp | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/src/sensorcommands.cpp b/src/sensorcommands.cpp
+index b607cb5..e72c79c 100644
+--- a/src/sensorcommands.cpp
++++ b/src/sensorcommands.cpp
+@@ -413,13 +413,15 @@ ipmi::RspType<uint8_t, uint8_t, uint8_t, std::optional<uint8_t>>
+     auto sensorObject = sensorMap.find("xyz.openbmc_project.Sensor.Value");
+ 
+     if (sensorObject == sensorMap.end() ||
+-        sensorObject->second.find("Value") == sensorObject->second.end())
++        sensorObject->second.find("Value") == sensorObject->second.end() ||
++        sensorObject->second.find("InvalidValue") == sensorObject->second.end())
+     {
+         return ipmi::responseResponseError();
+     }
+     auto &valueVariant = sensorObject->second["Value"];
+     double reading = std::visit(VariantToDoubleVisitor(), valueVariant);
+ 
++    auto invalidValue = sensorObject->second.find("InvalidValue");
+     double max = 0;
+     double min = 0;
+     getSensorMaxMin(sensorMap, max, min);
+@@ -442,6 +444,12 @@ ipmi::RspType<uint8_t, uint8_t, uint8_t, std::optional<uint8_t>>
+     operation |=
+         static_cast<uint8_t>(IPMISensorReadingByte2::eventMessagesEnable);
+ 
++    if (std::get<bool>(invalidValue->second) == true)
++    {
++        operation |=
++            static_cast<uint8_t>(IPMISensorReadingByte2::readingStateUnavailable);
++    }
++
+     uint8_t thresholds = 0;
+ 
+     auto warningObject =
+-- 
+2.22.0
+

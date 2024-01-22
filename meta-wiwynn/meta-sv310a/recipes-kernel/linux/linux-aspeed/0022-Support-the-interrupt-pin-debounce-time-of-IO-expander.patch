@@ -1,0 +1,52 @@
+From 20a7f42c39b9d72f93fa600a0af6753c05c0aa0b Mon Sep 17 00:00:00 2001
+From: Ren Chen <ren_chen@wiwynn.com>
+Date: Fri, 7 Jan 2022 17:42:41 +0800
+Subject: [PATCH] Support the interrupt pin debounce time of IO expander
+ PCA9555
+
+---
+ drivers/gpio/gpio-pca953x.c | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/drivers/gpio/gpio-pca953x.c b/drivers/gpio/gpio-pca953x.c
+index 6898c27f71f8..4ffcc5af2f58 100644
+--- a/drivers/gpio/gpio-pca953x.c
++++ b/drivers/gpio/gpio-pca953x.c
+@@ -208,6 +208,7 @@ struct pca953x_chip {
+ 	const char *const *names;
+ 	unsigned long driver_data;
+ 	struct regulator *regulator;
++	u32 debounce;
+ 
+ 	const struct pca953x_reg_config *regs;
+ };
+@@ -787,6 +788,11 @@ static irqreturn_t pca953x_irq_handler(int irq, void *devid)
+ 	int level;
+ 	bool ret;
+ 
++	if (chip->debounce != 0)
++	{
++		msleep(chip->debounce);
++	}
++
+ 	bitmap_zero(pending, MAX_LINE);
+ 
+ 	mutex_lock(&chip->i2c_lock);
+@@ -1011,6 +1017,14 @@ static int pca953x_probe(struct i2c_client *client,
+ 		chip->driver_data = (uintptr_t)match;
+ 	}
+ 
++	ret = of_property_read_u32(client->dev.of_node, "debounce-ms",
++				   &chip->debounce);
++	if (ret < 0) {
++		chip->debounce = 0;
++	} else {
++		dev_info(&client->dev, "Interrupt pin debounce time %dms\n", chip->debounce);
++	}
++
+ 	i2c_set_clientdata(client, chip);
+ 
+ 	pca953x_setup_gpio(chip, chip->driver_data & PCA_GPIO_MASK);
+-- 
+2.32.0
+

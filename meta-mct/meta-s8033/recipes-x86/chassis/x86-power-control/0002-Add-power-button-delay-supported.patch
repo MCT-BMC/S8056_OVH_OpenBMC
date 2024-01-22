@@ -1,0 +1,132 @@
+From bb245fe2bfdd1597c72627bc917256bfaf95a066 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Tue, 15 Mar 2022 11:34:17 +0800
+Subject: [PATCH 1/9] Add power button delay supported
+
+---
+ src/power_control.cpp | 58 +++++++++++++++++++++++++++++++++++++++++++++++----
+ 1 file changed, 54 insertions(+), 4 deletions(-)
+
+diff --git a/src/power_control.cpp b/src/power_control.cpp
+index 339c9b6..e5054f3 100755
+--- a/src/power_control.cpp
++++ b/src/power_control.cpp
+@@ -89,6 +89,7 @@ static ConfigData resetButtonConfig;
+ static ConfigData idButtonConfig;
+ static ConfigData nmiButtonConfig;
+ static ConfigData slotPowerConfig;
++static ConfigData buttonLockConfig;
+ 
+ // map for storing list of gpio parameters whose config are to be read from x86
+ // power control json config
+@@ -105,7 +106,8 @@ boost::container::flat_map<std::string, ConfigData*> powerSignalMap = {
+     {"ResetButton", &resetButtonConfig},
+     {"IdButton", &idButtonConfig},
+     {"NMIButton", &nmiButtonConfig},
+-    {"SlotPower", &slotPowerConfig}};
++    {"SlotPower", &slotPowerConfig},
++    {"ButtonLock", &buttonLockConfig}};
+ 
+ static std::string hostDbusName = "xyz.openbmc_project.State.Host";
+ static std::string chassisDbusName = "xyz.openbmc_project.State.Chassis";
+@@ -143,10 +145,12 @@ boost::container::flat_map<std::string, int> TimerMap = {
+     {"GracefulPowerOffS", (5 * 60)},
+     {"WarmResetCheckMs", 500},
+     {"PowerOffSaveMs", 7000},
+-    {"SlotPowerCycleMs", 200}};
++    {"SlotPowerCycleMs", 200},
++    {"powerButtonDelayTimeMs", 2000}};
+ 
+ static bool nmiEnabled = true;
+ static bool sioEnabled = true;
++static bool powerButtonEnabled = false;
+ 
+ // Timers
+ // Time holding GPIOs asserted
+@@ -168,6 +172,8 @@ static boost::asio::steady_timer pohCounterTimer(io);
+ // Time when to allow restart cause updates
+ static boost::asio::steady_timer restartCauseTimer(io);
+ static boost::asio::steady_timer slotPowerCycleTimer(io);
++// Time holding power button asserted
++static boost::asio::steady_timer powerButtonDelayTimer(io);
+ 
+ // GPIO Lines and Event Descriptors
+ static gpiod::line psPowerOKLine;
+@@ -190,6 +196,7 @@ static gpiod::line postCompleteLine;
+ static boost::asio::posix::stream_descriptor postCompleteEvent(io);
+ static gpiod::line nmiOutLine;
+ static gpiod::line slotPowerLine;
++static gpiod::line buttonLockLine;
+ 
+ static constexpr uint8_t beepPowerFail = 8;
+ 
+@@ -2139,14 +2146,51 @@ static void powerButtonHandler(bool state)
+         powerButtonPressLog();
+         if (!powerButtonMask)
+         {
+-            sendPowerControlEvent(Event::powerButtonPressed);
+-            addRestartCause(RestartCause::powerButton);
++            /*sendPowerControlEvent(Event::powerButtonPressed);
++            addRestartCause(RestartCause::powerButton);*/
++            powerButtonEnabled = true;
++
++            if(getChassisState(powerState) == "xyz.openbmc_project.State.Chassis.PowerState.On")
++            {
++                powerButtonDelayTimer.expires_after(std::chrono::milliseconds(TimerMap["powerButtonDelayTimeMs"]));
++                powerButtonDelayTimer.async_wait([powerButtonEnabled](const boost::system::error_code ec) {
++                    if (ec)
++                    {
++                        // operation_aborted is expected if timer is canceled before
++                        // completion.
++                        if (ec != boost::asio::error::operation_aborted)
++                        {
++                            lg2::error(
++                                "Power button delay async_wait failed:  {ERROR_MSG}",
++                                "ERROR_MSG", ec.message());
++                        }
++                    }
++
++                    if(powerButtonEnabled){
++                        buttonLockLine.set_value(1);
++                        sendPowerControlEvent(Event::powerButtonPressed);
++                        addRestartCause(RestartCause::powerButton);
++                    }
++                });
++            }
++            else
++            {
++                buttonLockLine.set_value(1);
++                sendPowerControlEvent(Event::powerButtonPressed);
++                addRestartCause(RestartCause::powerButton);
++            }
+         }
+         else
+         {
+             lg2::info("power button press masked");
+         }
+     }
++    else
++    {
++        powerButtonEnabled = false;
++        buttonLockLine.set_value(0);
++        powerButtonDelayTimer.cancel();
++    }
+ }
+ 
+ static void resetButtonHandler(bool state)
+@@ -2861,6 +2905,12 @@ int main(int argc, char* argv[])
+         setGPIOOutput(nmiOutConfig.lineName, 0, nmiOutLine);
+     }
+ 
++    // initialize BUTTON_LOCK GPIO.
++    if (!buttonLockConfig.lineName.empty())
++    {
++        setGPIOOutput(buttonLockConfig.lineName, 0, buttonLockLine);
++    }
++
+     // Initialize POWER_OUT and RESET_OUT GPIO.
+     gpiod::line line;
+     if (!powerOutConfig.lineName.empty())
+-- 
+2.7.4
+

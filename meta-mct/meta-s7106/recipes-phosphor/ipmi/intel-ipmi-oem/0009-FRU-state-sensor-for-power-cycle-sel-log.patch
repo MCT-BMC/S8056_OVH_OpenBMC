@@ -1,0 +1,29 @@
+From 3e672675c8ded9cab5e551ad0bca8b852ed0aa56 Mon Sep 17 00:00:00 2001
+From: Varun Sampat <vsampat@twitter.com>
+Date: Fri, 8 Nov 2019 18:51:26 -0500
+Subject: [PATCH] FRU state sensor for power cycle sel log
+
+---
+ include/sdrutils.hpp | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/include/sdrutils.hpp b/include/sdrutils.hpp
+index f6ba289..f05cf92 100755
+--- a/include/sdrutils.hpp
++++ b/include/sdrutils.hpp
+@@ -167,6 +167,7 @@ enum class SensorTypeCodes : uint8_t
+     restart = 0x1d,
+     acpi = 0x22,
+     versionchange = 0x2b,
++    fru_state = 0x2c,
+     other = 0xB,
+ };
+ 
+@@ -182,6 +183,7 @@ const static boost::container::flat_map<const char*, SensorTypeCodes, CmpStr>
+                  {"restart", SensorTypeCodes::restart},  
+                  {"acpi", SensorTypeCodes::acpi},     
+                  {"versionchange", SensorTypeCodes::versionchange},     
++                 {"fru_state", SensorTypeCodes::fru_state},
+                  {"power", SensorTypeCodes::other}}};
+ 
+ inline static std::string getSensorTypeStringFromPath(const std::string& path)

@@ -1,0 +1,23 @@
+From d215aab25bd42a806e85f604d9e9eff2355e6999 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Tue, 16 Nov 2021 15:17:13 +0800
+Subject: [PATCH] Change KCS service wantedby from multi-user target to IPMI
+
+---
+ phosphor-ipmi-kcs@.service.in | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/phosphor-ipmi-kcs@.service.in b/phosphor-ipmi-kcs@.service.in
+index 3dacda4..306283f 100644
+--- a/phosphor-ipmi-kcs@.service.in
++++ b/phosphor-ipmi-kcs@.service.in
+@@ -10,5 +10,5 @@ ExecStart=@BIN@ -c "%i"
+ SyslogIdentifier=kcsbridged-%i
+ 
+ [Install]
+-WantedBy=multi-user.target
++WantedBy=phosphor-ipmi-host.service
+ RequiredBy=
+-- 
+2.7.4
+

@@ -1,0 +1,57 @@
+[
+    {
+        "Name": "PowerGood",
+        "GpioNum": 101,
+        "ChipId": "0",
+        "EventMon": "BOTH",
+        "Target":
+        {
+            "FALLING": [
+                "SetPowerGoodPropertyOff.service"
+            ],
+            "RISING": [
+                "SetPowerGoodPropertyOn.service"
+            ]
+        },
+        "Continue": true
+    },
+    {
+        "Name": "UIDButton",
+        "ChipId": "0",
+        "GpioNum": 188,
+        "EventMon": "FALLING",
+        "Target":
+        {
+            "FALLING": [
+                "id-button-pressed.service"
+            ]
+        },
+        "Continue": true
+    },
+    {
+        "Name": "POSTComplete",
+        "ChipId": "0",
+        "GpioNum": 2,
+        "EventMon": "FALLING",
+        "Target":
+        {
+            "FALLING": [
+                "end-of-post-event.service"
+            ]
+        },
+        "Continue": true
+    },
+    {
+        "Name": "CatErr",
+        "ChipId": "0",
+        "GpioNum": 211,
+        "EventMon": "FALLING",
+        "Target":
+        {
+            "FALLING": [
+                "caterr-event.service"
+            ]
+        },
+        "Continue": true
+    }
+]

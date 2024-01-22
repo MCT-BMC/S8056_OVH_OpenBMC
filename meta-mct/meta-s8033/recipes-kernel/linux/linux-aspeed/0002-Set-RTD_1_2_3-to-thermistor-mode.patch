@@ -1,0 +1,25 @@
+From 1ff663f7f1a33186ba9f6b7bedb0370509d5b5c2 Mon Sep 17 00:00:00 2001
+From: Janny Au <janny.au@mic.com.tw>
+Date: Thu, 10 Mar 2022 15:29:12 +0800
+Subject: [PATCH] Set-RTD_1_2_3-to-thermistor-mode
+
+---
+ drivers/hwmon/nct7802.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/drivers/hwmon/nct7802.c b/drivers/hwmon/nct7802.c
+index d56f78327619..fd1d01618a08 100644
+--- a/drivers/hwmon/nct7802.c
++++ b/drivers/hwmon/nct7802.c
+@@ -1173,6 +1173,11 @@ static int nct7802_init_chip(struct device *dev, struct nct7802_data *data)
+ 	if (err)
+ 		return err;
+ 
++	/* Set RTD1~RTD3 to thermistor mode */
++	err = regmap_update_bits(data->regmap, REG_MODE, 0x3F, 0x2A);
++	if (err)
++		return err;
++
+ 	/* Enable Vcore and VCC voltage monitoring */
+ 	return regmap_update_bits(data->regmap, REG_VMON_ENABLE, 0x03, 0x03);
+ }

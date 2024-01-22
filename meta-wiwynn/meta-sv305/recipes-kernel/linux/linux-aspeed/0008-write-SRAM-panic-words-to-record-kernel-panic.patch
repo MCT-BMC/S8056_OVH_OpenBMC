@@ -1,0 +1,39 @@
+From 60535e7ab5ceb1777aafd5f3b041884b6ad4108c Mon Sep 17 00:00:00 2001
+From: "Shao-Yu, Wang" <shaw_wang@wiwynn.com>
+Date: Fri, 27 Nov 2020 10:40:56 +0800
+Subject: [PATCH] write SRAM panic words to record kernel panic
+
+---
+ kernel/panic.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+ mode change 100644 => 100755 kernel/panic.c
+
+diff --git a/kernel/panic.c b/kernel/panic.c
+old mode 100644
+new mode 100755
+index f470a038b05b..41dea26acdf9
+--- a/kernel/panic.c
++++ b/kernel/panic.c
+@@ -166,6 +166,18 @@ static void panic_print_sys_info(void)
+  */
+ void panic(const char *fmt, ...)
+ {
++	/*write SRAM*/
++	uint32_t SRAMaddress = 0x1e723000;
++	uint32_t write_value1 = 0x50414E49; //ascii "p a n i ""
++	uint32_t write_value2 = 0x43950000; //ascii "c & checksum"
++	
++	void __iomem		*physical_addr;
++	physical_addr = ioremap(SRAMaddress, 4);
++	writel(write_value1, physical_addr);
++	physical_addr = ioremap(SRAMaddress + 4, 4);
++	writel(write_value2, physical_addr);
++
++	
+ 	static char buf[1024];
+ 	va_list args;
+ 	long i, i_next = 0, len;
+-- 
+2.17.1
+
+

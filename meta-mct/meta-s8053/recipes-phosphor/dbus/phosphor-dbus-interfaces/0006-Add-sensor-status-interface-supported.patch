@@ -1,0 +1,76 @@
+From e4fcb21e2ff112e54b19da73e71db21ae21088cc Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Thu, 22 Apr 2021 10:20:20 +0800
+Subject: [PATCH] Add sensor status interface supported
+
+---
+ gen/xyz/openbmc_project/OEM/SensorStatus/meson.build | 13 +++++++++++++
+ gen/xyz/openbmc_project/OEM/meson.build              | 15 +++++++++++++++
+ xyz/openbmc_project/OEM/SensorStatus.interface.yaml  |  9 +++++++++
+ 3 files changed, 37 insertions(+)
+ create mode 100755 gen/xyz/openbmc_project/OEM/SensorStatus/meson.build
+ create mode 100755 xyz/openbmc_project/OEM/SensorStatus.interface.yaml
+
+diff --git a/gen/xyz/openbmc_project/OEM/SensorStatus/meson.build b/gen/xyz/openbmc_project/OEM/SensorStatus/meson.build
+new file mode 100755
+index 0000000..994edc1
+--- /dev/null
++++ b/gen/xyz/openbmc_project/OEM/SensorStatus/meson.build
+@@ -0,0 +1,13 @@
++# Generated file; do not modify.
++generated_sources += custom_target(
++    'xyz/openbmc_project/OEM/SensorStatus__cpp'.underscorify(),
++    input: [ meson.source_root() / 'xyz/openbmc_project/OEM/SensorStatus.interface.yaml',  ],
++    output: [ 'server.cpp', 'server.hpp', 'client.hpp',  ],
++    command: [
++        sdbuspp_gen_meson_prog, '--command', 'cpp',
++        '--output', meson.current_build_dir(),
++        '--tool', sdbusplusplus_prog,
++        '--directory', meson.source_root(),
++        'xyz/openbmc_project/OEM/SensorStatus',
++    ],
++)
+diff --git a/gen/xyz/openbmc_project/OEM/meson.build b/gen/xyz/openbmc_project/OEM/meson.build
+index aecc4d7..90bdaf3 100755
+--- a/gen/xyz/openbmc_project/OEM/meson.build
++++ b/gen/xyz/openbmc_project/OEM/meson.build
+@@ -12,4 +12,19 @@ generated_others += custom_target(
+         'xyz/openbmc_project/OEM/ServiceStatus',
+     ],
+     build_by_default: true,
++)
++
++subdir('SensorStatus')
++generated_others += custom_target(
++    'xyz/openbmc_project/OEM/SensorStatus__markdown'.underscorify(),
++    input: [ meson.source_root() / 'xyz/openbmc_project/OEM/SensorStatus.interface.yaml',  ],
++    output: [ 'SensorStatus.md' ],
++    command: [
++        sdbuspp_gen_meson_prog, '--command', 'markdown',
++        '--output', meson.current_build_dir(),
++        '--tool', sdbusplusplus_prog,
++        '--directory', meson.source_root(),
++        'xyz/openbmc_project/OEM/SensorStatus',
++    ],
++    build_by_default: true,
+ )
+\ No newline at end of file
+diff --git a/xyz/openbmc_project/OEM/SensorStatus.interface.yaml b/xyz/openbmc_project/OEM/SensorStatus.interface.yaml
+new file mode 100755
+index 0000000..dfc9d52
+--- /dev/null
++++ b/xyz/openbmc_project/OEM/SensorStatus.interface.yaml
+@@ -0,0 +1,9 @@
++description: >
++    Implement to provide status attributes for specified sensor service.
++
++properties:
++    - name: DIMMSensorStatus
++      type: uint32
++      description: >
++         Setting of DIMM sensor status 
++# vim: tabstop=8 expandtab shiftwidth=4 softtabstop=4
+\ No newline at end of file
+-- 
+2.7.4
+

@@ -1,0 +1,9 @@
+[Unit]
+Description=Phosphor %I watchdog
+After=xyz.openbmc_project.Logging.IPMI.service
+
+[Service]
+Restart=always
+EnvironmentFile={envfiledir}/obmc/watchdog/%I
+ExecStart=/usr/bin/env phosphor-watchdog --continue --service=${{SERVICE}} --path=${{DEVPATH}} --action_target=${{PWR_OFF}} ${{PWR_CYCLE}} ${{PWR_RESET}}
+SyslogIdentifier=phosphor-watchdog

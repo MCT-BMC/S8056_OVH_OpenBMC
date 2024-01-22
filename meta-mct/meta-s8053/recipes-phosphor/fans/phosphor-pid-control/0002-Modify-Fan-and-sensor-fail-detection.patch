@@ -1,0 +1,1263 @@
+From ec7109e20c617bc2a5396197177e770d678490b3 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Wed, 16 Mar 2022 16:29:19 +0800
+Subject: [PATCH] Modify Fan and sensor fail detection
+
+---
+ conf.hpp                   |  39 +++++++-
+ dbus/dbusconfiguration.cpp |   2 -
+ dbus/dbuspassive.cpp       |  54 +++++++++--
+ dbus/dbuspassive.hpp       |   7 +-
+ interfaces.hpp             |   5 +
+ pid/builder.cpp            |   4 +-
+ pid/buildjson.cpp          | 120 ++++++++++++++++++++++-
+ pid/fancontroller.cpp      |  22 ++++-
+ pid/fancontroller.hpp      |   2 +
+ pid/pidloop.cpp            | 157 +++++++++++++++++-------------
+ pid/pidloop.hpp            |   2 +-
+ pid/thermalcontroller.cpp  |  10 +-
+ pid/zone.cpp               | 232 ++++++++++++++++++++++++++++++++++++++-------
+ pid/zone.hpp               |  27 ++++--
+ pid/zone_interface.hpp     |  21 +++-
+ sensors/pluggable.cpp      |   6 ++
+ sensors/pluggable.hpp      |   1 +
+ sensors/sensor.hpp         |   4 +
+ util.cpp                   |   3 +-
+ util.hpp                   |   4 +
+ 20 files changed, 574 insertions(+), 148 deletions(-)
+ mode change 100644 => 100755 conf.hpp
+ mode change 100644 => 100755 dbus/dbusconfiguration.cpp
+ mode change 100644 => 100755 dbus/dbuspassive.cpp
+ mode change 100644 => 100755 dbus/dbuspassive.hpp
+ mode change 100644 => 100755 interfaces.hpp
+ mode change 100644 => 100755 pid/builder.cpp
+ mode change 100644 => 100755 pid/fancontroller.hpp
+ mode change 100644 => 100755 pid/pidloop.cpp
+ mode change 100644 => 100755 pid/pidloop.hpp
+ mode change 100644 => 100755 sensors/pluggable.cpp
+ mode change 100644 => 100755 sensors/pluggable.hpp
+ mode change 100644 => 100755 sensors/sensor.hpp
+ mode change 100644 => 100755 util.cpp
+ mode change 100644 => 100755 util.hpp
+
+diff --git a/conf.hpp b/conf.hpp
+old mode 100644
+new mode 100755
+index 9122a28..adf1447
+--- a/conf.hpp
++++ b/conf.hpp
+@@ -13,6 +13,40 @@ namespace conf
+ {
+ 
+ /*
++ * Sturcture for specialized fan and sensor failsafe percent.
++ */
++struct FailsafeProfile
++{
++    uint64_t fanFailCount;                // fan fail count.
++    std::vector<std::string> sensorNames; // the failed sensor names.
++    std::string outputType;               // stepwise or linear or value.
++    std::vector<std::string> inputs;      // stepwise/linear reference sensors.
++    std::vector<double> reading;          // sensor reading for stepwise/linear.
++    std::vector<double> output;           // output for stepwise/linear.
++    double failsafePercent;               // failsafe percent value.
++};
++
++struct FailsafeSetting
++{
++    // Customize fan failsafe percentage.
++    std::vector<struct FailsafeProfile> fanFailsafeProfiles;
++    // Customize sensor failsafe percentage.
++    std::vector<struct FailsafeProfile> sensorFailsafeProfiles;
++};
++
++struct CycleTime
++{
++    /* The time interval every cycle. 0.1 seconds by default */
++    uint64_t cycleTimeBase = 100; // milliseconds
++
++    /* The interval of checking fan failures. 0 = disable check fan failures */
++    uint64_t checkFanFailuresTime = 0; // milliseconds
++
++    /* The interval of updating thermals. 1 second by default */
++    uint64_t updateThermalsTime = 1000; // milliseconds
++};
++
++/*
+  * General sensor structure used for configuration.
+  */
+ struct SensorConfig
+@@ -56,7 +90,10 @@ struct ZoneConfig
+     double minThermalOutput;
+ 
+     /* If the sensors are in fail-safe mode, this is the percentage to use. */
+-    double failsafePercent;
++    FailsafeSetting failsafeSettings;
++
++    /* Customize time settings for every cycle */
++    CycleTime cycleTime;
+ };
+ 
+ using PIDConf = std::map<std::string, ControllerInfo>;
+diff --git a/dbus/dbusconfiguration.cpp b/dbus/dbusconfiguration.cpp
+old mode 100644
+new mode 100755
+index 1af938a..b7c6e90
+--- a/dbus/dbusconfiguration.cpp
++++ b/dbus/dbusconfiguration.cpp
+@@ -569,8 +569,6 @@ bool init(sdbusplus::bus::bus& bus, boost::asio::steady_timer& timer,
+ 
+             details.minThermalOutput = std::visit(VariantToDoubleVisitor(),
+                                                   zone.at("MinThermalOutput"));
+-            details.failsafePercent = std::visit(VariantToDoubleVisitor(),
+-                                                 zone.at("FailSafePercent"));
+         }
+         auto findBase = configuration.second.find(pidConfigurationInterface);
+         // loop through all the PID configurations and fill out a sensor config
+diff --git a/dbus/dbuspassive.cpp b/dbus/dbuspassive.cpp
+old mode 100644
+new mode 100755
+index a5da100..eca1c95
+--- a/dbus/dbuspassive.cpp
++++ b/dbus/dbuspassive.cpp
+@@ -15,6 +15,7 @@
+  */
+ #include "dbuspassive.hpp"
+ 
++#include "dbushelper.hpp"
+ #include "dbushelper_interface.hpp"
+ #include "dbuspassiveredundancy.hpp"
+ #include "dbusutil.hpp"
+@@ -52,6 +53,8 @@ std::unique_ptr<ReadInterface> DbusPassive::createDbusPassive(
+ 
+     SensorProperties settings;
+     bool failed;
++    bool available;
++    bool functional;
+ 
+     try
+     {
+@@ -59,6 +62,12 @@ std::unique_ptr<ReadInterface> DbusPassive::createDbusPassive(
+ 
+         helper->getProperties(service, path, &settings);
+         failed = helper->thresholdsAsserted(service, path);
++
++        auto derivedHelper = dynamic_cast<DbusHelper*>(helper.get());
++        derivedHelper->getProperty(service, path, availableIntf, "Available",
++                                   available);
++        derivedHelper->getProperty(service, path, functionalIntf, "Functional",
++                                   functional);
+     }
+     catch (const std::exception& e)
+     {
+@@ -75,18 +84,20 @@ std::unique_ptr<ReadInterface> DbusPassive::createDbusPassive(
+     settings.unavailableAsFailed = info->unavailableAsFailed;
+ 
+     return std::make_unique<DbusPassive>(bus, type, id, std::move(helper),
+-                                         settings, failed, path, redundancy);
++                                         settings, failed, available,
++                                         functional, path, redundancy);
+ }
+ 
+ DbusPassive::DbusPassive(
+     sdbusplus::bus::bus& bus, const std::string& type, const std::string& id,
+     std::unique_ptr<DbusHelperInterface> helper,
+-    const SensorProperties& settings, bool failed, const std::string& path,
++    const SensorProperties& settings, bool failed, bool available,
++    bool functional, const std::string& path,
+     const std::shared_ptr<DbusPassiveRedundancy>& redundancy) :
+     ReadInterface(),
+     _signal(bus, getMatch(type, id).c_str(), dbusHandleSignal, this), _id(id),
+-    _helper(std::move(helper)), _failed(failed), path(path),
+-    redundancy(redundancy)
++    _helper(std::move(helper)), _failed(failed), _available(available),
++    _functional(functional), path(path), redundancy(redundancy)
+ 
+ {
+     _scale = settings.scale;
+@@ -112,6 +123,34 @@ ReadReturn DbusPassive::read(void)
+     return r;
+ }
+ 
++double DbusPassive::activeRead(void)
++{
++    try
++    {
++        auto helper = dynamic_cast<DbusHelper*>(_helper.get());
++        std::string service = helper->getService(sensorintf, path);
++
++        bool available;
++        helper->getProperty(service, path, availableIntf, "Available",
++                            available);
++        setAvailable(available);
++
++        bool funational;
++        helper->getProperty(service, path, functionalIntf, "Functional",
++                            funational);
++        setFunctional(funational);
++
++        double value;
++        helper->getProperty(service, path, sensorintf, "Value", value);
++        updateValue(value, true);
++        return value;
++    }
++    catch (const sdbusplus::exception::SdBusError& ex)
++    {
++        throw;
++    }
++}
++
+ void DbusPassive::setValue(double value)
+ {
+     std::lock_guard<std::mutex> guard(_lock);
+@@ -164,7 +203,7 @@ bool DbusPassive::getFailed(void) const
+         return true;
+     }
+ 
+-    return _failed || !_available || !_functional;
++    return !_available || !_functional;
+ }
+ 
+ void DbusPassive::setFailed(bool value)
+@@ -290,7 +329,7 @@ int handleSensorValue(sdbusplus::message::message& msg, DbusPassive* owner)
+         }
+         owner->setFailed(asserted);
+     }
+-    else if (msgSensor == "xyz.openbmc_project.State.Decorator.Availability")
++    else if (msgSensor == availableIntf)
+     {
+         auto available = msgData.find("Available");
+         if (available == msgData.end())
+@@ -308,8 +347,7 @@ int handleSensorValue(sdbusplus::message::message& msg, DbusPassive* owner)
+             owner->updateValue(std::numeric_limits<double>::quiet_NaN(), true);
+         }
+     }
+-    else if (msgSensor ==
+-             "xyz.openbmc_project.State.Decorator.OperationalStatus")
++    else if (msgSensor == functionalIntf)
+     {
+         auto functional = msgData.find("Functional");
+         if (functional == msgData.end())
+diff --git a/dbus/dbuspassive.hpp b/dbus/dbuspassive.hpp
+old mode 100644
+new mode 100755
+index bc16719..72edfac
+--- a/dbus/dbuspassive.hpp
++++ b/dbus/dbuspassive.hpp
+@@ -49,11 +49,12 @@ class DbusPassive : public ReadInterface
+     DbusPassive(sdbusplus::bus::bus& bus, const std::string& type,
+                 const std::string& id,
+                 std::unique_ptr<DbusHelperInterface> helper,
+-                const SensorProperties& settings, bool failed,
+-                const std::string& path,
++                const SensorProperties& settings, bool failed, bool available,
++                bool functional, const std::string& path,
+                 const std::shared_ptr<DbusPassiveRedundancy>& redundancy);
+ 
+     ReadReturn read(void) override;
++    double activeRead(void) override;
+     bool getFailed(void) const override;
+ 
+     void updateValue(double value, bool force);
+@@ -79,8 +80,8 @@ class DbusPassive : public ReadInterface
+     double _max = 0;
+     double _min = 0;
+     bool _failed = false;
+-    bool _functional = true;
+     bool _available = true;
++    bool _functional = true;
+     bool _unavailableAsFailed = true;
+ 
+     bool _typeMargin = false;
+diff --git a/interfaces.hpp b/interfaces.hpp
+old mode 100644
+new mode 100755
+index 8ec474b..1fccc87
+--- a/interfaces.hpp
++++ b/interfaces.hpp
+@@ -31,6 +31,11 @@ class ReadInterface
+ 
+     virtual ReadReturn read(void) = 0;
+ 
++    virtual double activeRead(void)
++    {
++        return read().value;
++    }
++
+     virtual bool getFailed(void) const
+     {
+         return false;
+diff --git a/pid/builder.cpp b/pid/builder.cpp
+old mode 100644
+new mode 100755
+index 505ca98..95d1659
+--- a/pid/builder.cpp
++++ b/pid/builder.cpp
+@@ -69,8 +69,8 @@ std::unordered_map<int64_t, std::shared_ptr<ZoneInterface>>
+ 
+         auto zone = std::make_shared<DbusPidZone>(
+             zoneId, zoneConf->second.minThermalOutput,
+-            zoneConf->second.failsafePercent, mgr, modeControlBus,
+-            getControlPath(zoneId).c_str(), deferSignals);
++            zoneConf->second.failsafeSettings, zoneConf->second.cycleTime, mgr,
++            modeControlBus, getControlPath(zoneId).c_str(), deferSignals);
+ 
+         std::cerr << "Zone Id: " << zone->getZoneID() << "\n";
+ 
+diff --git a/pid/buildjson.cpp b/pid/buildjson.cpp
+index 5b89c8f..9bcd575 100755
+--- a/pid/buildjson.cpp
++++ b/pid/buildjson.cpp
+@@ -120,6 +120,66 @@ void from_json(const json& j, conf::ControllerInfo& c)
+ }
+ } // namespace conf
+ 
++void parsingFailsafeProfiles(const json& profiles,
++                             std::vector<conf::FailsafeProfile>& inputProfiles)
++{
++    for (const auto& profile : profiles)
++    {
++        conf::FailsafeProfile tmp;
++
++        // Only one of fan fail and sensor fail can be selected.
++        auto findFanFailCount = profile.find("fanFailCount");
++        auto findSensorNames = profile.find("sensorNames");
++        if (findFanFailCount != profile.end())
++        {
++            findFanFailCount->get_to(tmp.fanFailCount);
++        }
++        else if (findSensorNames != profile.end())
++        {
++            findSensorNames->get_to(tmp.sensorNames);
++        }
++        else
++        {
++            std::cerr << "Missing fanFailCount or sensorNames"
++                      << " in failsafe profiles\n";
++            continue;
++        }
++
++        auto findOutputType = profile.find("outputType");
++        if (findOutputType != profile.end())
++        {
++            findOutputType->get_to(tmp.outputType);
++        }
++        else
++        {
++            std::cerr << "Missing outputType in failsafe profiles\n";
++            continue;
++        }
++
++        if (tmp.outputType == "value")
++        {
++            auto findFailsafePercent = profile.find("failsafePercent");
++            if (findFailsafePercent != profile.end())
++            {
++                findFailsafePercent->get_to(tmp.failsafePercent);
++            }
++            else
++            {
++                std::cerr << "Missing failsafePercent in failsafe profiles\n";
++                continue;
++            }
++        }
++        else
++        {
++            std::cerr << "Unknown outputType " << tmp.outputType
++                      << " in failsafe profiles\n";
++            continue;
++        }
++
++        inputProfiles.emplace_back(std::move(tmp));
++    }
++}
++
+ std::pair<std::map<int64_t, conf::PIDConf>, std::map<int64_t, conf::ZoneConfig>>
+     buildPIDsFromJson(const json& data)
+ {
+@@ -139,14 +199,70 @@ std::pair<std::map<int64_t, conf::PIDConf>, std::map<int64_t, conf::ZoneConfig>>
+         /* TODO: using at() throws a specific exception we can catch */
+         id = zone["id"];
+         thisZoneConfig.minThermalOutput = zone["minThermalOutput"];
+-        thisZoneConfig.failsafePercent = zone["failsafePercent"];
++        auto findFanFailsafeProfiles = zone.find("fanFailsafeProfiles");
++        if (findFanFailsafeProfiles != zone.end())
++        {
++            parsingFailsafeProfiles(
++                *findFanFailsafeProfiles,
++                thisZoneConfig.failsafeSettings.fanFailsafeProfiles);
++
++            // Sort profile's order with fanFailCount, the largest is first.
++            std::sort(
++                thisZoneConfig.failsafeSettings.fanFailsafeProfiles.begin(),
++                thisZoneConfig.failsafeSettings.fanFailsafeProfiles.end(),
++                [](const conf::FailsafeProfile& a,
++                   const conf::FailsafeProfile& b) -> bool {
++                    return a.fanFailCount > b.fanFailCount;
++                });
++        }
++        auto findSensorFailsafeProfiles = zone.find("sensorFailsafeProfiles");
++        if (findSensorFailsafeProfiles != zone.end())
++        {
++            parsingFailsafeProfiles(
++                *findSensorFailsafeProfiles,
++                thisZoneConfig.failsafeSettings.sensorFailsafeProfiles);
++        }
++
++        auto findTimeBase = zone.find("cycleTimeBase");
++        if (findTimeBase != zone.end())
++        {
++            uint64_t tmp;
++            findTimeBase->get_to(tmp);
++            if (tmp != 0)
++            {
++                thisZoneConfig.cycleTime.cycleTimeBase = tmp;
++            }
++            else
++            {
++                std::cerr << "CycleTimeBase cannot be 0. Use default "
++                          << thisZoneConfig.cycleTime.cycleTimeBase << "ms\n";
++            }
++        }
++        auto findCheckFanFailuresTime = zone.find("checkFanFailuresTime");
++        if (findCheckFanFailuresTime != zone.end())
++        {
++            findCheckFanFailuresTime->get_to(
++                thisZoneConfig.cycleTime.checkFanFailuresTime);
++        }
++        thisZoneConfig.cycleTime.checkFanFailuresTime =
++            std::ceil(thisZoneConfig.cycleTime.checkFanFailuresTime /
++                      thisZoneConfig.cycleTime.cycleTimeBase);
++
++        auto findUpdateThermalsTime = zone.find("updateThermalsTime");
++        if (findUpdateThermalsTime != zone.end())
++        {
++            findUpdateThermalsTime->get_to(
++                thisZoneConfig.cycleTime.updateThermalsTime);
++        }
++        thisZoneConfig.cycleTime.updateThermalsTime =
++            std::ceil(thisZoneConfig.cycleTime.updateThermalsTime /
++                      thisZoneConfig.cycleTime.cycleTimeBase);
+ 
+         auto pids = zone["pids"];
+         for (const auto& pid : pids)
+         {
+             auto name = pid["name"];
+             auto item = pid.get<conf::ControllerInfo>();
+-
+             thisZone[name] = item;
+         }
+ 
+diff --git a/pid/fancontroller.cpp b/pid/fancontroller.cpp
+index b4d02c6..bf9084a 100755
+--- a/pid/fancontroller.cpp
++++ b/pid/fancontroller.cpp
+@@ -128,12 +128,13 @@ void FanController::outputProc(double value)
+     /* If doing tuning, don't go into failsafe mode. */
+     if (!tuningEnabled)
+     {
+-        if (_owner->getFailSafeMode())
++        double failsafePercent = 0;
++        if (_owner->getFailSafe(failsafePercent, failSafePrint))
+         {
+             /* In case it's being set to 100% */
+-            if (percent < _owner->getFailSafePercent())
++            if (percent < failsafePercent)
+             {
+-                percent = _owner->getFailSafePercent();
++                percent = failsafePercent;
+             }
+ 
+             if (debugModeEnabled)
+@@ -152,6 +153,21 @@ void FanController::outputProc(double value)
+         }
+     }
+ 
++    /*
++     * If current output pwm is equal to last output pwm
++     * Set fan failure checking flag to true
++     * Going to do fan failure checking process
++     */
++    if (percent == lastRealOutput)
++    {
++        _owner->setCheckFanFailuresFlag(true);
++    }
++    else
++    {
++        _owner->setCheckFanFailuresFlag(false);
++        lastRealOutput = percent;
++    }
++
+     // value and kFanFailSafeDutyCycle are 10 for 10% so let's fix that.
+     percent /= 100;
+ 
+diff --git a/pid/fancontroller.hpp b/pid/fancontroller.hpp
+old mode 100644
+new mode 100755
+index 25eebad..39c7769
+--- a/pid/fancontroller.hpp
++++ b/pid/fancontroller.hpp
+@@ -47,6 +47,8 @@ class FanController : public PIDController
+   private:
+     std::vector<std::string> _inputs;
+     FanSpeedDirection _direction;
++    double lastRealOutput = std::numeric_limits<double>::quiet_NaN();
++    bool failSafePrint = true;
+ };
+ 
+ } // namespace pid_control
+diff --git a/pid/pidloop.cpp b/pid/pidloop.cpp
+old mode 100644
+new mode 100755
+index a5d0daf..376bf92
+--- a/pid/pidloop.cpp
++++ b/pid/pidloop.cpp
+@@ -48,7 +48,8 @@ static void processThermals(std::shared_ptr<ZoneInterface> zone)
+ 
+ void pidControlLoop(std::shared_ptr<ZoneInterface> zone,
+                     std::shared_ptr<boost::asio::steady_timer> timer,
+-                    const bool* isCanceling, bool first, int ms100cnt)
++                    const bool* isCanceling, bool first, uint64_t ms100cnt,
++                    uint64_t checkFanFailuresCount)
+ {
+     if (*isCanceling)
+         return;
+@@ -64,72 +65,94 @@ void pidControlLoop(std::shared_ptr<ZoneInterface> zone,
+         processThermals(zone);
+     }
+ 
+-    timer->expires_after(std::chrono::milliseconds(100));
+-    timer->async_wait([zone, timer, ms100cnt, isCanceling](
+-                          const boost::system::error_code& ec) mutable {
+-        if (ec == boost::asio::error::operation_aborted)
+-        {
+-            return; // timer being canceled, stop loop
+-        }
+-
+-        /*
+-         * This should sleep on the conditional wait for the listen thread
+-         * to tell us it's in sync.  But then we also need a timeout option
+-         * in case phosphor-hwmon is down, we can go into some weird failure
+-         * more.
+-         *
+-         * Another approach would be to start all sensors in worst-case
+-         * values, and fail-safe mode and then clear out of fail-safe mode
+-         * once we start getting values.  Which I think it is a solid
+-         * approach.
+-         *
+-         * For now this runs before it necessarily has any sensor values.
+-         * For the host sensors they start out in fail-safe mode.  For the
+-         * fans, they start out as 0 as input and then are adjusted once
+-         * they have values.
+-         *
+-         * If a fan has failed, it's value will be whatever we're told or
+-         * however we retrieve it.  This program disregards fan values of 0,
+-         * so any code providing a fan speed can set to 0 on failure and
+-         * that fan value will be effectively ignored.  The PID algorithm
+-         * will be unhappy but nothing bad will happen.
+-         *
+-         * TODO(venture): If the fan value is 0 should that loop just be
+-         * skipped? Right now, a 0 value is ignored in
+-         * FanController::inputProc()
+-         */
+-
+-        // Check if we should just go back to sleep.
+-        if (zone->getManualMode())
+-        {
+-            pidControlLoop(zone, timer, isCanceling, false, ms100cnt);
+-            return;
+-        }
+-
+-        // Get the latest fan speeds.
+-        zone->updateFanTelemetry();
+-
+-        if (10 <= ms100cnt)
+-        {
+-            ms100cnt = 0;
+-
+-            processThermals(zone);
+-        }
+-
+-        // Run the fan PIDs every iteration.
+-        zone->processFans();
+-
+-        if (loggingEnabled)
+-        {
+-            std::ostringstream out;
+-            out << "," << zone->getFailSafeMode() << std::endl;
+-            zone->writeLog(out.str());
+-        }
+-
+-        ms100cnt += 1;
+-
+-        pidControlLoop(zone, timer, isCanceling, false, ms100cnt);
+-    });
++    timer->expires_after(std::chrono::milliseconds(zone->getCycleTimeBase()));
++    timer->async_wait(
++        [zone, timer, ms100cnt, isCanceling,
++         checkFanFailuresCount](const boost::system::error_code& ec) mutable {
++            if (ec == boost::asio::error::operation_aborted)
++            {
++                return; // timer being canceled, stop loop
++            }
++
++            /*
++             * This should sleep on the conditional wait for the listen thread
++             * to tell us it's in sync.  But then we also need a timeout option
++             * in case phosphor-hwmon is down, we can go into some weird failure
++             * more.
++             *
++             * Another approach would be to start all sensors in worst-case
++             * values, and fail-safe mode and then clear out of fail-safe mode
++             * once we start getting values.  Which I think it is a solid
++             * approach.
++             *
++             * For now this runs before it necessarily has any sensor values.
++             * For the host sensors they start out in fail-safe mode.  For the
++             * fans, they start out as 0 as input and then are adjusted once
++             * they have values.
++             *
++             * If a fan has failed, it's value will be whatever we're told or
++             * however we retrieve it.  This program disregards fan values of 0,
++             * so any code providing a fan speed can set to 0 on failure and
++             * that fan value will be effectively ignored.  The PID algorithm
++             * will be unhappy but nothing bad will happen.
++             *
++             * TODO(venture): If the fan value is 0 should that loop just be
++             * skipped? Right now, a 0 value is ignored in
++             * FanController::inputProc()
++             */
++
++            // Check if we should just go back to sleep.
++            if (zone->getManualMode())
++            {
++                pidControlLoop(zone, timer, isCanceling, false, ms100cnt);
++                return;
++            }
++
++            // Get the latest fan speeds.
++            zone->updateFanTelemetry();
++
++            // Check fail failures
++            if ((zone->getCheckFanFailuresCycle() != 0) &&
++                (checkFanFailuresCount >= zone->getCheckFanFailuresCycle()))
++            {
++                checkFanFailuresCount = 0;
++
++                zone->checkFanFailures();
++            }
++
++            if (zone->getUpdateThermalsCycle() <= ms100cnt)
++            {
++                ms100cnt = 0;
++
++                processThermals(zone);
++            }
++
++            // Run the fan PIDs every iteration.
++            zone->processFans();
++
++            if (loggingEnabled)
++            {
++                std::ostringstream out;
++                double failsafePercent;
++                out << "," << zone->getFailSafe(failsafePercent) << std::endl;
++                zone->writeLog(out.str());
++            }
++
++            ms100cnt += 1;
++            checkFanFailuresCount += 1;
++
++            /*
++             * If last output pwm and current output pwm are different.
++             * Reset check fan failures counter.
++             */
++            if (!zone->getCheckFanFailuresFlag())
++            {
++                checkFanFailuresCount = 0;
++            }
++
++            pidControlLoop(zone, timer, isCanceling, false, ms100cnt,
++                           checkFanFailuresCount);
++        });
+ }
+ 
+ } // namespace pid_control
+diff --git a/pid/pidloop.hpp b/pid/pidloop.hpp
+old mode 100644
+new mode 100755
+index f9b78b3..78cc7a9
+--- a/pid/pidloop.hpp
++++ b/pid/pidloop.hpp
+@@ -22,6 +22,6 @@ namespace pid_control
+ void pidControlLoop(std::shared_ptr<ZoneInterface> zone,
+                     std::shared_ptr<boost::asio::steady_timer> timer,
+                     const bool* isCanceling, bool first = true,
+-                    int ms100cnt = 0);
++                    uint64_t ms100cnt = 0, uint64_t checkFanFailuresCount = 0);
+ 
+ } // namespace pid_control
+diff --git a/pid/thermalcontroller.cpp b/pid/thermalcontroller.cpp
+index 9a52a80..1a35c1d 100755
+--- a/pid/thermalcontroller.cpp
++++ b/pid/thermalcontroller.cpp
+@@ -57,6 +57,8 @@ std::unique_ptr<PIDController> ThermalController::createThermalPid(
+     thermal->setSetpoint(setpoint);
+ 
+     initializePIDStruct(info, initial);
++    info->lastInput = setpoint;
++    info->lastOutput = 100;
+ 
+     return thermal;
+ }
+@@ -77,7 +79,6 @@ double ThermalController::inputProc(void)
+         compare = std::max<double>;
+     }
+ 
+-    bool acceptable = false;
+     for (const auto& in : _inputs)
+     {
+         double cachedValue = _owner->getCachedValue(in);
+@@ -89,13 +90,6 @@ double ThermalController::inputProc(void)
+         }
+ 
+         value = compare(value, cachedValue);
+-        acceptable = true;
+-    }
+-
+-    if (!acceptable)
+-    {
+-        // While not optimal, zero is better than garbage
+-        value = 0;
+     }
+ 
+     if (debugModeEnabled)
+diff --git a/pid/zone.cpp b/pid/zone.cpp
+index 405e436..c712553 100755
+--- a/pid/zone.cpp
++++ b/pid/zone.cpp
+@@ -90,17 +90,69 @@ void DbusPidZone::setManualMode(bool mode)
+     }
+ }
+ 
+-bool DbusPidZone::getFailSafeMode(void) const
++bool DbusPidZone::getFailSafe(double& failsafePercent, bool needPrint) const
+ {
+-    // If any keys are present at least one sensor is in fail safe mode.
++    double fanFailsafePercent = 0;
++    if (!_failSafeFans.empty() || !_failureFans.empty())
++    {
++        for (const auto& profile : _failsafeSettings.fanFailsafeProfiles)
++        {
++            if ((_failSafeFans.size() >= profile.fanFailCount) ||
++                (_failureFans.size() >= profile.fanFailCount))
++            {
++                if (profile.outputType == "value")
++                {
++                    fanFailsafePercent = profile.failsafePercent;
++                }
++
++                /** Profiles order are sotred by fanFailCount, the first entry
++                 *  is the largest. More fanFailCount means it is more critical
++                 *  so we can exit loop after the first profile matched.
++                 */
++                break;
++            }
++        }
++    }
++
++    double sensorFailsafePercent = 0;
++    for (const auto& sensorName : _failSafeTemps)
++    {
++        for (const auto& profile : _failsafeSettings.sensorFailsafeProfiles)
++        {
++            auto findSensor = std::find(profile.sensorNames.begin(),
++                                        profile.sensorNames.end(), sensorName);
++            if (findSensor != profile.sensorNames.end())
++            {
++                if (profile.outputType == "value")
++                {
++                    sensorFailsafePercent = std::max(sensorFailsafePercent,
++                                                     profile.failsafePercent);
++                }
++            }
++        }
++    }
++
++    if ((fanFailsafePercent != 0) && (needPrint || debugModeEnabled))
++    {
++        std::cerr << "Zone " << getZoneID()
++                  << " enter failsafe mode: fan failures\n";
++    }
+ 
+-    if (debugModeEnabled)
++    if ((sensorFailsafePercent != 0) && (needPrint || debugModeEnabled))
+     {
+         std::cerr << "Zone " << getZoneID()
+-                  << " enter failsafe mode.\n";
++                  << " enter failsafe mode: sensor failures\n";
+     }
+ 
+-    return !_failSafeSensors.empty();
++    if ((fanFailsafePercent != 0) || (sensorFailsafePercent != 0))
++    {
++        failsafePercent = std::max(fanFailsafePercent, sensorFailsafePercent);
++        return true;
++    }
++    else
++    {
++        return false;
++    }
+ }
+ 
+ int64_t DbusPidZone::getZoneID(void) const
+@@ -128,14 +180,34 @@ void DbusPidZone::clearSetPoints(void)
+     _SetPoints.clear();
+ }
+ 
+-double DbusPidZone::getFailSafePercent(void) const
++double DbusPidZone::getMinThermalSetpoint(void) const
+ {
+-    return _failSafePercent;
++    return _minThermalOutputSetPt;
+ }
+ 
+-double DbusPidZone::getMinThermalSetpoint(void) const
++uint64_t DbusPidZone::getCycleTimeBase(void) const
+ {
+-    return _minThermalOutputSetPt;
++   return _cycleTime.cycleTimeBase;
++}
++ 
++uint64_t DbusPidZone::getCheckFanFailuresCycle(void) const
++{
++    return _cycleTime.checkFanFailuresTime;
++}
++
++uint64_t DbusPidZone::getUpdateThermalsCycle(void) const
++{
++    return _cycleTime.updateThermalsTime;
++}
++
++void DbusPidZone::setCheckFanFailuresFlag(bool value)
++{
++    _checkFanFailuresFlag = value;
++}
++
++bool DbusPidZone::getCheckFanFailuresFlag(void) const
++{
++    return _checkFanFailuresFlag;
+ }
+ 
+ void DbusPidZone::addFanPID(std::unique_ptr<Controller> pid)
+@@ -327,8 +399,9 @@ void DbusPidZone::updateFanTelemetry(void)
+         _log << "," << _maximumSetPoint;
+     }
+ 
+-    for (const auto& f : _fanInputs)
++    for (auto it = _fanInputs.begin(); it != _fanInputs.end(); ++it)
+     {
++        const auto& f = *it;
+         auto sensor = _mgr.getSensor(f);
+         ReadReturn r = sensor->read();
+         if (debugModeEnabled)
+@@ -354,27 +427,45 @@ void DbusPidZone::updateFanTelemetry(void)
+         }
+ 
+         // check if fan fail.
++        auto findFailSafeFan = _failSafeFans.find(f);
+         if (sensor->getFailed())
+         {
+-            std::cerr << f << " fan sensor get failed\n";
+-            _failSafeSensors.insert(f);
++            if ((findFailSafeFan == _failSafeFans.end()) || debugModeEnabled)
++            {
++                std::cerr << f << " fan sensor get failed\n";
++                _failSafeFans.insert(f);
++            }
+         }
+         else if (timeout != 0 && duration >= period)
+         {
+-            if (debugModeEnabled)
++            // Try to connect with sensor D-Bus if failed it is really timeout.
++            try
++            {
++                sensor->activeRead();
++                if (debugModeEnabled)
++                {
++                    std::cerr << f << " fan sensor active read\n";
++                }
++                // Re-update this sensor after active read.
++                --it;
++                continue;
++            }
++            catch (...)
+             {
+-                std::cerr << f << " fan sensor active read\n";
++                if ((findFailSafeFan == _failSafeFans.end()) || debugModeEnabled)
++                {
++                    std::cerr << f << " fan sensor timeout\n";
++                    _failSafeFans.insert(f);
++                }
+             }
+-            _failSafeSensors.insert(f);
+         }
+         else
+         {
+             // Check if it's in there: remove it.
+-            auto kt = _failSafeSensors.find(f);
+-            if (kt != _failSafeSensors.end())
++            if (findFailSafeFan != _failSafeFans.end())
+             {
+                 std::cerr << f << " is erased from failsafe sensor set\n";
+-                _failSafeSensors.erase(kt);
++                _failSafeFans.erase(findFailSafeFan);
+             }
+         }
+     }
+@@ -390,14 +481,67 @@ void DbusPidZone::updateFanTelemetry(void)
+     return;
+ }
+ 
++void DbusPidZone::checkFanFailures(void)
++{
++    std::map<std::string, double> fanSpeeds;
++    double firstLargestFanTach = 0;
++    double secondLargestFanTach = 0;
++    double value = 0;
++    double twoLargestAverage = 0;
++
++    // Get the fan speeds.
++    for (const auto& name : _fanInputs)
++    {
++        value = _cachedValuesByName[name];
++        fanSpeeds[name] = value;
++
++        // Find the two largest fan speeds.
++        if (value > secondLargestFanTach)
++        {
++            if (value > firstLargestFanTach)
++            {
++                secondLargestFanTach = firstLargestFanTach;
++                firstLargestFanTach = value;
++            }
++            else
++            {
++                secondLargestFanTach = value;
++            }
++        }
++    }
++
++    twoLargestAverage = (firstLargestFanTach + secondLargestFanTach) / 2;
++
++   // If a fan tachometer value is 25% below the twoLargestAverage
++    for (const auto& [name, tachometer] : fanSpeeds)
++    {
++        if (tachometer < (twoLargestAverage * 0.75))
++        {
++            if ((_failureFans.find(name) == _failureFans.end()) ||
++                debugModeEnabled)
++            {
++                // TODO: log a SEL to indicate a suspected failure on this fan.
++                std::cerr << name << " is 25% below the average\n";
++                _failureFans.insert(name);
++            }
++        }
++        else if (_failureFans.find(name) != _failureFans.end())
++        {
++            std::cerr << name << " is erased from failure fans\n";
++            _failureFans.erase(name);
++        }
++    }
++}
++
+ void DbusPidZone::updateSensors(void)
+ {
+     using namespace std::chrono;
+     /* margin and temp are stored as temp */
+     tstamp now = high_resolution_clock::now();
+ 
+-    for (const auto& t : _thermalInputs)
++    for (auto it = _thermalInputs.begin(); it != _thermalInputs.end(); ++it)
+     {
++        const auto& t = *it;
+         auto sensor = _mgr.getSensor(t);
+         ReadReturn r = sensor->read();
+         if (debugModeEnabled)
+@@ -413,25 +557,46 @@ void DbusPidZone::updateSensors(void)
+         auto duration = duration_cast<std::chrono::seconds>(now - then).count();
+         auto period = std::chrono::seconds(timeout).count();
+ 
++        auto findFailSafeTemp = _failSafeTemps.find(t);
+         if (sensor->getFailed())
+         {
+-            std::cerr << t << " temperature sensor getfailed\n";
+-            _failSafeSensors.insert(t);
++            if ((findFailSafeTemp == _failSafeTemps.end()) || debugModeEnabled)
++            {
++                std::cerr << t << " temperature sensor getfailed\n";
++                _failSafeTemps.insert(t);
++            }
+         }
+         else if (timeout != 0 && duration >= period)
+         {
+-            // std::cerr << "Entering fail safe mode.\n";
+-            std::cerr << t << " temperature sensor active read\n";
+-            _failSafeSensors.insert(t);
++            // Try to connect with sensor D-Bus if failed it is really timeout.
++            try
++            {
++                sensor->activeRead();
++                if (debugModeEnabled)
++                {
++                    std::cerr << t << " temperature sensor active read\n";
++                }
++                // Re-update this sensor after active read.
++                --it;
++                continue;
++            }
++            catch (...)
++            {
++                if ((findFailSafeTemp == _failSafeTemps.end()) ||
++                    debugModeEnabled)
++                {
++                    std::cerr << t << " temperature sensor timeout\n";
++                    _failSafeTemps.insert(t);
++                }
++            }
+         }
+         else
+         {
+             // Check if it's in there: remove it.
+-            auto kt = _failSafeSensors.find(t);
+-            if (kt != _failSafeSensors.end())
++            if (findFailSafeTemp != _failSafeTemps.end())
+             {
+-                 std::cerr << t << " is erased from failure temps\n";
+-                _failSafeSensors.erase(kt);
++                std::cerr << t << " is erased from failure temps\n";
++                _failSafeTemps.erase(findFailSafeTemp);
+             }
+         }
+     }
+@@ -444,17 +609,11 @@ void DbusPidZone::initializeCache(void)
+     for (const auto& f : _fanInputs)
+     {
+         _cachedValuesByName[f] = 0;
+-
+-        // Start all fans in fail-safe mode.
+-        _failSafeSensors.insert(f);
+     }
+ 
+     for (const auto& t : _thermalInputs)
+     {
+-        _cachedValuesByName[t] = 0;
+-
+-        // Start all sensors in fail-safe mode.
+-        _failSafeSensors.insert(t);
++        _cachedValuesByName[t] = std::numeric_limits<double>::quiet_NaN();
+     }
+ }
+ 
+@@ -508,7 +667,8 @@ bool DbusPidZone::manual(bool value)
+ 
+ bool DbusPidZone::failSafe() const
+ {
+-    return getFailSafeMode();
++    double failsafePercent = 0.0;
++    return getFailSafe(failsafePercent);
+ }
+ 
+ } // namespace pid_control
+diff --git a/pid/zone.hpp b/pid/zone.hpp
+index b90abca..3d086d9 100755
+--- a/pid/zone.hpp
++++ b/pid/zone.hpp
+@@ -35,13 +35,14 @@ namespace pid_control
+ class DbusPidZone : public ZoneInterface, public ModeObject
+ {
+   public:
+-    DbusPidZone(int64_t zone, double minThermalOutput, double failSafePercent,
+-                const SensorManager& mgr, sdbusplus::bus::bus& bus,
+-                const char* objPath, bool defer) :
++    DbusPidZone(int64_t zone, double minThermalOutput,
++                conf::FailsafeSetting& failsafeSettings,
++                conf::CycleTime cycleTime, const SensorManager& mgr,
++                sdbusplus::bus::bus& bus, const char* objPath, bool defer) :
+         ModeObject(bus, objPath, defer),
+         _zoneId(zone), _maximumSetPoint(),
+         _minThermalOutputSetPt(minThermalOutput),
+-        _failSafePercent(failSafePercent), _mgr(mgr)
++        _failsafeSettings(failsafeSettings), _cycleTime(cycleTime), _mgr(mgr)
+     {
+         if (loggingEnabled)
+         {
+@@ -56,7 +57,8 @@ class DbusPidZone : public ZoneInterface, public ModeObject
+ 
+     bool getRedundantWrite(void) const override;
+     void setManualMode(bool mode);
+-    bool getFailSafeMode(void) const override;
++    bool getFailSafe(double& failsafePercent,
++                     bool needPrint = false) const override;
+ 
+     int64_t getZoneID(void) const;
+     void addSetPoint(std::string profileName, double setpoint) override;
+@@ -64,12 +66,17 @@ class DbusPidZone : public ZoneInterface, public ModeObject
+     void addRPMCeiling(double ceiling) override;
+     void clearSetPoints(void) override;
+     void clearRPMCeilings(void) override;
+-    double getFailSafePercent(void) const override;
+     double getMinThermalSetpoint(void) const;
++    uint64_t getCycleTimeBase(void) const override;
++    uint64_t getCheckFanFailuresCycle(void) const override;
++    uint64_t getUpdateThermalsCycle(void) const override;
++    void setCheckFanFailuresFlag(bool value) override;
++    bool getCheckFanFailuresFlag(void) const override;
+ 
+     Sensor* getSensor(const std::string& name) override;
+     void determineMaxSetPointRequest(void) override;
+     void updateFanTelemetry(void) override;
++    void checkFanFailures(void) override;
+     void updateSensors(void) override;
+     void initializeCache(void) override;
+     void dumpCache(void);
+@@ -99,9 +106,13 @@ class DbusPidZone : public ZoneInterface, public ModeObject
+     bool _manualMode = false;
+     bool _redundantWrite = false;
+     const double _minThermalOutputSetPt;
+-    const double _failSafePercent;
++    const conf::FailsafeSetting _failsafeSettings;
++    const conf::CycleTime _cycleTime;
++    bool _checkFanFailuresFlag = false;
+ 
+-    std::set<std::string> _failSafeSensors;
++    std::set<std::string> _failSafeFans;
++    std::set<std::string> _failureFans;
++    std::set<std::string> _failSafeTemps;
+ 
+     std::map<std::string, double> _SetPoints;
+     std::vector<double> _RPMCeilings;
+diff --git a/pid/zone_interface.hpp b/pid/zone_interface.hpp
+index 881b15e..6a77446 100755
+--- a/pid/zone_interface.hpp
++++ b/pid/zone_interface.hpp
+@@ -24,6 +24,13 @@ class ZoneInterface
+     /** Return a pointer to the sensor specified by name. */
+     virtual Sensor* getSensor(const std::string& name) = 0;
+ 
++    /** Method for set/get last pwm and current pwm are different. */
++    virtual void setCheckFanFailuresFlag(bool value) = 0;
++    virtual bool getCheckFanFailuresFlag() const = 0;
++
++    /** Method for checking fan failures. */
++    virtual void checkFanFailures(void) = 0;
++
+     /* updateFanTelemetry() and updateSensors() both clear the failsafe state
+      * for a sensor if it's no longer in that state.
+      */
+@@ -65,12 +72,16 @@ class ZoneInterface
+      */
+     virtual double getMaxSetPointRequest() const = 0;
+ 
+-    /** Return if the zone has any sensors in fail safe mode. */
+-    virtual bool getFailSafeMode() const = 0;
+-    /** Return the rpm or pwm percent value to drive fan pids when zone is in
+-     * fail safe.
++    /** Return if the zone is in fail safe mode and determine failsafe
++     *  percentage.
+      */
+-    virtual double getFailSafePercent() const = 0;
++    virtual bool getFailSafe(double& failsafePercent,
++                             bool needPrint = false) const = 0;
++
++    /** Return the zone's cycle time settings */
++    virtual uint64_t getCycleTimeBase(void) const = 0;
++    virtual uint64_t getCheckFanFailuresCycle(void) const = 0;
++    virtual uint64_t getUpdateThermalsCycle(void) const = 0;
+ 
+     /** Return if the zone is set to manual mode.  false equates to automatic
+      * mode (the default).
+diff --git a/sensors/pluggable.cpp b/sensors/pluggable.cpp
+old mode 100644
+new mode 100755
+index 530737d..08bc038
+--- a/sensors/pluggable.cpp
++++ b/sensors/pluggable.cpp
+@@ -39,4 +39,10 @@ bool PluggableSensor::getFailed(void)
+     return _reader->getFailed();
+ }
+ 
++double PluggableSensor::activeRead(void)
++{
++    return _reader->activeRead();
++}
++
++
+ } // namespace pid_control
+diff --git a/sensors/pluggable.hpp b/sensors/pluggable.hpp
+old mode 100644
+new mode 100755
+index 0dc1c71..b77272c
+--- a/sensors/pluggable.hpp
++++ b/sensors/pluggable.hpp
+@@ -23,6 +23,7 @@ class PluggableSensor : public Sensor
+     {}
+ 
+     ReadReturn read(void) override;
++    double activeRead(void) override;
+     void write(double value) override;
+     void write(double value, bool force, int64_t* written) override;
+     bool getFailed(void) override;
+diff --git a/sensors/sensor.hpp b/sensors/sensor.hpp
+old mode 100644
+new mode 100755
+index f5f01c2..9a6154f
+--- a/sensors/sensor.hpp
++++ b/sensors/sensor.hpp
+@@ -35,6 +35,10 @@ class Sensor
+     {}
+ 
+     virtual ReadReturn read(void) = 0;
++    virtual double activeRead(void)
++    {
++        return read().value;
++    }
+     virtual void write(double value) = 0;
+ 
+     virtual void write(double value, bool force, int64_t* written)
+diff --git a/util.cpp b/util.cpp
+old mode 100644
+new mode 100755
+index 5a6336e..b505751
+--- a/util.cpp
++++ b/util.cpp
+@@ -54,8 +54,7 @@ void debugPrint(const std::map<std::string, conf::SensorConfig>& sensorConfig,
+     for (const auto& zone : zoneDetailsConfig)
+     {
+         std::cout << "\t{" << zone.first << ",\n";
+-        std::cout << "\t\t{" << zone.second.minThermalOutput << ", ";
+-        std::cout << zone.second.failsafePercent << "}\n\t},\n";
++        std::cout << "\t\t{" << zone.second.minThermalOutput << "}\n\t},\n";
+     }
+     std::cout << "}\n\n";
+     std::cout << "ZoneConfig\n";
+diff --git a/util.hpp b/util.hpp
+old mode 100644
+new mode 100755
+index 362d517..6363922
+--- a/util.hpp
++++ b/util.hpp
+@@ -34,6 +34,10 @@ const std::string sensorintf = "xyz.openbmc_project.Sensor.Value";
+ const std::string criticalThreshInf =
+     "xyz.openbmc_project.Sensor.Threshold.Critical";
+ const std::string propertiesintf = "org.freedesktop.DBus.Properties";
++const std::string availableIntf =
++    "xyz.openbmc_project.State.Decorator.Availability";
++const std::string functionalIntf =
++    "xyz.openbmc_project.State.Decorator.OperationalStatus";
+ 
+ /*
+  * Given a path that optionally has a glob portion, fill it out.
+-- 
+2.7.4
+

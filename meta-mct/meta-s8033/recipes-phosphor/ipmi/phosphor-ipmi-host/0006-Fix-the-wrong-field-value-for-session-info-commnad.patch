@@ -1,0 +1,212 @@
+From d439706b575e57194bbf398a2941d798a106b750 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Wed, 16 Mar 2022 16:27:32 +0800
+Subject: [PATCH 06/24] Fix the wrong field value for session info commnad
+
+---
+ Makefile.am     |  1 +
+ app/session.cpp | 95 +++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ app/session.hpp | 38 +++++++++++++++++++++++
+ apphandler.cpp  |  5 +--
+ 4 files changed, 137 insertions(+), 2 deletions(-)
+ mode change 100644 => 100755 Makefile.am
+ create mode 100755 app/session.cpp
+ create mode 100755 app/session.hpp
+ mode change 100644 => 100755 apphandler.cpp
+
+diff --git a/Makefile.am b/Makefile.am
+old mode 100644
+new mode 100755
+index 49547e1..5e56bed
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -95,6 +95,7 @@ libipmi20_la_SOURCES = \
+ 	app/channel.cpp \
+ 	app/watchdog.cpp \
+ 	app/watchdog_service.cpp \
++	app/session.cpp \
+ 	apphandler.cpp \
+ 	sys_info_param.cpp \
+ 	sensorhandler.cpp \
+diff --git a/app/session.cpp b/app/session.cpp
+new file mode 100755
+index 0000000..fc5ce2d
+--- /dev/null
++++ b/app/session.cpp
+@@ -0,0 +1,95 @@
++#include "session.hpp"
++#include <cerrno>
++#include <cstring>
++#include <sys/socket.h>
++#include <sys/ioctl.h>
++#include <net/if_arp.h>
++#include <linux/sockios.h>
++#include <arpa/inet.h>
++
++namespace session
++{
++
++static constexpr bool DEBUG = false;
++
++std::string hexIpToString(uint32_t ip)
++{
++    std::string ipString = "";
++    uint8_t* ptr = (uint8_t*)&ip;
++    for(unsigned int i=0; i < sizeof(uint32_t)/sizeof(uint8_t); i++)
++    {
++        std::string dot = ".";
++        if(!i)
++        {
++            dot = "";
++        }
++        ipString = ipString + dot + std::to_string(*ptr);
++        ptr++;
++    }
++    return ipString;
++}
++
++std::array<uint8_t, macAddrLen> macAddressToArray(struct sockaddr *addr)
++{
++    std::array<uint8_t, macAddrLen> buff;
++
++    uint8_t *ptr = (uint8_t *)addr->sa_data;
++
++    for(int i=0; i < macAddrLen;i++)
++    {
++        buff[i] = ptr[i] & 0xff;
++    }
++
++    return buff;
++}
++
++std::array<uint8_t, macAddrLen> getMacAddress(uint32_t ipAddess)
++{
++    int s;
++    struct arpreq areq;
++    struct sockaddr_in *sin;
++    struct in_addr ipaddr;
++    std::array<uint8_t, macAddrLen> buff = {0};
++    std::string ipAddessString = hexIpToString(ipAddess);
++
++    // Get an internet domain socket.
++    if ((s = socket(AF_INET, SOCK_DGRAM, 0)) == -1)
++    {
++        if constexpr (DEBUG){
++            perror("socket");
++        }
++        return buff;
++    }
++
++    // Make the ARP request.
++    memset(&areq, 0, sizeof(areq));
++    sin = (struct sockaddr_in *)&areq.arp_pa;
++    sin->sin_family = AF_INET;
++
++    if (inet_aton(ipAddessString.c_str(), &ipaddr) == 0)
++    {
++        if constexpr (DEBUG){
++            fprintf(stderr, "-- Error: bad dotted-decimal IP '%s'.\n", ipAddessString.c_str());
++        }
++        return buff;
++    }
++
++    sin->sin_addr = ipaddr;
++    sin = (struct sockaddr_in *)&areq.arp_ha;
++    sin->sin_family = ARPHRD_ETHER;
++
++    strncpy(areq.arp_dev, "eth0", 15);
++
++    if (ioctl(s, SIOCGARP, (caddr_t)&areq) == -1)
++    {
++        if constexpr (DEBUG){
++            perror("-- Error: unable to make ARP request, error");
++        }
++        return buff;
++    }
++
++    buff = macAddressToArray(&areq.arp_ha);
++
++    return buff;
++}
++} // namespace session
+\ No newline at end of file
+diff --git a/app/session.hpp b/app/session.hpp
+new file mode 100755
+index 0000000..80564e8
+--- /dev/null
++++ b/app/session.hpp
+@@ -0,0 +1,38 @@
++#pragma once
++
++#include <cstdio>
++#include <cstdlib>
++#include <string>
++#include <array>
++#include <netinet/in.h>
++
++static constexpr uint8_t macAddrLen = 6;
++
++namespace session
++{
++
++/** @brief Translate IP format from uint32_t to std::string
++ *
++ *  @param[in] ip
++ *
++ *  @return IP with using  format std::string.
++ */
++std::string hexIpToString(uint32_t ip);
++
++/** @brief Get the mac address from sockaddr
++ *
++ *  @param[in] addr
++ *
++ *  @return Mac address array.
++ */
++std::array<uint8_t, macAddrLen> macAddressToArray(struct sockaddr *addr);
++
++/** @brief Get the mac address via IP address
++ *
++ *  @param[in] ipAddess
++ *
++ *  @return Mac address array for input IP address.
++ */
++std::array<uint8_t, macAddrLen> getMacAddress(uint32_t ipAddess);
++
++} // namespace session
+\ No newline at end of file
+diff --git a/apphandler.cpp b/apphandler.cpp
+old mode 100644
+new mode 100755
+index d5a9527..0adf930
+--- a/apphandler.cpp
++++ b/apphandler.cpp
+@@ -13,6 +13,7 @@
+ #include <algorithm>
+ #include <app/channel.hpp>
+ #include <app/watchdog.hpp>
++#include <app/session.hpp>
+ #include <apphandler.hpp>
+ #include <array>
+ #include <cstddef>
+@@ -1067,7 +1068,6 @@ uint8_t getSessionState(ipmi::Context::ptr ctx, const std::string& service,
+     return ipmi::ccSuccess;
+ }
+ 
+-static constexpr uint8_t macAddrLen = 6;
+ /** Alias SessionDetails - contain the optional information about an
+  *        RMCP+ session.
+  *
+@@ -1132,7 +1132,8 @@ ipmi::Cc getSessionDetails(ipmi::Context::ptr ctx, const std::string& service,
+         std::get<5>(details) = rmcpPlusProtocol;
+         std::get<6>(details) =
+             ipmi::mappedVariant<uint32_t>(sessionProps, "RemoteIPAddr", 0);
+-        // std::get<7>(details) = {{0}}; // default constructed to all 0
++        std::get<7>(details) =
++            session::getMacAddress(std::get<6>(details));
+         std::get<8>(details) =
+             ipmi::mappedVariant<uint16_t>(sessionProps, "RemotePort", 0);
+     }
+-- 
+2.7.4
+

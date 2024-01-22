@@ -1,0 +1,29 @@
+From 033d561eb9e8e94cf8116603acaed1ecb1524b32 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Fri, 15 May 2020 10:39:55 +0800
+Subject: [PATCH] Remove the IPMI OEM command handler used by NetFn 0x2E
+
+---
+ ipmid-new.cpp | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/ipmid-new.cpp b/ipmid-new.cpp
+index abd0a10..eb96b0b 100644
+--- a/ipmid-new.cpp
++++ b/ipmid-new.cpp
+@@ -315,10 +315,12 @@ message::Response::ptr executeIpmiCommand(message::Request::ptr request)
+     {
+         return executeIpmiGroupCommand(request);
+     }
++/*
+     else if (netFnOem == netFn)
+     {
+         return executeIpmiOemCommand(request);
+     }
++*/
+     return executeIpmiCommandCommon(handlerMap, netFn, request);
+ }
+ 
+-- 
+2.24.1
+

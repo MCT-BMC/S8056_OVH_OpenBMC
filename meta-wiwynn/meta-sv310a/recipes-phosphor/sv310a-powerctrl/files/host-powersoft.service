@@ -1,0 +1,12 @@
+[Unit]
+Description=Host Power Soft Off
+Requires=host-gpio.service
+After=host-gpio.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env powersoft.sh
+SyslogIdentifier=powersoft.sh
+
+[Install]
+WantedBy=obmc-host-shutdown@0.target

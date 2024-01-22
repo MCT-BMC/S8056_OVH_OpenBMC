@@ -1,0 +1,25 @@
+From 36b761208c0a5347d0347108bdbba07c78efb5c4 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Wed, 26 Jan 2022 10:12:04 +0800
+Subject: [PATCH] Modify phosphor-ipmi-flash update target to service
+
+---
+ bmc/firmware-handler/config-static-bmc-reboot.json.in | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/bmc/firmware-handler/config-static-bmc-reboot.json.in b/bmc/firmware-handler/config-static-bmc-reboot.json.in
+index 55fe4fc..9f24eb0 100755
+--- a/bmc/firmware-handler/config-static-bmc-reboot.json.in
++++ b/bmc/firmware-handler/config-static-bmc-reboot.json.in
+@@ -11,7 +11,7 @@
+ 		},
+ 		"verification": {
+ 			"type": "systemd",
+-			"unit": "@VERIFY_DBUS_SERVICE@"
++			"unit": "phosphor-ipmi-flash-bmc-verify.service"
+ 		},
+ 		"update": {
+ 			"type": "systemd",
+-- 
+2.7.4
+

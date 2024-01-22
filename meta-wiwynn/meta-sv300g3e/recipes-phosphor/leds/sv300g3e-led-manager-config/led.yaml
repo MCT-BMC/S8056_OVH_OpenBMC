@@ -1,0 +1,13 @@
+bmc_booted:
+
+power_on:
+    power:
+        Action: 'On'
+
+enclosure_identify:
+    identify:
+        Action: 'On'
+        
+enclosure_identify_blink:
+    identify:
+        Action: 'Blink'

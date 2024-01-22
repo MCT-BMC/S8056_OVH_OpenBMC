@@ -1,0 +1,300 @@
+[
+    {
+        "ObjPathName": "/xyz/openbmc_project/sensors/discrete/End_of_POST",
+        "ObjPathInfo": [
+            {
+                "InterfaceName": "xyz.openbmc_project.Sensor.Value",
+                "InterfaceInfo": [
+                    {
+                        "Name": "Value",
+                        "Type": "property",
+                        "Signature": "u"
+                    },
+                    {
+                        "Name": "setEndofPOST",
+                        "Type": "method",
+                        "Function": "setEndofPOST"
+                    }
+                ]
+            }
+        ],
+        "MonitorType": "Other",
+        "SensorType": "EventOnly"
+    },
+    {
+        "ObjPathName": "/xyz/openbmc_project/sensors/discrete/SSD0_Presence",
+        "ObjPathInfo": [
+            {
+                "InterfaceName": "xyz.openbmc_project.Sensor.Value",
+                "InterfaceInfo": [
+                    {
+                        "Name": "Value",
+                        "Type": "property",
+                        "Signature": "u"
+                    }
+                ]
+            }
+        ],
+        "SensorType": "Discrete"
+    },
+    {
+        "ObjPathName": "/xyz/openbmc_project/sensors/discrete/SSD1_Presence",
+        "ObjPathInfo": [
+            {
+                "InterfaceName": "xyz.openbmc_project.Sensor.Value",
+                "InterfaceInfo": [
+                    {
+                        "Name": "Value",
+                        "Type": "property",
+                        "Signature": "u"
+                    }
+                ]
+            }
+        ],
+        "SensorType": "Discrete"
+    },
+    {
+        "ObjPathName": "/xyz/openbmc_project/sensors/event/Battery",
+        "ObjPathInfo": [
+            {
+                "InterfaceName": "xyz.openbmc_project.Sensor.Value",
+                "InterfaceInfo": [
+                    {
+                        "Name": "Value",
+                        "Type": "property",
+                        "Signature": "u"
+                    }
+                ]
+            }
+        ],
+        "MonitorObjInfo": [
+            {
+                "MonitorSensor": "P3V_BAT",
+                "MonitorEvent": "BatteryLow"
+            }
+        ],
+        "MonitorType": "Match",
+        "SensorType": "EventOnly"
+    },
+    {
+        "ObjPathName": "/xyz/openbmc_project/sensors/event/CPU_Status",
+        "ObjPathInfo": [
+            {
+                "InterfaceName": "xyz.openbmc_project.Sensor.Value",
+                "InterfaceInfo": [
+                    {
+                        "Name": "Value",
+                        "Type": "property",
+                        "Signature": "u"
+                    }
+                ]
+            }
+        ],
+        "MonitorThres": [
+            {
+                "UpperThrottledThres": "95",
+                "LowerThrottledThres": "90"
+            }
+        ],
+        "MonitorType": "Match",
+        "SensorType": "EventOnly"
+    },
+    {
+        "ObjPathName": "/xyz/openbmc_project/sensors/discrete/BMC_Health",
+        "ObjPathInfo": [
+            {
+                "InterfaceName": "xyz.openbmc_project.Sensor.Value",
+                "InterfaceInfo": [
+                    {
+                        "Name": "Value",
+                        "Type": "property",
+                        "Signature": "u"
+                    }
+                ]
+            }
+        ],
+        "MonitorType": "OneShot",
+        "SensorType": "EventOnly"
+    },
+    {
+        "ObjPathName": "/xyz/openbmc_project/sensors/discrete/BMC_CPU_Util",
+        "ObjPathInfo": [
+            {
+                "InterfaceName": "xyz.openbmc_project.Sensor.Value",
+                "InterfaceInfo": [
+                    {
+                        "Name": "Value",
+                        "Type": "property",
+                        "Signature": "u"
+                    }
+                ]
+            }
+        ],
+        "MonitorType": "OneShot",
+        "SensorType": "EventOnly"
+    },
+    {
+        "ObjPathName": "/xyz/openbmc_project/sensors/discrete/BMC_Kernel_Panic",
+        "ObjPathInfo": [
+            {
+                "InterfaceName": "xyz.openbmc_project.Sensor.Value",
+                "InterfaceInfo": [
+                    {
+                        "Name": "Value",
+                        "Type": "property",
+                        "Signature": "u"
+                    }
+                ]
+            }
+        ],
+        "MonitorType": "OneShot",
+        "SensorType": "EventOnly"
+    },
+    {
+        "ObjPathName": "/xyz/openbmc_project/sensors/discrete/BMC_MEM_Util",
+        "ObjPathInfo": [
+            {
+                "InterfaceName": "xyz.openbmc_project.Sensor.Value",
+                "InterfaceInfo": [
+                    {
+                        "Name": "Value",
+                        "Type": "property",
+                        "Signature": "u"
+                    }
+                ]
+            }
+        ],
+        "MonitorType": "OneShot",
+        "SensorType": "EventOnly"
+    },
+    {
+        "ObjPathName": "/xyz/openbmc_project/sensors/discrete/BMC_Image_Load",
+        "ObjPathInfo": [
+            {
+                "InterfaceName": "xyz.openbmc_project.Sensor.Value",
+                "InterfaceInfo": [
+                    {
+                        "Name": "Value",
+                        "Type": "property",
+                        "Signature": "u"
+                    }
+                ]
+            }
+        ],
+        "MonitorType": "OneShot",
+        "SensorType": "EventOnly"
+    },
+    {
+        "ObjPathName": "/xyz/openbmc_project/sensors/discrete/HW_WDT_Timeout",
+        "ObjPathInfo": [
+            {
+                "InterfaceName": "xyz.openbmc_project.Sensor.Value",
+                "InterfaceInfo": [
+                    {
+                        "Name": "Value",
+                        "Type": "property",
+                        "Signature": "u"
+                    }
+                ]
+            }
+        ],
+        "MonitorType": "OneShot",
+        "SensorType": "EventOnly"
+    },
+    {
+        "ObjPathName": "/xyz/openbmc_project/sensors/discrete/FAN0_Presence",
+        "ObjPathInfo": [
+            {
+                "InterfaceName": "xyz.openbmc_project.Sensor.Value",
+                "InterfaceInfo": [
+                    {
+                        "Name": "Value",
+                        "Type": "property",
+                        "Signature": "u"
+                    }
+                ]
+            }
+        ],
+        "SensorType": "Discrete"
+    },
+    {
+        "ObjPathName": "/xyz/openbmc_project/sensors/discrete/FAN1_Presence",
+        "ObjPathInfo": [
+            {
+                "InterfaceName": "xyz.openbmc_project.Sensor.Value",
+                "InterfaceInfo": [
+                    {
+                        "Name": "Value",
+                        "Type": "property",
+                        "Signature": "u"
+                    }
+                ]
+            }
+        ],
+        "SensorType": "Discrete"
+    },
+    {
+        "ObjPathName": "/xyz/openbmc_project/sensors/discrete/FAN2_Presence",
+        "ObjPathInfo": [
+            {
+                "InterfaceName": "xyz.openbmc_project.Sensor.Value",
+                "InterfaceInfo": [
+                    {
+                        "Name": "Value",
+                        "Type": "property",
+                        "Signature": "u"
+                    }
+                ]
+            }
+        ],
+        "SensorType": "Discrete"
+    },
+    {
+        "ObjPathName": "/xyz/openbmc_project/sensors/discrete/FAN3_Presence",
+        "ObjPathInfo": [
+            {
+                "InterfaceName": "xyz.openbmc_project.Sensor.Value",
+                "InterfaceInfo": [
+                    {
+                        "Name": "Value",
+                        "Type": "property",
+                        "Signature": "u"
+                    }
+                ]
+            }
+        ],
+        "SensorType": "Discrete"
+    },
+    {
+        "ObjPathName": "/xyz/openbmc_project/sensors/discrete/FAN4_Presence",
+        "ObjPathInfo": [
+            {
+                "InterfaceName": "xyz.openbmc_project.Sensor.Value",
+                "InterfaceInfo": [
+                    {
+                        "Name": "Value",
+                        "Type": "property",
+                        "Signature": "u"
+                    }
+                ]
+            }
+        ],
+        "SensorType": "Discrete"
+    },
+    {
+        "ObjPathName": "/xyz/openbmc_project/sensors/discrete/FAN5_Presence",
+        "ObjPathInfo": [
+            {
+                "InterfaceName": "xyz.openbmc_project.Sensor.Value",
+                "InterfaceInfo": [
+                    {
+                        "Name": "Value",
+                        "Type": "property",
+                        "Signature": "u"
+                    }
+                ]
+            }
+        ],
+        "SensorType": "Discrete"
+    }
+]

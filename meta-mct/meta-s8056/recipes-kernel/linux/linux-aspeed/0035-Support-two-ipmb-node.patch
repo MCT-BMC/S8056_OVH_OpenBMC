@@ -1,0 +1,54 @@
+From 0ee07764554b7cb8f173363b6311ccc14893f618 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Fri, 23 Sep 2022 11:44:14 +0800
+Subject: [PATCH] Support two ipmb node.
+
+---
+ drivers/char/ipmi/ipmb_dev_int.c | 20 +++++++++++++++++++-
+ 1 file changed, 19 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/char/ipmi/ipmb_dev_int.c b/drivers/char/ipmi/ipmb_dev_int.c
+index 49b8f22..291b29e 100644
+--- a/drivers/char/ipmi/ipmb_dev_int.c
++++ b/drivers/char/ipmi/ipmb_dev_int.c
+@@ -10,10 +10,12 @@
+ 
+ #include <linux/acpi.h>
+ #include <linux/errno.h>
++#include <linux/gpio.h>
+ #include <linux/i2c.h>
+ #include <linux/miscdevice.h>
+ #include <linux/module.h>
+ #include <linux/mutex.h>
++#include <linux/of_gpio.h>
+ #include <linux/poll.h>
+ #include <linux/slab.h>
+ #include <linux/spinlock.h>
+@@ -303,7 +305,23 @@ static int ipmb_probe(struct i2c_client *client,
+ 			const struct i2c_device_id *id)
+ {
+ 	struct ipmb_dev *ipmb_dev;
+-	int ret;
++	int ret, gpio_number;
++	enum of_gpio_flags flag;
++
++	gpio_number = of_get_gpio_flags(client->dev.of_node, 0, &flag);
++	if (gpio_is_valid(gpio_number))
++	{
++		int gpio_value = gpio_get_value(gpio_number);
++		// GPIO_ACTIVE_HIGH value is 0 and GPIO high value is 1.
++		if (gpio_value == flag)
++		{
++			return -ENXIO;
++		}
++	}
++	else
++	{
++		printk("Invalid GPIO number: %d\n", gpio_number);
++	}
+ 
+ 	ipmb_dev = devm_kzalloc(&client->dev, sizeof(*ipmb_dev),
+ 					GFP_KERNEL);
+-- 
+2.7.4
+

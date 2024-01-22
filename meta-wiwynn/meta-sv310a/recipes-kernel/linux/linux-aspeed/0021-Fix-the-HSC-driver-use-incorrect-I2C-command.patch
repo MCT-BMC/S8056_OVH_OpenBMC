@@ -1,0 +1,44 @@
+From 688be3cd3df15b861a5dbace6b3aca1aad52801f Mon Sep 17 00:00:00 2001
+From: Ren Chen <ren_chen@wiwynn.com>
+Date: Fri, 7 Jan 2022 10:15:19 +0800
+Subject: [PATCH] Fix the HSC driver use incorrect I2C command to write D4h
+ register
+
+---
+ drivers/hwmon/pmbus/adm1275.c | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/hwmon/pmbus/adm1275.c b/drivers/hwmon/pmbus/adm1275.c
+index 184b3179c0ea..8a9e6bd723ac 100644
+--- a/drivers/hwmon/pmbus/adm1275.c
++++ b/drivers/hwmon/pmbus/adm1275.c
+@@ -628,7 +628,7 @@ static int adm1275_probe(struct i2c_client *client)
+ 		/* Enable VOUT if not enabled (it is disabled by default) */
+ 		if (!(config & ADM1278_VOUT_EN)) {
+ 			config |= ADM1278_VOUT_EN;
+-			ret = i2c_smbus_write_byte_data(client,
++			ret = i2c_smbus_write_word_data(client,
+ 							ADM1275_PMON_CONFIG,
+ 							config);
+ 			if (ret < 0) {
+@@ -641,7 +641,7 @@ static int adm1275_probe(struct i2c_client *client)
+ 		/* Enable TEMP1 if not enabled (it is disabled by default) */
+ 		if (!(config & ADM1278_TEMP1_EN)) {
+ 			config |= ADM1278_TEMP1_EN;
+-			ret = i2c_smbus_write_byte_data(client,
++			ret = i2c_smbus_write_word_data(client,
+ 							ADM1275_PMON_CONFIG,
+ 							config);
+ 			if (ret < 0) {
+@@ -710,7 +710,7 @@ static int adm1275_probe(struct i2c_client *client)
+ 		if ((config & (ADM1278_VOUT_EN | ADM1278_TEMP1_EN)) !=
+ 		    (ADM1278_VOUT_EN | ADM1278_TEMP1_EN)) {
+ 			config |= ADM1278_VOUT_EN | ADM1278_TEMP1_EN;
+-			ret = i2c_smbus_write_byte_data(client,
++			ret = i2c_smbus_write_word_data(client,
+ 							ADM1275_PMON_CONFIG,
+ 							config);
+ 			if (ret < 0) {
+-- 
+2.32.0
+

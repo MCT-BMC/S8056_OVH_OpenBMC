@@ -1,0 +1,25 @@
+{
+   "leds" : [
+      {
+         "group" : "enclosure_identify",
+         "members" : [
+            {
+               "Name" : "identify",
+               "Action" : "On",
+               "Priority" : "On"
+            }
+         ]
+      },
+      {
+         "group" : "sensor_fail",
+         "persist": false,
+         "members" : [
+            {
+               "Name" : "status_amber",
+               "Action" : "Blink",
+               "Priority" : "On"
+            }
+         ]
+      }
+   ]
+}

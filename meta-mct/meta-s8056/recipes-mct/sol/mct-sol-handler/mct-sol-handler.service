@@ -1,0 +1,13 @@
+[Unit]
+Description=MiTAC SOL pattern Handler
+Requires=xyz.openbmc_project.solpatternsensor.service
+After=xyz.openbmc_project.solpatternsensor.service
+
+[Service]
+Restart=always
+ExecStart=/usr/bin/env mct-sol-handler
+SyslogIdentifier=mct-sol-handler
+TimeoutSec=infinity
+
+[Install]
+WantedBy={SYSTEMD_DEFAULT_TARGET}

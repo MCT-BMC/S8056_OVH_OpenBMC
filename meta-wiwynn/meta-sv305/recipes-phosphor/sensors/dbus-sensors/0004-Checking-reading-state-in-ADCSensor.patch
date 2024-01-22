@@ -1,0 +1,42 @@
+From 572492753ff6d2def45b64b6cf4dedc2c1b70fbc Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Thu, 17 Jun 2021 14:28:10 +0800
+Subject: [PATCH] Checking reading state in ADCSensor
+
+---
+ src/ADCSensor.cpp | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/src/ADCSensor.cpp b/src/ADCSensor.cpp
+index 2450f81..6b0efeb 100644
+--- a/src/ADCSensor.cpp
++++ b/src/ADCSensor.cpp
+@@ -157,7 +157,7 @@ void ADCSensor::handleResponse(const boost::system::error_code& err)
+     }
+     std::istream responseStream(readBuf.get());
+ 
+-    if (!err)
++    if (!err && readingStateGood())
+     {
+         std::string response;
+         std::getline(responseStream, response);
+@@ -177,7 +177,7 @@ void ADCSensor::handleResponse(const boost::system::error_code& err)
+     }
+     else
+     {
+-        incrementError();
++        markAvailable(false);
+     }
+ 
+     responseStream.clear();
+@@ -224,6 +224,7 @@ void ADCSensor::checkThresholds(void)
+ {
+     if (!readingStateGood())
+     {
++        markAvailable(false);
+         return;
+     }
+ 
+-- 
+2.28.0
+

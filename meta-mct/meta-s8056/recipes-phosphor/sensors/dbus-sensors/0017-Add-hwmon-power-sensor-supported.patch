@@ -1,0 +1,62 @@
+From 95505b7379008d574c6167370f7074651a031cad Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Tue, 18 Oct 2022 04:44:52 +0800
+Subject: [PATCH] Add hwmon power sensor supported
+
+---
+ meson_options.txt         |  1 +
+ service_files/meson.build |  1 +
+ src/meson.build           | 16 ++++++++++++++++
+ 3 files changed, 18 insertions(+)
+
+diff --git a/meson_options.txt b/meson_options.txt
+index d5be898..794d6e1 100755
+--- a/meson_options.txt
++++ b/meson_options.txt
+@@ -18,6 +18,7 @@ option('nic', type: 'feature', value: 'enabled', description: 'Enable NIC over M
+ option('sol-pattern', type: 'feature', value: 'enabled', description: 'Enable SOL pattern sensor.',)
+ option('virtual', type: 'feature', value: 'enabled', description: 'Enable virtual sensor.',)
+ option('i2c-nvme', type: 'feature', value: 'enabled', description: 'Enable I2C NVMe sensor.',)
++option('hwmon-power', type: 'feature', value: 'enabled', description: 'Enable HWMON power sensor.',)
+ option('tests', type: 'feature', value: 'enabled', description: 'Build tests.',)
+ option('validate-unsecure-feature', type : 'feature', value : 'disabled', description : 'Enables unsecure features required by validation. Note: mustbe turned off for production images.',)
+ option('insecure-sensor-override', type : 'feature', value : 'disabled', description : 'Enables Sensor override feature without any check.',)
+diff --git a/service_files/meson.build b/service_files/meson.build
+index d32f712..beb1ff1 100755
+--- a/service_files/meson.build
++++ b/service_files/meson.build
+@@ -18,6 +18,7 @@ unit_files = [
+     ['sol-pattern', 'xyz.openbmc_project.solpatternsensor.service'],
+     ['virtual', 'xyz.openbmc_project.virtualsensor.service'],
+     ['i2c-nvme', 'xyz.openbmc_project.i2cnvmesensor.service'],
++    ['hwmon-power', 'xyz.openbmc_project.hwmonpowersensor.service'],
+ ]
+ 
+ foreach tuple : unit_files
+diff --git a/src/meson.build b/src/meson.build
+index 20e7e8b..da26222 100755
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -340,3 +340,19 @@ if get_option('i2c-nvme').enabled()
+         ],
+     )
+ endif
++
++if get_option('hwmon-power').enabled()
++    executable(
++        'hwmonpowersensor',
++        'HwmonPowerMain.cpp',
++        'HwmonPowerSensor.cpp',
++        dependencies: [
++            default_deps,
++            thresholds_dep,
++            utils_dep,
++        ],
++        implicit_include_directories: false,
++        include_directories: '../include',
++        install: true,
++    )
++endif
+-- 
+2.25.1
+

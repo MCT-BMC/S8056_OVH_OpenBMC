@@ -1,0 +1,26 @@
+From ac41695885d9198d347d0661082112b695f65241 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Thu, 17 Nov 2022 06:48:33 +0800
+Subject: [PATCH] spi-nor: micron: Support chip mt25ql01g
+
+---
+ drivers/mtd/spi-nor/micron-st.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/mtd/spi-nor/micron-st.c b/drivers/mtd/spi-nor/micron-st.c
+index c224e59..af7b034 100644
+--- a/drivers/mtd/spi-nor/micron-st.c
++++ b/drivers/mtd/spi-nor/micron-st.c
+@@ -172,6 +172,9 @@ static const struct flash_info st_parts[] = {
+ 			      SECT_4K | USE_FSR | SPI_NOR_QUAD_READ |
+ 			      SPI_NOR_HAS_LOCK | SPI_NOR_HAS_TB |
+ 			      SPI_NOR_4BIT_BP | SPI_NOR_BP3_SR_BIT6) },
++	{ "mt25ql01g",   INFO(0x20ba21, 0, 64 * 1024, 2048,
++			      SECT_4K | USE_FSR | SPI_NOR_QUAD_READ |
++			      NO_CHIP_ERASE) },
+ 	{ "n25q00",      INFO(0x20ba21, 0, 64 * 1024, 2048,
+ 			      SECT_4K | USE_FSR | SPI_NOR_QUAD_READ |
+ 			      SPI_NOR_HAS_LOCK | SPI_NOR_HAS_TB |
+-- 
+2.7.4
+

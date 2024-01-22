@@ -1,0 +1,11 @@
+[Unit]
+Description=MiTAC CPLD Manager
+
+[Service]
+Restart=always
+ExecStart=/usr/bin/env mct-cpld-manager
+SyslogIdentifier=mct-cpld-manager
+TimeoutSec=infinity
+
+[Install]
+WantedBy={SYSTEMD_DEFAULT_TARGET}

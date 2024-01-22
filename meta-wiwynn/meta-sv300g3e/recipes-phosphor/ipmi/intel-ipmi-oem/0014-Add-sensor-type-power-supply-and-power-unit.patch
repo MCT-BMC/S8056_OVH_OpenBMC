@@ -1,0 +1,47 @@
+From 43504376d45d3d36ca47719f74e3caa7f800b06d Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Mon, 13 Jan 2020 17:29:06 +0800
+Subject: [PATCH] Add sensor type power supply and power unit
+
+---
+ include/sdrutils.hpp | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/include/sdrutils.hpp b/include/sdrutils.hpp
+index 21cd3ba..40ec5e2 100644
+--- a/include/sdrutils.hpp
++++ b/include/sdrutils.hpp
+@@ -162,6 +162,8 @@ enum class SensorTypeCodes : uint8_t
+     current = 0x3,
+     fan = 0x4,
+     processor = 0x7,
++    powersupply = 0x8,
++    powerunit = 0x9,
+     other = 0xB,
+     memory = 0xC,
+     watchdog1 = 0x11,
+@@ -169,6 +171,7 @@ enum class SensorTypeCodes : uint8_t
+     button = 0x14,
+     acpi = 0x22,
+     watchdog2 = 0x23,
++    mgmtsystemhealth = 0x28,
+     fru_state = 0x2c,
+ };
+ 
+@@ -179,10 +182,13 @@ const static boost::container::flat_map<const char*, SensorTypeCodes, CmpStr>
+                  {"fan_tach", SensorTypeCodes::fan},
+                  {"fan_pwm", SensorTypeCodes::fan},
+                  {"processor", SensorTypeCodes::processor},
++                 {"powersupply", SensorTypeCodes::powersupply},
++                 {"powerunit", SensorTypeCodes::powerunit},
+                  {"power", SensorTypeCodes::other},
+                  {"pattern", SensorTypeCodes::other},
+                  {"acpi", SensorTypeCodes::acpi},
+                  {"systemevent", SensorTypeCodes::systemevent},
++                 {"mgmtsystemhealth", SensorTypeCodes::mgmtsystemhealth},
+                  {"button", SensorTypeCodes::button},
+                  {"fru_state", SensorTypeCodes::fru_state}}};
+ 
+-- 
+2.24.1
+

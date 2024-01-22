@@ -1,0 +1,60 @@
+From 0656aa023906ebb6edd8a68bdfa266ba86fdb089 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Fri, 11 Mar 2022 17:16:51 +0800
+Subject: [PATCH] Add interface for DCMI power
+
+---
+ .../Control/Power/Cap.interface.yaml               | 29 ++++++++++++++++++++++
+ 1 file changed, 29 insertions(+)
+ mode change 100644 => 100755 yaml/xyz/openbmc_project/Control/Power/Cap.interface.yaml
+
+diff --git a/yaml/xyz/openbmc_project/Control/Power/Cap.interface.yaml b/yaml/xyz/openbmc_project/Control/Power/Cap.interface.yaml
+old mode 100644
+new mode 100755
+index 0f679ac..fdec71c
+--- a/yaml/xyz/openbmc_project/Control/Power/Cap.interface.yaml
++++ b/yaml/xyz/openbmc_project/Control/Power/Cap.interface.yaml
+@@ -15,6 +15,21 @@ properties:
+           Power cap enable.  Set to true to enable the PowerCap, false
+           to disable it.
+ 
++    - name: ExceptionAction
++      type: enum[self.Action]
++      description: >
++          Power exception action. The action for power exception.
++
++    - name: CorrectionTime
++      type: uint32
++      description: >
++          Power correction Time. The timeout time for power exception action.
++
++    - name: SamplingPeriod
++      type: uint16
++      description: >
++          Power sampling period. The time period for power value collect.
++
+     - name: MinPowerCapValue
+       type: uint32
+       flags:
+@@ -41,3 +56,17 @@ properties:
+           MinSoftPowerCapValue and MinPowerCapValue an attempt will be made to
+           maintain the cap but it will not be guaranted.
+ 
++enumerations:
++    - name: Action
++      description: >
++        The desired action for correction time timeout
++      values:
++        - name: 'None'
++          description: >
++            Correction time timeout do nothing
++        - name: 'OffAndLog'
++          description: >
++            Correction time timeout should be off and generate SEL event
++        - name: 'Log'
++          description: >
++            Correction time timeout should generate SEL event
+\ No newline at end of file
+-- 
+2.7.4
+

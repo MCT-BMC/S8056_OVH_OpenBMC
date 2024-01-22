@@ -1,0 +1,18 @@
+#! /bin/sh
+VERSION_ID=$1
+PECENT=$2
+INFO=$3
+
+BUS_CMD="/usr/bin/busctl"
+
+SOFTWARE_OBJ="xyz.openbmc_project.Software.BMC.Updater"
+SOFTWARE_PATH="/xyz/openbmc_project/software/$VERSION_ID"
+SOFTWARE_INTF="xyz.openbmc_project.Software.ActivationProgress"
+SOFTWARE_PROPERTY="Progress"
+INFO_PROPERTY="AdditionalInfo"
+
+$BUS_CMD set-property $SOFTWARE_OBJ $SOFTWARE_PATH $SOFTWARE_INTF $SOFTWARE_PROPERTY y $PECENT
+
+if [ ! -z "$INFO" ] && [ "$INFO" != "" ]; then
+    $BUS_CMD set-property $SOFTWARE_OBJ $SOFTWARE_PATH $SOFTWARE_INTF $INFO_PROPERTY s "$INFO"
+fi

@@ -1,0 +1,12 @@
+[Unit]
+Description=IPMI event-only and discrete Sensor
+StopWhenUnneeded=false
+After=xyz.openbmc_project.EntityManager.service
+
+[Service]
+Restart=always
+RestartSec=5
+ExecStart=/usr/bin/eventsensor
+
+[Install]
+WantedBy=multi-user.target

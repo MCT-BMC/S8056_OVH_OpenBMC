@@ -1,0 +1,300 @@
+From 30530da93f4fd65f33315955461d8ea065714951 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Thu, 29 Oct 2020 17:41:22 +0800
+Subject: [PATCH] Add clear sel method and almost full and full sel
+
+---
+ CMakeLists.txt                                |   2 +
+ include/sel_logger.hpp                        |  12 +-
+ .../xyz.openbmc_project.Logging.IPMI.service  |   1 +
+ src/sel_logger.cpp                            | 189 +++++++++++++++++-
+ 4 files changed, 199 insertions(+), 5 deletions(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 86a85a3..efc89ad 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -46,6 +46,8 @@ target_compile_definitions (
+     $<$<BOOL:${SEL_LOGGER_MONITOR_WATCHDOG_EVENTS}>: -DSEL_LOGGER_MONITOR_WATCHDOG_EVENTS>
+     $<$<BOOL:${SEL_LOGGER_SEND_TO_LOGGING_SERVICE}>: -DSEL_LOGGER_SEND_TO_LOGGING_SERVICE>
+     $<$<BOOL:${SEL_LOGGER_MONITOR_THRESHOLD_ALARM_EVENTS}>: -DSEL_LOGGER_MONITOR_THRESHOLD_ALARM_EVENTS>
++    $<$<BOOL:$<MAKE_C_IDENTIFIER:${MAX_SEL_SIZE}>>: -DMAX_SEL_SIZE=${MAX_SEL_SIZE}>
++    $<$<BOOL:$<MAKE_C_IDENTIFIER:${ALMOST_FULL_PERCENTAGE}>>: -DALMOST_FULL_PERCENTAGE=${ALMOST_FULL_PERCENTAGE}>
+ )
+ 
+ target_include_directories (sel-logger PRIVATE ${CMAKE_SOURCE_DIR})
+diff --git a/include/sel_logger.hpp b/include/sel_logger.hpp
+index 35f8b95..2a11364 100644
+--- a/include/sel_logger.hpp
++++ b/include/sel_logger.hpp
+@@ -22,6 +22,12 @@ static constexpr char const* ipmiSelPath = "/xyz/openbmc_project/Logging/IPMI";
+ static constexpr char const* ipmiSelAddInterface =
+     "xyz.openbmc_project.Logging.IPMI";
+ 
++static constexpr auto eventLoggingPath =
++    "/xyz/openbmc_project/sensors/event/Event_Logging";
++static constexpr uint8_t selClearOffset = 0x02;
++static constexpr uint8_t selFullOffset = 0x04;
++static constexpr uint8_t selAlmostFullOffset = 0x35;
++
+ // ID string generated using journalctl to include in the MESSAGE_ID field for
+ // SEL entries.  Helps with filtering SEL entries in the journal.
+ static constexpr char const* selMessageId = "b370836ccf2f4850ac5bee185b77893a";
+@@ -34,9 +40,13 @@ static constexpr size_t selEvtDataMaxSize = 3;
+ static constexpr size_t selOemDataMaxSize = 13;
+ static constexpr uint8_t selEvtDataUnspecified = 0xFF;
+ 
+-static const std::filesystem::path selLogDir = "/var/log";
++static const std::filesystem::path selLogDir = "/usr/share/sel";
+ static const std::string selLogFilename = "ipmi_sel";
+ 
++constexpr int waitSystemdJobPreDelay = 100;
++constexpr int waitSystemdJobDelay = 300;
++constexpr int waitSystemdJobMaxRetry = 3;
++
+ template <typename... T>
+ static uint16_t
+     selAddSystemRecord(const std::string& message, const std::string& path,
+diff --git a/service_files/xyz.openbmc_project.Logging.IPMI.service b/service_files/xyz.openbmc_project.Logging.IPMI.service
+index 9b8ae41..5f3906b 100644
+--- a/service_files/xyz.openbmc_project.Logging.IPMI.service
++++ b/service_files/xyz.openbmc_project.Logging.IPMI.service
+@@ -1,5 +1,6 @@
+ [Unit]
+ Description=IPMI SEL Logging Service
++Before=xyz.openbmc_project.EntityManager.service
+ 
+ [Service]
+ Restart=always
+diff --git a/src/sel_logger.cpp b/src/sel_logger.cpp
+index 83d487a..09cb722 100644
+--- a/src/sel_logger.cpp
++++ b/src/sel_logger.cpp
+@@ -45,6 +45,20 @@ using SELCreated =
+     sdbusplus::xyz::openbmc_project::Logging::SEL::Error::Created;
+ #endif
+ 
++static void checkSELCapacity();
++
++// setup connection to dbus
++boost::asio::io_service io;
++auto conn = std::make_shared<sdbusplus::asio::connection>(io);
++auto outBus = std::make_shared<sdbusplus::asio::connection>(
++    io, sdbusplus::bus::new_system().release());
++
++static bool isFullLogged = false;
++static bool isAlmostFullLogged = false;
++
++const size_t almostFullSize =
++    std::ceil(MAX_SEL_SIZE * ALMOST_FULL_PERCENTAGE / 100);
++
+ struct DBusInternalError final : public sdbusplus::exception_t
+ {
+     const char* name() const noexcept override
+@@ -174,6 +188,9 @@ static uint16_t
+                     "IPMI_SEL_SENSOR_PATH=%s", path.c_str(),
+                     "IPMI_SEL_EVENT_DIR=%x", assert, "IPMI_SEL_DATA=%s",
+                     selDataStr.c_str(), std::forward<T>(metadata)..., NULL);
++
++    checkSELCapacity();
++
+     return recordId;
+ #endif
+ }
+@@ -203,16 +220,176 @@ static uint16_t selAddOemRecord(const std::string& message,
+                     "MESSAGE_ID=%s", selMessageId, "IPMI_SEL_RECORD_ID=%d",
+                     recordId, "IPMI_SEL_RECORD_TYPE=%x", recordType,
+                     "IPMI_SEL_DATA=%s", selDataStr.c_str(), NULL);
++
++    checkSELCapacity();
++
+     return recordId;
+ #endif
+ }
+ 
+-int main(int argc, char* argv[])
++static void initializeFullFlag()
++{
++    std::vector<std::filesystem::path> selLogFiles;
++    getSELLogFiles(selLogFiles);
++
++    size_t almostFullSize =
++        std::ceil(MAX_SEL_SIZE * ALMOST_FULL_PERCENTAGE / 100);
++
++    // Count SEL files size.
++    size_t selSize = 0;
++    for (const auto& path : selLogFiles)
++    {
++        selSize += std::filesystem::file_size(path);
++    }
++
++    if (selSize >= almostFullSize)
++    {
++        isAlmostFullLogged = true;
++    }
++
++    if (selSize >= MAX_SEL_SIZE)
++    {
++        isFullLogged = true;
++    }
++}
++
++static void checkSELCapacity()
++{
++    std::vector<std::filesystem::path> selLogFiles;
++    getSELLogFiles(selLogFiles);
++
++    // Count SEL files size.
++    size_t selSize = 0;
++    for (const auto& path : selLogFiles)
++    {
++        selSize += std::filesystem::file_size(path);
++    }
++
++    if ((selSize >= almostFullSize) && !isAlmostFullLogged)
++    {
++        // Send almost full SEL.
++        try
++        {
++            isAlmostFullLogged = true;
++            std::vector<uint8_t> eventData = {selAlmostFullOffset, 0xFF,
++                                              ALMOST_FULL_PERCENTAGE};
++            selAddSystemRecord("SEL is almost full", eventLoggingPath,
++                               eventData, true, selBMCGenID);
++        }
++        catch (const std::invalid_argument& e)
++        {
++            sd_journal_print(LOG_ERR, "Failed to add almost full SEL: %s",
++                             e.what());
++        }
++    }
++
++    if ((selSize >= MAX_SEL_SIZE) && !isFullLogged)
++    {
++        // Send full SEL.
++        try
++        {
++            isFullLogged = true;
++            std::vector<uint8_t> eventData = {selFullOffset, 0xFF, 0xFF};
++            selAddSystemRecord("SEL is full", eventLoggingPath, eventData, true,
++                               selBMCGenID);
++        }
++        catch (const std::invalid_argument& e)
++        {
++            sd_journal_print(LOG_ERR, "Failed to add full SEL: %s", e.what());
++        }
++    }
++}
++
++static int selClear()
+ {
+-    // setup connection to dbus
+-    boost::asio::io_service io;
+-    auto conn = std::make_shared<sdbusplus::asio::connection>(io);
++    std::error_code ec;
++    for (const auto& dirEntry : std::filesystem::directory_iterator(selLogDir))
++    {
++        std::string filename = dirEntry.path().filename();
++        if (boost::starts_with(filename, selLogFilename))
++        {
++            if (std::filesystem::remove(selLogDir / filename, ec) == false)
++            {
++                sd_journal_print(
++                    LOG_ERR, "Failed to remove SEL file: %s, error code: %d",
++                    filename.c_str(), ec.value());
++
++                return ec.value();
++            }
++        }
++    }
++
++    sdbusplus::message::object_path reloadJobPath;
++
++    // Reload rsyslog so it knows to start new log files
++    auto rsyslogReloadMsg = outBus->new_method_call(
++        "org.freedesktop.systemd1", "/org/freedesktop/systemd1",
++        "org.freedesktop.systemd1.Manager", "ReloadUnit");
++    rsyslogReloadMsg.append("rsyslog.service", "replace");
++    try
++    {
++        auto reloadResponse = outBus->call(rsyslogReloadMsg);
++        reloadResponse.read(reloadJobPath);
++    }
++    catch (sdbusplus::exception_t& e)
++    {
++        throw;
++    }
++
++    sdbusplus::message::message rsyslogReloadJobMsg = outBus->new_method_call(
++        "org.freedesktop.systemd1", reloadJobPath.str.c_str(),
++        "org.freedesktop.DBus.Introspectable", "Introspect");
++    std::this_thread::sleep_for(
++        std::chrono::milliseconds(waitSystemdJobPreDelay));
++
++    // If Dbus call failed means rsyslog reloadUnit is done.
++    bool reloadDone = false;
++    for (int retryCount = 0; retryCount < waitSystemdJobMaxRetry; ++retryCount)
++    {
++        try
++        {
++            outBus->call(rsyslogReloadJobMsg);
++            std::this_thread::sleep_for(
++                std::chrono::milliseconds(waitSystemdJobDelay));
++        }
++        catch (sdbusplus::exception_t& e)
++        {
++            reloadDone = true;
++            break;
++        }
++    }
++    if (reloadDone == false)
++    {
++        sd_journal_print(LOG_ERR, "Wait for rsyslog reload unit timeout");
++        return -ETIME;
++    }
++
++    isFullLogged = false;
++    isAlmostFullLogged = false;
++
++    try
++    {
++        std::vector<uint8_t> eventData{selClearOffset, 0xFF, 0xFF};
++        uint16_t recordID = selAddSystemRecord("SEL Clear", eventLoggingPath,
++                                               eventData, true, selBMCGenID);
++        if (recordID == selInvalidRecID)
++        {
++            sd_journal_print(LOG_ERR,
++                             "Failed to add SEL clear: Got invalid record ID");
++            return -EBADFD;
++        }
++    }
++    catch (const std::invalid_argument& e)
++    {
++        sd_journal_print(LOG_ERR, "Failed to add SEL clear: %s", e.what());
++        return -EINVAL;
++    }
++
++    return 0;
++}
+ 
++int main(int argc, char* argv[])
++{
+     // IPMI SEL Object
+     conn->request_name(ipmiSelObject);
+     auto server = sdbusplus::asio::object_server(conn);
+@@ -235,8 +412,12 @@ int main(int argc, char* argv[])
+            const uint8_t& recordType) {
+             return selAddOemRecord(message, selData, recordType);
+         });
++    // Clear all SEL entries.
++    ifaceAddSel->register_method("IpmiSelClear", []() { return selClear(); });
+     ifaceAddSel->initialize();
+ 
++    initializeFullFlag();
++
+ #ifdef SEL_LOGGER_MONITOR_THRESHOLD_EVENTS
+     sdbusplus::bus::match::match thresholdAssertMonitor =
+         startThresholdAssertMonitor(conn);
+-- 
+2.32.0
+

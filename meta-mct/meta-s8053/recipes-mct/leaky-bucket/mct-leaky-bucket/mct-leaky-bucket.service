@@ -1,0 +1,13 @@
+[Unit]
+Description=Host Memory ECC leaky bucket implementation
+StopWhenUnneeded=false
+After=xyz.openbmc_project.EntityManager.service
+
+[Service]
+Restart=always
+RestartSec=5
+ExecStart=/usr/bin/env mct-leaky-bucket
+SyslogIdentifier=mct-leaky-bucket
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,69 @@
+From b4f210eeb29ca15ddc10c2209bcba781b88da44e Mon Sep 17 00:00:00 2001
+From: JarvisWang <Jarvis_Wang@wiwynn.com>
+Date: Wed, 24 Feb 2021 14:19:11 +0800
+Subject: [PATCH] Attach BMC MAC to published hostname
+
+---
+ src/resolve/resolved-util.c | 32 +++++++++++++++++++++++++++++++-
+ 1 file changed, 31 insertions(+), 1 deletion(-)
+
+diff --git a/src/resolve/resolved-util.c b/src/resolve/resolved-util.c
+index 00abada426..a5d1df0d47 100644
+--- a/src/resolve/resolved-util.c
++++ b/src/resolve/resolved-util.c
+@@ -1,5 +1,8 @@
+ /* SPDX-License-Identifier: LGPL-2.1-or-later */
+ 
++#include <fcntl.h>
++#include <unistd.h>
++
+ #include "dns-def.h"
+ #include "dns-domain.h"
+ #include "hostname-util.h"
+@@ -7,8 +10,12 @@
+ #include "resolved-util.h"
+ #include "utf8.h"
+ 
++#define DEFAULT_HOSTNAME "sv310a"
++#define MAC_PATH "/sys/class/net/eth0/address"
++#define MAC_STR_LEN 17
++
+ int resolve_system_hostname(char **full_hostname, char **first_label) {
+-        _cleanup_free_ char *h = NULL, *n = NULL;
++        _cleanup_free_ char *h = NULL, *n = NULL, *hm = NULL;
+ #if HAVE_LIBIDN2
+         _cleanup_free_ char *utf8 = NULL;
+ #elif HAVE_LIBIDN
+@@ -27,6 +34,29 @@ int resolve_system_hostname(char **full_hostname, char **first_label) {
+         if (r < 0)
+                 return log_debug_errno(r, "Can't determine system hostname: %m");
+ 
++        if (strcmp(DEFAULT_HOSTNAME, h) == 0) {
++                char buf[MAC_STR_LEN+1] = {0};
++                int fd = open(MAC_PATH, O_RDONLY);
++
++                if (fd >= 0) {
++                        if (read(fd, buf, MAC_STR_LEN) < MAC_STR_LEN) {
++                                log_info("Fail to read BMC MAC to change hostname");
++                        } else {
++                                if (asprintf(&hm, "sv310a-%c%c%c%c%c%c",
++                                        buf[9], buf[10], buf[12], buf[13], buf[15], buf[16]) > 0) {
++                                                free(h);
++                                                h = TAKE_PTR(hm);
++                                } else {
++                                        log_info("Fail to change hostname");
++                                }
++                        }
++
++                        close(fd);
++                } else {
++                        log_info("Fail to open BMC MAC to change hostname");
++                }
++        }
++
+         p = h;
+         r = dns_label_unescape(&p, label, sizeof label, 0);
+         if (r < 0)
+-- 
+2.28.0
+

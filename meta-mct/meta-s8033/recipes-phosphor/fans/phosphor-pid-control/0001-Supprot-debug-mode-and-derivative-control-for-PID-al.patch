@@ -1,0 +1,632 @@
+From 74ba4eff911ca815f6d110838e310d6afdb96d08 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Wed, 18 Aug 2021 20:50:33 +0800
+Subject: [PATCH] Supprot debug mode and derivative control for PID algorithm
+
+---
+ main.cpp                   | 34 ++++++++++++++++++++++++++++++++++
+ pid/buildjson.cpp          |  2 ++
+ pid/controller.hpp         |  7 +++++++
+ pid/ec/pid.cpp             | 28 +++++++++++++++++++++++++++-
+ pid/ec/pid.hpp             |  3 +++
+ pid/fancontroller.cpp      | 14 ++++++++++++++
+ pid/pidcontroller.hpp      |  8 +++++++-
+ pid/stepwisecontroller.cpp | 13 ++++++++++++-
+ pid/stepwisecontroller.hpp |  9 ++++++++-
+ pid/thermalcontroller.cpp  | 12 +++++++++++-
+ pid/tuning.cpp             |  1 +
+ pid/tuning.hpp             |  5 +++++
+ pid/util.cpp               |  2 ++
+ pid/zone.cpp               | 43 +++++++++++++++++++++++++++++++++++++++----
+ pid/zone.hpp               |  4 ++--
+ pid/zone_interface.hpp     |  4 +++-
+ 16 files changed, 177 insertions(+), 12 deletions(-)
+ mode change 100644 => 100755 main.cpp
+ mode change 100644 => 100755 pid/buildjson.cpp
+ mode change 100644 => 100755 pid/controller.hpp
+ mode change 100644 => 100755 pid/ec/pid.cpp
+ mode change 100644 => 100755 pid/ec/pid.hpp
+ mode change 100644 => 100755 pid/fancontroller.cpp
+ mode change 100644 => 100755 pid/pidcontroller.hpp
+ mode change 100644 => 100755 pid/stepwisecontroller.cpp
+ mode change 100644 => 100755 pid/stepwisecontroller.hpp
+ mode change 100644 => 100755 pid/thermalcontroller.cpp
+ mode change 100644 => 100755 pid/tuning.cpp
+ mode change 100644 => 100755 pid/tuning.hpp
+ mode change 100644 => 100755 pid/util.cpp
+ mode change 100644 => 100755 pid/zone.cpp
+ mode change 100644 => 100755 pid/zone.hpp
+ mode change 100644 => 100755 pid/zone_interface.hpp
+
+diff --git a/main.cpp b/main.cpp
+old mode 100644
+new mode 100755
+index db15b8d..2b4ec3a
+--- a/main.cpp
++++ b/main.cpp
+@@ -34,7 +34,10 @@
+ #include <boost/asio/io_context.hpp>
+ #include <boost/asio/steady_timer.hpp>
+ #include <sdbusplus/asio/connection.hpp>
++#include <sdbusplus/asio/object_server.hpp>
+ #include <sdbusplus/bus.hpp>
++#include <sdbusplus/bus/match.hpp>
++#include <sdbusplus/server/interface.hpp>
+ #include <sdbusplus/server/manager.hpp>
+ 
+ #include <chrono>
+@@ -74,6 +77,34 @@ static sdbusplus::asio::connection
+ static sdbusplus::asio::connection
+     passiveBus(io, sdbusplus::bus::new_system().release());
+ 
++// Setup debug mode dbus objectPath/interface name.
++constexpr auto debugModeObjPath = "/xyz/openbmc_project/settings/fanctrl/debug";
++constexpr auto debugModeIntfName = "xyz.openbmc_project.Control.DebugMode";
++
++// Register debug mode signal handler
++void registerDebugSignalHandler()
++{
++    char signalSetting[512];
++
++    memset(signalSetting, 0, sizeof(signalSetting));
++    snprintf(signalSetting, sizeof(signalSetting),
++             "type='signal',interface='%s',member='Open',path='%s'",
++             debugModeIntfName, debugModeObjPath);
++    static sdbusplus::bus::match::match openDebugMode(
++        modeControlBus, signalSetting,
++        [](sdbusplus::message::message& message) { debugModeEnabled = true; });
++
++    memset(signalSetting, 0, sizeof(signalSetting));
++    snprintf(signalSetting, sizeof(signalSetting),
++             "type='signal',interface='%s',member='Close',path='%s'",
++             debugModeIntfName, debugModeObjPath);
++    static sdbusplus::bus::match::match closeDebugMode(
++        modeControlBus, signalSetting,
++        [](sdbusplus::message::message& message) { debugModeEnabled = false; });
++
++    return;
++}
++
+ namespace pid_control
+ {
+ 
+@@ -216,6 +247,7 @@ int main(int argc, char* argv[])
+     loggingPath = "";
+     loggingEnabled = false;
+     tuningEnabled = false;
++    debugModeEnabled = false;
+ 
+     CLI::App app{"OpenBMC Fan Control Daemon"};
+ 
+@@ -286,6 +318,8 @@ int main(int argc, char* argv[])
+     modeControlBus.request_name("xyz.openbmc_project.State.FanCtrl");
+     sdbusplus::server::manager::manager objManager(modeControlBus, modeRoot);
+ 
++    registerDebugSignalHandler();
++
+     /*
+      * All sensors are managed by one manager, but each zone has a pointer to
+      * it.
+diff --git a/pid/buildjson.cpp b/pid/buildjson.cpp
+old mode 100644
+new mode 100755
+index e078fdb..5b89c8f
+--- a/pid/buildjson.cpp
++++ b/pid/buildjson.cpp
+@@ -20,6 +20,7 @@
+ 
+ #include <nlohmann/json.hpp>
+ 
++#include <iostream>
+ #include <map>
+ #include <tuple>
+ 
+@@ -60,6 +61,7 @@ void from_json(const json& j, conf::ControllerInfo& c)
+         p.at("samplePeriod").get_to(c.pidInfo.ts);
+         p.at("proportionalCoeff").get_to(c.pidInfo.proportionalCoeff);
+         p.at("integralCoeff").get_to(c.pidInfo.integralCoeff);
++        p.at("derivativeCoeff").get_to(c.pidInfo.derivativeCoeff);
+         p.at("feedFwdOffsetCoeff").get_to(c.pidInfo.feedFwdOffset);
+         p.at("feedFwdGainCoeff").get_to(c.pidInfo.feedFwdGain);
+         p.at("integralLimit_min").get_to(c.pidInfo.integralLimit.min);
+diff --git a/pid/controller.hpp b/pid/controller.hpp
+old mode 100644
+new mode 100755
+index 5680052..35783b1
+--- a/pid/controller.hpp
++++ b/pid/controller.hpp
+@@ -25,6 +25,13 @@ struct Controller
+     virtual void process(void) = 0;
+ 
+     virtual std::string getID(void) = 0;
++
++    /*
++     * Get the sensor name from zone profile name for example:
++     * Profile name is : Linear_Temp_CPU0.
++     * Return string will be Temp_CPU0.
++     */
++    virtual std::string getProfileName(void) const = 0;
+ };
+ 
+ } // namespace pid_control
+diff --git a/pid/ec/pid.cpp b/pid/ec/pid.cpp
+old mode 100644
+new mode 100755
+index 98968f7..db681e8
+--- a/pid/ec/pid.cpp
++++ b/pid/ec/pid.cpp
+@@ -16,6 +16,9 @@
+ 
+ #include "pid.hpp"
+ 
++#include "pid/tuning.hpp"
++#include <iostream>
++
+ namespace pid_control
+ {
+ namespace ec
+@@ -48,6 +51,7 @@ double pid(pid_info_t* pidinfoptr, double input, double setpoint)
+ 
+     double proportionalTerm;
+     double integralTerm = 0.0f;
++    double derivativeTerm = 0.0f;
+     double feedFwdTerm = 0.0f;
+ 
+     double output;
+@@ -67,11 +71,15 @@ double pid(pid_info_t* pidinfoptr, double input, double setpoint)
+                              pidinfoptr->integralLimit.max);
+     }
+ 
++    // piD
++    derivativeTerm =
++        pidinfoptr->derivativeCoeff * (input - pidinfoptr->lastInput);
++
+     // FF
+     feedFwdTerm =
+         (setpoint + pidinfoptr->feedFwdOffset) * pidinfoptr->feedFwdGain;
+ 
+-    output = proportionalTerm + integralTerm + feedFwdTerm;
++    output = proportionalTerm + integralTerm + derivativeTerm + feedFwdTerm;
+     output = clamp(output, pidinfoptr->outLim.min, pidinfoptr->outLim.max);
+ 
+     // slew rate
+@@ -117,6 +125,24 @@ double pid(pid_info_t* pidinfoptr, double input, double setpoint)
+     pidinfoptr->initialized = true;
+     pidinfoptr->lastOutput = output;
+ 
++    if (debugModeEnabled)
++    {
++        std::cerr << "Kp " << pidinfoptr->proportionalCoeff
++                  << ", Ki " << pidinfoptr->integralCoeff
++                  << ", Kd " << pidinfoptr->derivativeCoeff
++                  << ", FFOffset " << pidinfoptr->feedFwdOffset
++                  << ", FFGain " << pidinfoptr->feedFwdGain
++                  << ", Error " << error
++                  << ", derivative " << input - pidinfoptr->lastInput
++                  << std::endl;
++        std::cerr << "P (" << proportionalTerm
++                  <<") + I (" << integralTerm
++                  << ") + D (" << derivativeTerm
++                  << ") + FF (" << feedFwdTerm
++                  << ") = Output (" << output << ")"
++                  << std::endl;
++    }
++
+     return output;
+ }
+ 
+diff --git a/pid/ec/pid.hpp b/pid/ec/pid.hpp
+old mode 100644
+new mode 100755
+index 29c7bb3..c76379d
+--- a/pid/ec/pid.hpp
++++ b/pid/ec/pid.hpp
+@@ -22,10 +22,12 @@ typedef struct
+ 
+     double ts;         // sample time in seconds
+     double integral;   // intergal of error
++    double lastInput;  // value of last input
+     double lastOutput; // value of last output
+ 
+     double proportionalCoeff; // coeff for P
+     double integralCoeff;     // coeff for I
++    double derivativeCoeff;   // coeff for D
+     double feedFwdOffset;     // offset coeff for feed-forward term
+     double feedFwdGain;       // gain for feed-forward term
+ 
+@@ -45,6 +47,7 @@ struct pidinfo
+     double ts;                  // sample time in seconds
+     double proportionalCoeff;   // coeff for P
+     double integralCoeff;       // coeff for I
++    double derivativeCoeff;     // coeff for D
+     double feedFwdOffset;       // offset coeff for feed-forward term
+     double feedFwdGain;         // gain for feed-forward term
+     ec::limits_t integralLimit; // clamp of integral
+diff --git a/pid/fancontroller.cpp b/pid/fancontroller.cpp
+old mode 100644
+new mode 100755
+index d3c58ca..4242849
+--- a/pid/fancontroller.cpp
++++ b/pid/fancontroller.cpp
+@@ -135,6 +135,20 @@ void FanController::outputProc(double value)
+             {
+                 percent = _owner->getFailSafePercent();
+             }
++
++            if (debugModeEnabled)
++            {
++                std::cerr << "Zone " << _owner->getZoneID()
++                          << " fans output failsafe pwm: " << percent << "\n";
++            }
++        }
++    }
++    else
++    {
++        if (debugModeEnabled)
++        {
++            std::cerr << "Zone " << _owner->getZoneID()
++                      << " fans output pwm: " << percent << "\n";
+         }
+     }
+ 
+diff --git a/pid/pidcontroller.hpp b/pid/pidcontroller.hpp
+old mode 100644
+new mode 100755
+index cb92377..49055cf
+--- a/pid/pidcontroller.hpp
++++ b/pid/pidcontroller.hpp
+@@ -21,7 +21,8 @@ class PIDController : public Controller
+ {
+   public:
+     PIDController(const std::string& id, ZoneInterface* owner) :
+-        Controller(), _owner(owner), _setpoint(0), _id(id)
++        Controller(), _owner(owner), _setpoint(0), _id(id),
++        _profileName(id.substr(id.find("_") + 1))
+     {}
+ 
+     virtual ~PIDController()
+@@ -37,6 +38,10 @@ class PIDController : public Controller
+     {
+         return _id;
+     }
++    std::string getProfileName(void) const override
++    {
++        return _profileName;
++    }
+     double getSetpoint(void)
+     {
+         return _setpoint;
+@@ -65,6 +70,7 @@ class PIDController : public Controller
+     double _setpoint;
+     std::string _id;
+     double lastInput = std::numeric_limits<double>::quiet_NaN();
++    std::string _profileName;
+ };
+ 
+ } // namespace pid_control
+diff --git a/pid/stepwisecontroller.cpp b/pid/stepwisecontroller.cpp
+old mode 100644
+new mode 100755
+index c8ec219..b02270f
+--- a/pid/stepwisecontroller.cpp
++++ b/pid/stepwisecontroller.cpp
+@@ -90,6 +90,13 @@ double StepwiseController::inputProc(void)
+     {
+         value = std::max(value, _owner->getCachedValue(in));
+     }
++
++    if (debugModeEnabled)
++    {
++        std::cerr << getID()
++                  << " choose the maximum temperature value: " << value << "\n";
++    }
++
+     return value;
+ }
+ 
+@@ -101,7 +108,11 @@ void StepwiseController::outputProc(double value)
+     }
+     else
+     {
+-        _owner->addSetPoint(value);
++        _owner->addSetPoint(getProfileName(), value);
++        if (debugModeEnabled)
++        {
++            std::cerr << getID() << " stepwise output pwm: " << value << "\n";
++        }
+     }
+     return;
+ }
+diff --git a/pid/stepwisecontroller.hpp b/pid/stepwisecontroller.hpp
+old mode 100644
+new mode 100755
+index a3b3965..b7f9b0e
+--- a/pid/stepwisecontroller.hpp
++++ b/pid/stepwisecontroller.hpp
+@@ -25,7 +25,8 @@ class StepwiseController : public Controller
+                        const std::vector<std::string>& inputs,
+                        ZoneInterface* owner) :
+         Controller(),
+-        _owner(owner), _id(id), _inputs(inputs)
++        _owner(owner), _id(id), _inputs(inputs),
++        _profileName(id.substr(id.find("_") + 1))
+     {}
+ 
+     double inputProc(void) override;
+@@ -39,6 +40,11 @@ class StepwiseController : public Controller
+         return _id;
+     }
+ 
++    std::string getProfileName(void) const override
++    {
++        return _profileName;
++    }
++
+     ec::StepwiseInfo& getStepwiseInfo(void)
+     {
+         return _stepwise_info;
+@@ -59,6 +65,7 @@ class StepwiseController : public Controller
+     std::vector<std::string> _inputs;
+     double lastInput = std::numeric_limits<double>::quiet_NaN();
+     double lastOutput = std::numeric_limits<double>::quiet_NaN();
++    std::string _profileName;
+ };
+ 
+ } // namespace pid_control
+diff --git a/pid/thermalcontroller.cpp b/pid/thermalcontroller.cpp
+old mode 100644
+new mode 100755
+index 8125349..9a52a80
+--- a/pid/thermalcontroller.cpp
++++ b/pid/thermalcontroller.cpp
+@@ -98,6 +98,12 @@ double ThermalController::inputProc(void)
+         value = 0;
+     }
+ 
++    if (debugModeEnabled)
++    {
++        std::cerr << getID() << " choose the temperature value: " << value
++                  << "\n";
++    }
++
+     return value;
+ }
+ 
+@@ -123,7 +129,11 @@ double ThermalController::setptProc(void)
+ // bmc_set_pid_output
+ void ThermalController::outputProc(double value)
+ {
+-    _owner->addSetPoint(value);
++    _owner->addSetPoint(getProfileName(), value);
++    if (debugModeEnabled)
++    {
++        std::cerr << getID() << " pid output pwm: " << value << "\n";
++    }
+ 
+     return;
+ }
+diff --git a/pid/tuning.cpp b/pid/tuning.cpp
+old mode 100644
+new mode 100755
+index 3422e34..6da76c9
+--- a/pid/tuning.cpp
++++ b/pid/tuning.cpp
+@@ -20,3 +20,4 @@ bool tuningEnabled = false;
+ 
+ std::string loggingPath;
+ bool loggingEnabled = false;
++bool debugModeEnabled = false;
+\ No newline at end of file
+diff --git a/pid/tuning.hpp b/pid/tuning.hpp
+old mode 100644
+new mode 100755
+index ba4ec32..619e951
+--- a/pid/tuning.hpp
++++ b/pid/tuning.hpp
+@@ -11,3 +11,8 @@ extern bool tuningEnabled;
+ extern std::string loggingPath;
+ /** Boolean variable whether loggingPath is non-empty. */
+ extern bool loggingEnabled;
++
++/** Boolean variable controlling whether debug mode is enabled
++ * during this run.
++ */
++extern bool debugModeEnabled;
+\ No newline at end of file
+diff --git a/pid/util.cpp b/pid/util.cpp
+old mode 100644
+new mode 100755
+index ad7c139..5b7cd5f
+--- a/pid/util.cpp
++++ b/pid/util.cpp
+@@ -31,6 +31,7 @@ void initializePIDStruct(ec::pid_info_t* info, const ec::pidinfo& initial)
+     info->ts = initial.ts;
+     info->proportionalCoeff = initial.proportionalCoeff;
+     info->integralCoeff = initial.integralCoeff;
++    info->derivativeCoeff = initial.derivativeCoeff;
+     info->feedFwdOffset = initial.feedFwdOffset;
+     info->feedFwdGain = initial.feedFwdGain;
+     info->integralLimit.min = initial.integralLimit.min;
+@@ -48,6 +49,7 @@ void dumpPIDStruct(ec::pid_info_t* info)
+     std::cerr << " ts: " << info->ts
+               << " proportionalCoeff: " << info->proportionalCoeff
+               << " integralCoeff: " << info->integralCoeff
++              << " derivativeCoeff: " << info->derivativeCoeff
+               << " feedFwdOffset: " << info->feedFwdOffset
+               << " feedFwdGain: " << info->feedFwdGain
+               << " integralLimit.min: " << info->integralLimit.min
+diff --git a/pid/zone.cpp b/pid/zone.cpp
+old mode 100644
+new mode 100755
+index 441031a..37a5b44
+--- a/pid/zone.cpp
++++ b/pid/zone.cpp
+@@ -87,6 +87,13 @@ void DbusPidZone::setManualMode(bool mode)
+ bool DbusPidZone::getFailSafeMode(void) const
+ {
+     // If any keys are present at least one sensor is in fail safe mode.
++
++    if (debugModeEnabled)
++    {
++        std::cerr << "Zone " << getZoneID()
++                  << " enter failsafe mode.\n";
++    }
++
+     return !_failSafeSensors.empty();
+ }
+ 
+@@ -95,9 +102,9 @@ int64_t DbusPidZone::getZoneID(void) const
+     return _zoneId;
+ }
+ 
+-void DbusPidZone::addSetPoint(double setpoint)
++void DbusPidZone::addSetPoint(std::string profileName, double setpoint)
+ {
+-    _SetPoints.push_back(setpoint);
++    _SetPoints[profileName] += setpoint;
+ }
+ 
+ void DbusPidZone::addRPMCeiling(double ceiling)
+@@ -207,10 +214,20 @@ void DbusPidZone::determineMaxSetPointRequest(void)
+     double max = 0;
+     std::vector<double>::iterator result;
+ 
++
+     if (_SetPoints.size() > 0)
+     {
+-        result = std::max_element(_SetPoints.begin(), _SetPoints.end());
+-        max = *result;
++        for (const auto& [key, value] : _SetPoints)
++        {
++            if (debugModeEnabled)
++            {
++                std::cerr << key << " total output pwm: " << value << "\n";
++            }
++            if (value > max)
++            {
++                max = value;
++            }
++        }
+     }
+ 
+     if (_RPMCeilings.size() > 0)
+@@ -308,6 +325,10 @@ void DbusPidZone::updateFanTelemetry(void)
+     {
+         auto sensor = _mgr.getSensor(f);
+         ReadReturn r = sensor->read();
++        if (debugModeEnabled)
++        {
++            std::cerr << f << " fan sensor reading: " << r.value << "\n";
++        }
+         _cachedValuesByName[f] = r.value;
+         int64_t timeout = sensor->getTimeout();
+         tstamp then = r.updated;
+@@ -329,10 +350,15 @@ void DbusPidZone::updateFanTelemetry(void)
+         // check if fan fail.
+         if (sensor->getFailed())
+         {
++            std::cerr << f << " fan sensor get failed\n";
+             _failSafeSensors.insert(f);
+         }
+         else if (timeout != 0 && duration >= period)
+         {
++            if (debugModeEnabled)
++            {
++                std::cerr << f << " fan sensor active read\n";
++            }
+             _failSafeSensors.insert(f);
+         }
+         else
+@@ -341,6 +367,7 @@ void DbusPidZone::updateFanTelemetry(void)
+             auto kt = _failSafeSensors.find(f);
+             if (kt != _failSafeSensors.end())
+             {
++                std::cerr << f << " is erased from failsafe sensor set\n";
+                 _failSafeSensors.erase(kt);
+             }
+         }
+@@ -367,6 +394,11 @@ void DbusPidZone::updateSensors(void)
+     {
+         auto sensor = _mgr.getSensor(t);
+         ReadReturn r = sensor->read();
++        if (debugModeEnabled)
++        {
++            std::cerr << t << " temperature sensor reading: " << r.value
++                      << "\n";
++        }
+         int64_t timeout = sensor->getTimeout();
+ 
+         _cachedValuesByName[t] = r.value;
+@@ -377,11 +409,13 @@ void DbusPidZone::updateSensors(void)
+ 
+         if (sensor->getFailed())
+         {
++            std::cerr << t << " temperature sensor getfailed\n";
+             _failSafeSensors.insert(t);
+         }
+         else if (timeout != 0 && duration >= period)
+         {
+             // std::cerr << "Entering fail safe mode.\n";
++            std::cerr << t << " temperature sensor active read\n";
+             _failSafeSensors.insert(t);
+         }
+         else
+@@ -390,6 +424,7 @@ void DbusPidZone::updateSensors(void)
+             auto kt = _failSafeSensors.find(t);
+             if (kt != _failSafeSensors.end())
+             {
++                 std::cerr << t << " is erased from failure temps\n";
+                 _failSafeSensors.erase(kt);
+             }
+         }
+diff --git a/pid/zone.hpp b/pid/zone.hpp
+old mode 100644
+new mode 100755
+index 3bea9c2..d8189e4
+--- a/pid/zone.hpp
++++ b/pid/zone.hpp
+@@ -57,7 +57,7 @@ class DbusPidZone : public ZoneInterface, public ModeObject
+     bool getFailSafeMode(void) const override;
+ 
+     int64_t getZoneID(void) const;
+-    void addSetPoint(double setpoint) override;
++    void addSetPoint(std::string profileName, double setpoint) override;
+     double getMaxSetPointRequest(void) const override;
+     void addRPMCeiling(double ceiling) override;
+     void clearSetPoints(void) override;
+@@ -99,7 +99,7 @@ class DbusPidZone : public ZoneInterface, public ModeObject
+ 
+     std::set<std::string> _failSafeSensors;
+ 
+-    std::vector<double> _SetPoints;
++    std::map<std::string, double> _SetPoints;
+     std::vector<double> _RPMCeilings;
+     std::vector<std::string> _fanInputs;
+     std::vector<std::string> _thermalInputs;
+diff --git a/pid/zone_interface.hpp b/pid/zone_interface.hpp
+old mode 100644
+new mode 100755
+index a024c0e..08c4f35
+--- a/pid/zone_interface.hpp
++++ b/pid/zone_interface.hpp
+@@ -45,7 +45,7 @@ class ZoneInterface
+     virtual double getCachedValue(const std::string& name) = 0;
+ 
+     /** Add a set point value for the Max Set Point computation. */
+-    virtual void addSetPoint(double setpoint) = 0;
++    virtual void addSetPoint(std::string profileName, double setpoint) = 0;
+     /** Clear all set points specified via addSetPoint */
+     virtual void clearSetPoints(void) = 0;
+ 
+@@ -80,6 +80,8 @@ class ZoneInterface
+     virtual void processFans(void) = 0;
+     /** For each thermal pid, do processing. */
+     virtual void processThermals(void) = 0;
++    /** Get Current Zone ID */
++    virtual int64_t getZoneID(void) const = 0;
+ };
+ 
+ } // namespace pid_control
+-- 
+2.7.4
+

@@ -1,0 +1,29 @@
+From 6dd2ec5e6197e523fcf2ea5193cddb214d037f2e Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Tue, 16 Nov 2021 16:33:24 +0800
+Subject: [PATCH 1/2] Add keep Configuration property to eth0 for avoiding dhcp
+ lost
+
+---
+ src/network_config.cpp | 2 ++
+ 1 file changed, 2 insertions(+)
+ mode change 100644 => 100755 src/network_config.cpp
+
+diff --git a/src/network_config.cpp b/src/network_config.cpp
+old mode 100644
+new mode 100755
+index 94c8eae..5bad866
+--- a/src/network_config.cpp
++++ b/src/network_config.cpp
+@@ -38,6 +38,8 @@ void writeDHCPDefault(const std::string& filename, const std::string& interface)
+                 "IPv6AcceptRA=false\n"
+ 
+ #endif
++                "KeepConfiguration=true\n"
++
+                 "[DHCP]\nClientIdentifier=mac\n";
+     filestream.close();
+ }
+-- 
+2.7.4
+

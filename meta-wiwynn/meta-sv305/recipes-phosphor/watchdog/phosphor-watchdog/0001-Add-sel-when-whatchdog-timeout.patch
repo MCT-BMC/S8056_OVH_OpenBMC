@@ -1,0 +1,129 @@
+From 08fcb8d1d60160409c0d7c7b0220bbf80afdf960 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Mon, 9 Nov 2020 12:33:23 +0800
+Subject: [PATCH] Add sel when whatchdog timeout
+
+---
+ src/watchdog.cpp | 77 +++++++++++++++++++++++++++++++++++++++++++++++-
+ src/watchdog.hpp |  3 ++
+ 2 files changed, 79 insertions(+), 1 deletion(-)
+
+diff --git a/src/watchdog.cpp b/src/watchdog.cpp
+index 57e9050..66dd97b 100644
+--- a/src/watchdog.cpp
++++ b/src/watchdog.cpp
+@@ -23,6 +23,16 @@ constexpr auto SYSTEMD_SERVICE = "org.freedesktop.systemd1";
+ constexpr auto SYSTEMD_ROOT = "/org/freedesktop/systemd1";
+ constexpr auto SYSTEMD_INTERFACE = "org.freedesktop.systemd1.Manager";
+ 
++constexpr auto wdSensorPath = "/xyz/openbmc_project/sensors/discrete/Watchdog2";
++constexpr auto processorFailSensorPath =
++    "/xyz/openbmc_project/sensors/discrete/Processor_Fail";
++constexpr auto selService = "xyz.openbmc_project.Logging.IPMI";
++constexpr auto selPath = "/xyz/openbmc_project/Logging/IPMI";
++constexpr auto selIntf = "xyz.openbmc_project.Logging.IPMI";
++constexpr auto selAddMethod = "IpmiSelAdd";
++constexpr uint8_t wdEventData1Header = 0xc0;
++constexpr uint16_t selBMCGenID = 0x0020;
++
+ void Watchdog::resetTimeRemaining(bool enableWatchdog)
+ {
+     timeRemaining(interval());
+@@ -115,8 +125,15 @@ void Watchdog::timeOutHandler()
+ 
+     expiredTimerUse(currentTimerUse());
+ 
++    // Add watchdog time out SEL with action and timer use at expiration.
++    addTimeOutSel();
++
+     auto target = actionTargetMap.find(action);
+-    if (target == actionTargetMap.end())
++    if (expiredTimerUse() == TimerUse::Reserved)
++    {
++        // When FRB3 timeout keep host status and do nothing.
++    }
++    else if (target == actionTargetMap.end())
+     {
+         log<level::INFO>("watchdog: Timed out with no target",
+                          entry("ACTION=%s", convertForMessage(action).c_str()),
+@@ -175,5 +192,63 @@ void Watchdog::tryFallbackOrDisable()
+     WatchdogInherits::enabled(false);
+ }
+ 
++void Watchdog::addTimeOutSel()
++{
++    // Add Watchdog Timeout SEL.
++    bool assert = true;
++    std::string watchdogMsg = "Watchdog Timeout";
++    std::vector<uint8_t> eventDataWatchdog(3, 0xFF);
++    eventDataWatchdog[0] =
++        wdEventData1Header | static_cast<uint8_t>(expireAction());
++    eventDataWatchdog[1] = (static_cast<uint8_t>(interruptType()) << 4) |
++                           (static_cast<uint8_t>(expiredTimerUse()) & 0x0F);
++    auto watchdogSelMsg =
++        bus.new_method_call(selService, selPath, selIntf, selAddMethod);
++    watchdogSelMsg.append(watchdogMsg, wdSensorPath, eventDataWatchdog, assert,
++                          selBMCGenID);
++    try
++    {
++        bus.call_noreply(watchdogSelMsg);
++    }
++    catch (sdbusplus::exception::SdBusError& e)
++    {
++        log<level::ERR>("watchdog: Failed to add timeout sel",
++                        entry("ERROR=%s", e.what()));
++    }
++
++    // Add Processor Fail SEL.
++    if (expiredTimerUse() == TimerUse::Reserved ||
++        expiredTimerUse() == TimerUse::BIOSFRB2)
++    {
++        std::string processorMsg;
++        std::vector<uint8_t> eventDataProcessor(3, 0xFF);
++        if (expiredTimerUse() == TimerUse::Reserved)
++        {
++            processorMsg = "FRB3 Timeout";
++            // FRB3/Processor Startup/Initialization failure
++            eventDataProcessor[0] = 0x04;
++        }
++        else
++        {
++            processorMsg = "FRB2 Timeout";
++            // FRB2/Hang in POST failure
++            eventDataProcessor[0] = 0x03;
++        }
++        auto processorSelMsg =
++            bus.new_method_call(selService, selPath, selIntf, selAddMethod);
++        processorSelMsg.append(processorMsg, processorFailSensorPath,
++                               eventDataProcessor, assert, selBMCGenID);
++        try
++        {
++            bus.call_noreply(processorSelMsg);
++        }
++        catch (sdbusplus::exception::SdBusError& e)
++        {
++            log<level::ERR>("watchdog: Failed to add processor fail sel",
++                            entry("ERROR=%s", e.what()));
++        }
++    }
++}
++
+ } // namespace watchdog
+ } // namespace phosphor
+diff --git a/src/watchdog.hpp b/src/watchdog.hpp
+index 63839a8..407fac4 100644
+--- a/src/watchdog.hpp
++++ b/src/watchdog.hpp
+@@ -160,6 +160,9 @@ class Watchdog : public WatchdogInherits
+         return timer.isEnabled();
+     }
+ 
++    /** @brief Add SEL when watchdog timeout */
++    void addTimeOutSel();
++
+   private:
+     /** @brief sdbusplus handle */
+     sdbusplus::bus::bus& bus;
+-- 
+2.28.0
+

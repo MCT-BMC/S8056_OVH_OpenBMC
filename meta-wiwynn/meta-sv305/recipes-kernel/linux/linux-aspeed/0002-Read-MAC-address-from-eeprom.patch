@@ -1,0 +1,121 @@
+From 65bd3155bcb54f32d2ed6c7c5bcef04f11855746 Mon Sep 17 00:00:00 2001
+From: Eli_Huang <eli_huang@wiwynn.com>
+Date: Mon, 19 Oct 2020 02:40:23 +0000
+Subject: [PATCH] Read MAC address from eeprom
+
+---
+ drivers/net/ethernet/faraday/ftgmac100.c | 70 ++++++++++++++++++++++++
+ 1 file changed, 70 insertions(+)
+
+diff --git a/drivers/net/ethernet/faraday/ftgmac100.c b/drivers/net/ethernet/faraday/ftgmac100.c
+index 87236206366f..810777769bf1 100644
+--- a/drivers/net/ethernet/faraday/ftgmac100.c
++++ b/drivers/net/ethernet/faraday/ftgmac100.c
+@@ -26,6 +26,8 @@
+ #include <linux/of_net.h>
+ #include <net/ip.h>
+ #include <net/ncsi.h>
++#include <linux/i2c.h>
++#include <linux/regmap.h>
+ 
+ #include "ftgmac100.h"
+ 
+@@ -50,6 +52,14 @@
+ #define FTGMAC_100MHZ		100000000
+ #define FTGMAC_25MHZ		25000000
+ 
++#define EEPROM_BUS_ID 6
++#define EEPROM_SLAVE_ADDR 0x52
++#define MAC_OFFSET_HIGH_BYTE 0x19
++#define MAC_OFFSET_LOW_BYTE 0x00
++#define ETH_INDEX_0 2
++
++static bool *g_mac_initialized = false;
++
+ struct ftgmac100 {
+ 	/* Registers */
+ 	struct resource *res;
+@@ -134,6 +144,56 @@ static int ftgmac100_reset_mac(struct ftgmac100 *priv, u32 maccr)
+ 	return -EIO;
+ }
+ 
++static void ftgmac100_set_mac_from_eeprom(struct ftgmac100 *priv)
++{
++	u8 tx_buf[2] = {MAC_OFFSET_HIGH_BYTE, MAC_OFFSET_LOW_BYTE};
++	u8 rx_buf[ETH_ALEN];
++	int ret;
++
++	struct i2c_adapter *i2c_adap;
++	struct i2c_msg msg[2];
++
++	if (g_mac_initialized) {
++		goto exit;
++	}
++
++	i2c_adap = i2c_get_adapter(EEPROM_BUS_ID);
++	if (!i2c_adap)
++	{
++		netdev_info(priv->netdev, "Fail in get adapter.\n");
++		return;
++	}
++
++	msg[0].addr = EEPROM_SLAVE_ADDR;
++	msg[0].flags = 0;
++	msg[0].len = 2;
++	msg[0].buf = tx_buf;
++
++	msg[1].addr = EEPROM_SLAVE_ADDR;
++	msg[1].flags = I2C_M_RD;
++	msg[1].len = ETH_ALEN;
++	msg[1].buf = rx_buf;
++
++	netdev_info(priv->netdev, "Reading MAC address from EEPROM\n");
++	ret = i2c_transfer(i2c_adap, msg, 2);
++	if(ret < 0)
++	{
++		netdev_err(priv->netdev,
++			"Failed in reading MAC address from EEPROM. Error code : %d\n", ret);
++		goto exit;
++	}
++
++	if (is_valid_ether_addr(msg[1].buf)) {
++		netdev_info(priv->netdev, "Set MAC address %pM\n", msg[1].buf);
++		ether_addr_copy(priv->netdev->dev_addr, msg[1].buf);
++		g_mac_initialized = true;
++	}
++
++exit:
++	i2c_put_adapter(i2c_adap);
++	return;
++}
++
+ static int ftgmac100_reset_and_config_mac(struct ftgmac100 *priv)
+ {
+ 	u32 maccr = 0;
+@@ -1475,6 +1535,11 @@ static int ftgmac100_open(struct net_device *netdev)
+ 	}
+ 
+ 	if (netdev->phydev) {
++		if (priv->is_aspeed && netdev->ifindex == ETH_INDEX_0)
++		{
++			ftgmac100_set_mac_from_eeprom(priv);
++		}
++
+ 		/* If we have a PHY, start polling */
+ 		phy_start(netdev->phydev);
+ 	} else if (priv->use_ncsi) {
+@@ -1918,6 +1983,11 @@ static int ftgmac100_remove(struct platform_device *pdev)
+ 	struct net_device *netdev;
+ 	struct ftgmac100 *priv;
+ 
++	if (g_mac_initialized)
++	{
++		g_mac_initialized = false;
++	}
++
+ 	netdev = platform_get_drvdata(pdev);
+ 	priv = netdev_priv(netdev);
+ 
+-- 
+2.28.0
+

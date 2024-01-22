@@ -1,0 +1,886 @@
+From 690956aed245ed00b9e72818de89eb3b2abdfcb9 Mon Sep 17 00:00:00 2001
+From: Eli_Huang <Eli_Huang@wiwynn.com>
+Date: Wed, 23 Oct 2019 18:02:14 +0800
+Subject: [PATCH] Add to support NVME sensor
+
+Description:
+- Add new deamon to support NVME sensor and using i2c lib to
+  get sensor value.
+
+Design:
+- Add daemon to support NVME sensor.
+- Read the NVME register value with i2c lib.
+- Read gpio expander to confirm whether SSD present or not.
+- Add reading property function for detect SSD present.
+---
+ include/NVMESensor.hpp    |  84 ++++++++
+ meson.build               |   4 +
+ meson_options.txt         |   1 +
+ service_files/meson.build |   1 +
+ src/NVMESensor.cpp        | 421 ++++++++++++++++++++++++++++++++++++++
+ src/NVMESensorMain.cpp    | 262 ++++++++++++++++++++++++
+ src/meson.build           |  21 +-
+ 7 files changed, 793 insertions(+), 1 deletion(-)
+ create mode 100644 include/NVMESensor.hpp
+ create mode 100644 src/NVMESensor.cpp
+ create mode 100644 src/NVMESensorMain.cpp
+
+diff --git a/include/NVMESensor.hpp b/include/NVMESensor.hpp
+new file mode 100644
+index 0000000..24ae781
+--- /dev/null
++++ b/include/NVMESensor.hpp
+@@ -0,0 +1,84 @@
++#pragma once
++
++#include <Thresholds.hpp>
++#include <boost/asio/steady_timer.hpp>
++#include <sdbusplus/asio/object_server.hpp>
++#include <sensor.hpp>
++
++#define NVME_SLAVE_ADDRESS 0x6A
++
++constexpr unsigned int delayAddSelMs = 250;
++constexpr int maxRetry = 1;
++
++enum nvme_mi_cmd_offset
++{
++    length = 0x00,
++    flag = 0x01,
++    smart_warnings = 0x02,
++    temp = 0x03,
++    pdlu = 0x04,
++    pec = 0x07,
++};
++
++enum nvme_temp_status
++{
++    NVME_REPORTED_IN_RANGE = 0x00,
++    NVME_NO_TEMP_DATA = 0x80,
++    NVME_SENSOR_FAILURE = 0x81,
++    NVME_RESERVED_MIN = 0x82,
++    NVME_RESERVED_MAX = 0xC3,
++    NVME_VALUE_NEGATIVE = 0xC4,
++};
++
++struct DeviceDetectInfo
++{
++    bool needToDetect;
++    std::string name;
++    uint8_t busId;
++    uint8_t addr;
++    uint8_t cmd;
++    uint8_t bit;
++};
++
++class NVMESensor :
++    public Sensor,
++    public std::enable_shared_from_this<NVMESensor>
++{
++  public:
++    NVMESensor(const std::string& path, const std::string& objectType,
++               sdbusplus::asio::object_server& objectServer,
++               std::shared_ptr<sdbusplus::asio::connection>& conn,
++               boost::asio::io_service& io, const std::string& sensorName,
++               std::vector<thresholds::Threshold>&& thresholds,
++               const std::string& sensorConfiguration,
++               const std::string& sensorUnit, const std::string& sensorTypeName,
++               const double maxValue, const double minValue,
++               const PowerState readState, const uint8_t busId,
++               const DeviceDetectInfo& detectInfo);
++    ~NVMESensor();
++    void setupRead(void);
++
++  private:
++    sdbusplus::asio::object_server& objServer;
++    boost::asio::steady_timer waitTimer;
++    std::string path;
++    std::string sensorUnit;
++    uint8_t busId;
++    double senValue;
++    thresholds::ThresholdTimer thresholdTimer;
++    boost::asio::steady_timer ssdAbsentTimer;
++    boost::asio::steady_timer ssdPresentTimer;
++    uint8_t nvme_status;
++    DeviceDetectInfo detectInfo;
++    bool isAbsent;
++    bool preIsAbsent;
++    bool isPowerOff;
++    int retry;
++    int checkDeviceAbsent(void);
++    bool visitNVMEReg(void);
++    int32_t ConvertToRealTemp(uint8_t rawValue, int8_t* realValue);
++    void handleResponse(void);
++    void checkThresholds(void) override;
++    void recordSsdPresent();
++    void recordSsdAbsent();
++};
+diff --git a/meson.build b/meson.build
+index 211d855..dd94643 100644
+--- a/meson.build
++++ b/meson.build
+@@ -42,6 +42,10 @@ systemd_system_unit_dir = systemd.get_variable(
+     pkgconfig_define: ['prefix', get_option('prefix')])
+ threads = dependency('threads')
+ 
++libobmcdbus = declare_dependency(link_args : '-lobmcdbus')
++
++libobmci2c = declare_dependency(link_args : '-lobmci2c')
++
+ thresholds_a = static_library(
+     'thresholds_a',
+     'src/Thresholds.cpp',
+diff --git a/meson_options.txt b/meson_options.txt
+index b0214ee..cf093bf 100644
+--- a/meson_options.txt
++++ b/meson_options.txt
+@@ -7,6 +7,7 @@ option('intrusion', type: 'feature', value: 'enabled', description: 'Enable intr
+ option('ipmb', type: 'feature', value: 'enabled', description: 'Enable IPMB sensor.',)
+ option('mcu', type: 'feature', value: 'enabled', description: 'Enable MCU sensor.',)
+ option('nvme', type: 'feature', value: 'disabled', description: 'Enable NVMe sensor.',)
++option('nvme-i2c', type: 'feature', value: 'disabled', description: 'Enable NVME sensor.',)
+ option('psu', type: 'feature', value: 'enabled', description: 'Enable PSU sensor.',)
+ option('external', type: 'feature', value: 'enabled', description: 'Enable External sensor.',)
+ option('tests', type: 'feature', description: 'Build tests.',)
+diff --git a/service_files/meson.build b/service_files/meson.build
+index 37bb261..ea4b0e8 100644
+--- a/service_files/meson.build
++++ b/service_files/meson.build
+@@ -8,6 +8,7 @@ unit_files = [
+     ['intrusion', 'xyz.openbmc_project.intrusionsensor.service'],
+     ['mcu', 'xyz.openbmc_project.mcutempsensor.service'],
+     ['nvme', 'xyz.openbmc_project.nvmesensor.service'],
++    ['nvme-i2c', 'xyz.openbmc_project.nvmesensor.service'],
+     ['psu', 'xyz.openbmc_project.psusensor.service'],
+     ['external', 'xyz.openbmc_project.externalsensor.service'],
+ ]
+diff --git a/src/NVMESensor.cpp b/src/NVMESensor.cpp
+new file mode 100644
+index 0000000..c6b5836
+--- /dev/null
++++ b/src/NVMESensor.cpp
+@@ -0,0 +1,421 @@
++#include <openbmc/libobmci2c.h>
++#include <unistd.h>
++
++#include <NVMESensor.hpp>
++#include <boost/algorithm/string/predicate.hpp>
++#include <boost/algorithm/string/replace.hpp>
++#include <openbmc/libobmcdbus.hpp>
++#include <sdbusplus/asio/connection.hpp>
++#include <sdbusplus/asio/object_server.hpp>
++
++#include <iostream>
++#include <limits>
++#include <string>
++
++static constexpr bool DEBUG = false;
++static constexpr const char* sensorPathPrefix = "/xyz/openbmc_project/sensors/";
++
++static constexpr unsigned int sensorPollMs = 1000;
++static constexpr unsigned int sensorScaleFactor = 1000;
++
++static constexpr auto discretePathPrefix =
++    "/xyz/openbmc_project/sensors/discrete/";
++
++NVMESensor::NVMESensor(const std::string& path, const std::string& objectType,
++                       sdbusplus::asio::object_server& objectServer,
++                       std::shared_ptr<sdbusplus::asio::connection>& conn,
++                       boost::asio::io_service& io,
++                       const std::string& sensorName,
++                       std::vector<thresholds::Threshold>&& _thresholds,
++                       const std::string& sensorConfiguration,
++                       const std::string& sensorUnit,
++                       const std::string& sensorTypeName, const double maxValue,
++                       const double minValue, const PowerState readState,
++                       const uint8_t busId,
++                       const DeviceDetectInfo& detectInfo) :
++    Sensor(boost::replace_all_copy(sensorName, " ", "_"),
++           std::move(_thresholds), sensorConfiguration, objectType, false,
++           maxValue, minValue, conn, readState),
++    std::enable_shared_from_this<NVMESensor>(), objServer(objectServer),
++    waitTimer(io), path(path), sensorUnit(sensorUnit), busId(busId),
++    senValue(0), thresholdTimer(io, this), ssdAbsentTimer(io),
++    ssdPresentTimer(io), nvme_status(NVME_REPORTED_IN_RANGE),
++    detectInfo(detectInfo), isAbsent(false), preIsAbsent(false),
++    isPowerOff(false)
++{
++    std::string dbusPath = sensorPathPrefix + sensorTypeName + name;
++    sensorInterface = objectServer.add_interface(
++        dbusPath, "xyz.openbmc_project.Sensor.Value");
++
++    if (thresholds::hasWarningInterface(thresholds))
++    {
++        thresholdInterfaceWarning = objectServer.add_interface(
++            dbusPath, "xyz.openbmc_project.Sensor.Threshold.Warning");
++    }
++    if (thresholds::hasCriticalInterface(thresholds))
++    {
++        thresholdInterfaceCritical = objectServer.add_interface(
++            dbusPath, "xyz.openbmc_project.Sensor.Threshold.Critical");
++    }
++    association = objectServer.add_interface(dbusPath, association::interface);
++
++    std::string unit;
++    if (sensorUnit == "temp")
++    {
++        unit = sensor_paths::unitDegreesC;
++    }
++    else if (sensorUnit == "power")
++    {
++        unit = sensor_paths::unitWatts;
++    }
++    else if (sensorUnit == "curr")
++    {
++        unit = sensor_paths::unitAmperes;
++    }
++    else if (sensorUnit == "volt")
++    {
++        unit = sensor_paths::unitVolts;
++    }
++    else
++    {
++        unit = "Unknown";
++    }
++
++    setInitialProperties(conn, unit);
++}
++
++NVMESensor::~NVMESensor()
++{
++    // close the Timer to cancel async operations
++    waitTimer.cancel();
++    objServer.remove_interface(thresholdInterfaceWarning);
++    objServer.remove_interface(thresholdInterfaceCritical);
++    objServer.remove_interface(sensorInterface);
++    objServer.remove_interface(association);
++}
++
++void NVMESensor::setupRead(void)
++{
++    std::weak_ptr<NVMESensor> weakRef = weak_from_this();
++
++    bool res = visitNVMEReg();
++    if (!res)
++    {
++        incrementError();
++    }
++    else
++    {
++        handleResponse();
++    }
++
++    waitTimer.expires_from_now(std::chrono::milliseconds(sensorPollMs));
++    waitTimer.async_wait([weakRef](const boost::system::error_code& ec) {
++        std::shared_ptr<NVMESensor> self = weakRef.lock();
++        if (ec == boost::asio::error::operation_aborted)
++        {
++            if (self)
++            {
++                std::cerr << "NVMESensor " << self->name << " read cancelled\n";
++            }
++            else
++            {
++                std::cerr << "NVMESensor read cancelled no self\n";
++            }
++            return; // we're being canceled
++        }
++
++        if (self)
++        {
++            self->setupRead();
++        }
++        else
++        {
++            std::cerr << "NVMESensor weakref no self\n";
++        }
++    });
++}
++
++int32_t NVMESensor::ConvertToRealTemp(uint8_t rawValue, int8_t* realValue)
++{
++    if (rawValue == NVME_NO_TEMP_DATA)
++    {
++        if (nvme_status != NVME_NO_TEMP_DATA)
++        {
++            std::cerr << "Sensor : " << name
++                      << ", no temperature data or temperature data is"
++                      << " more the 5 seconds old.\n";
++            nvme_status = NVME_NO_TEMP_DATA;
++        }
++        return -1;
++    }
++    else if (rawValue == NVME_SENSOR_FAILURE)
++    {
++        if (nvme_status != NVME_SENSOR_FAILURE)
++        {
++            std::cerr << "Sensor : " << name
++                      << ", temperature sensor failure.\n";
++            nvme_status = NVME_SENSOR_FAILURE;
++        }
++        return -1;
++    }
++    else if (rawValue >= NVME_RESERVED_MIN && rawValue <= NVME_RESERVED_MAX)
++    {
++        if (nvme_status != rawValue)
++        {
++            std::cerr << "Sensor : " << name << ", value is reserved.\n";
++            nvme_status = rawValue;
++        }
++        return -1;
++    }
++    else
++    {
++        nvme_status = NVME_REPORTED_IN_RANGE;
++        if (rawValue >= NVME_VALUE_NEGATIVE)
++        {
++            *realValue = -(~(rawValue) + 1);
++        }
++        else
++        {
++            *realValue = rawValue;
++        }
++        return 0;
++    }
++}
++
++int NVMESensor::checkDeviceAbsent(void)
++{
++    int fd = -1;
++    std::vector<char> filename;
++    filename.assign(20, 0);
++    fd = open_i2c_dev(detectInfo.busId, filename.data(), filename.size(), 0);
++    if (fd < 0)
++    {
++        std::cerr << "Fail to open I2C device: " << path << "\n";
++        return -1;
++    }
++
++    std::vector<uint8_t> cmdData;
++    cmdData.assign(1, detectInfo.cmd);
++    std::vector<uint8_t> readBuf;
++    readBuf.assign(1, 0x0);
++    int res =
++        i2c_master_write_read(fd, detectInfo.addr, cmdData.size(),
++                              cmdData.data(), readBuf.size(), readBuf.data());
++    if (res < 0)
++    {
++        if constexpr (DEBUG)
++        {
++            std::cerr << "Path: " << path << ", Addr: " << NVME_SLAVE_ADDRESS
++                      << "\n";
++        }
++        close_i2c_dev(fd);
++        return -1;
++    }
++    close_i2c_dev(fd);
++
++    uint8_t raw_value = readBuf.at(0);
++
++    if (((raw_value >> detectInfo.bit) & 0x01) == 0) // 0 means in slot
++    {
++        isAbsent = false;
++    }
++    else
++    {
++        isAbsent = true;
++    }
++    return 0;
++}
++
++bool NVMESensor::visitNVMEReg(void)
++{
++    int res = -1;
++
++    if (readingStateGood())
++    {
++        if (detectInfo.needToDetect)
++        {
++            res = checkDeviceAbsent();
++            if (res < 0)
++            {
++                std::cerr << "Check device absent status failed. "
++                          << "Sensor name : " << name << "\n";
++                return false;
++            }
++        }
++        if (!isPowerOff)
++        {
++            if ((true == preIsAbsent) && (false == isAbsent))
++            {
++                retry = 0;
++                recordSsdPresent();
++            }
++            if ((false == preIsAbsent) && (true == isAbsent))
++            {
++                retry = 0;
++                recordSsdAbsent();
++            }
++        }
++        else
++        {
++            isPowerOff = false;
++        }
++        preIsAbsent = isAbsent;
++    }
++    else
++    {
++        isPowerOff = true;
++        markAvailable(false);
++        return false;
++    }
++
++    if (isAbsent)
++    {
++        markAvailable(false);
++        return true;
++    }
++    else
++    {
++        markAvailable(true);
++    }
++
++    int fd = -1;
++    if (sensorUnit == "temp")
++    {
++        std::vector<char> filename;
++        filename.assign(20, 0);
++
++        fd = open_i2c_dev(busId, filename.data(), filename.size(), 0);
++        if (fd < 0)
++        {
++            std::cerr << "Fail to open I2C device: " << path << "\n";
++            return false;
++        }
++        std::vector<uint8_t> cmdData;
++        cmdData.assign(1, nvme_mi_cmd_offset::temp);
++        std::vector<uint8_t> readBuf;
++        readBuf.assign(1, 0x0);
++        res = i2c_master_write_read(fd, NVME_SLAVE_ADDRESS, cmdData.size(),
++                                    cmdData.data(), readBuf.size(),
++                                    readBuf.data());
++        if (res < 0)
++        {
++            if constexpr (DEBUG)
++            {
++                std::cerr << "Path: " << path
++                          << ", Addr: " << NVME_SLAVE_ADDRESS << "\n";
++            }
++            close_i2c_dev(fd);
++            return false;
++        }
++        uint8_t raw_value = readBuf.at(0);
++        int8_t real_value = 0;
++        res = ConvertToRealTemp(raw_value, &real_value);
++        if (res < 0)
++        {
++            close_i2c_dev(fd);
++            return false;
++        }
++        close_i2c_dev(fd);
++
++        senValue = static_cast<double>(real_value);
++    }
++    else
++    {
++        // TODO: other type sensors
++    }
++    return true;
++}
++
++void NVMESensor::handleResponse()
++{
++    if (readingStateGood() && !isAbsent)
++    {
++        if (static_cast<double>(senValue) != value)
++        {
++            updateValue(senValue);
++        }
++    }
++}
++
++void NVMESensor::checkThresholds(void)
++{
++    if (!readingStateGood() || isAbsent)
++    {
++        markAvailable(false);
++        return;
++    }
++
++    thresholds::checkThresholdsPowerDelay(this, thresholdTimer);
++}
++
++void NVMESensor::recordSsdPresent()
++{
++    ssdPresentTimer.expires_from_now(
++        boost::asio::chrono::milliseconds(delayAddSelMs));
++    ssdPresentTimer.async_wait([&](const boost::system::error_code& ec) {
++        if (ec == boost::asio::error::operation_aborted)
++        {
++            std::cerr << "Failed in Record SSD Present : operation aborted\n";
++            return;
++        }
++
++        if (!readingStateGood())
++        {
++            return;
++        }
++        else
++        {
++            retry++;
++            if (retry <= maxRetry)
++            {
++                recordSsdPresent();
++                return;
++            }
++            else
++            {
++                std::string message = "SSD present\n";
++                std::string objPath = discretePathPrefix + detectInfo.name;
++                std::vector<uint8_t> eventData = {0x1, 0xFF, 0xFF};
++
++                ipmiSelAdd(message, objPath, eventData, true);
++            }
++        }
++        return;
++    });
++}
++
++void NVMESensor::recordSsdAbsent()
++{
++    ssdAbsentTimer.expires_from_now(
++        boost::asio::chrono::milliseconds(delayAddSelMs));
++    ssdAbsentTimer.async_wait([&](const boost::system::error_code& ec) {
++        if (ec == boost::asio::error::operation_aborted)
++        {
++            std::cerr << "Failed in Record SSD Absent : operation aborted\n";
++            return;
++        }
++
++        if (!readingStateGood())
++        {
++            return;
++        }
++        else
++        {
++            retry++;
++            if (retry <= maxRetry)
++            {
++                recordSsdAbsent();
++                return;
++            }
++            else
++            {
++                std::string message = "SSD absent\n";
++                std::string objPath = discretePathPrefix + detectInfo.name;
++                std::vector<uint8_t> eventData = {0x0, 0xFF, 0xFF};
++
++                ipmiSelAdd(message, objPath, eventData, true);
++            }
++        }
++        return;
++    });
++}
+diff --git a/src/NVMESensorMain.cpp b/src/NVMESensorMain.cpp
+new file mode 100644
+index 0000000..d9402ff
+--- /dev/null
++++ b/src/NVMESensorMain.cpp
+@@ -0,0 +1,262 @@
++#include <NVMESensor.hpp>
++#include <Utils.hpp>
++#include <boost/algorithm/string/predicate.hpp>
++#include <boost/algorithm/string/replace.hpp>
++#include <boost/container/flat_set.hpp>
++#include <boost/filesystem.hpp>
++#include <sdbusplus/asio/connection.hpp>
++#include <sdbusplus/asio/object_server.hpp>
++
++#include <filesystem>
++#include <fstream>
++#include <regex>
++
++namespace fs = std::filesystem;
++static constexpr std::array<const char*, 1> sensorTypes = {
++    "xyz.openbmc_project.Configuration.NVME"};
++
++static boost::container::flat_map<std::string, std::string> sensorTable;
++static constexpr double maxReading = 255;
++static constexpr double minReading = 0;
++
++void createSensors(
++    boost::asio::io_service& io, sdbusplus::asio::object_server& objectServer,
++    boost::container::flat_map<std::string, std::shared_ptr<NVMESensor>>&
++        sensors,
++    std::shared_ptr<sdbusplus::asio::connection>& dbusConnection,
++    const std::shared_ptr<boost::container::flat_set<std::string>>&
++        sensorsChanged)
++{
++    bool firstScan = sensorsChanged == nullptr;
++    // use new data the first time, then refresh
++    ManagedObjectType sensorConfigurations;
++    bool useCache = false;
++    for (const char* type : sensorTypes)
++    {
++        if (!getSensorConfiguration(type, dbusConnection, sensorConfigurations,
++                                    useCache))
++        {
++            std::cerr << "error communicating to entity manager\n";
++            return;
++        }
++        useCache = true;
++    }
++
++    for (const std::pair<sdbusplus::message::object_path, SensorData>& sensor :
++         sensorConfigurations)
++    {
++        const SensorData* sensorData = nullptr;
++        const std::string* interfacePath = nullptr;
++        const char* sensorType = nullptr;
++        const std::pair<std::string, boost::container::flat_map<
++                                         std::string, BasicVariantType>>*
++            baseConfiguration = nullptr;
++
++        sensorData = &(sensor.second);
++        for (const char* type : sensorTypes)
++        {
++            auto sensorBase = sensorData->find(type);
++            if (sensorBase != sensorData->end())
++            {
++                baseConfiguration = &(*sensorBase);
++                sensorType = type;
++                break;
++            }
++        }
++        if (baseConfiguration == nullptr)
++        {
++            std::cerr << "error finding base configuration for NVME \n";
++            continue;
++        }
++
++        auto configurationBus = baseConfiguration->second.find("Bus");
++
++        if (configurationBus == baseConfiguration->second.end())
++        {
++            std::cerr << "fail to find the bus in JSON\n";
++            continue;
++        }
++
++        uint8_t busId =
++            static_cast<uint8_t>(std::get<uint64_t>(configurationBus->second));
++
++        std::string i2cBus = "/sys/class/i2c-dev/i2c-" + std::to_string(busId);
++
++        interfacePath = &(sensor.first.str);
++        if (interfacePath == nullptr)
++        {
++            std::cerr << " invalid sensor interface path\n";
++            continue;
++        }
++
++        auto findSensorName = baseConfiguration->second.find("Name");
++        if (findSensorName == baseConfiguration->second.end())
++        {
++            std::cerr << "fail to find sensor name in JSON\n";
++            continue;
++        }
++        std::string sensorName = std::get<std::string>(findSensorName->second);
++
++        // Sensor Type: power, curr, temp, volt
++        auto findSensorTypeJson = baseConfiguration->second.find("SensorType");
++        if (findSensorTypeJson == baseConfiguration->second.end())
++        {
++            std::cerr << "fail to find sensor type in JSON\n";
++            continue;
++        }
++        std::string SensorTypeJson =
++            std::get<std::string>(findSensorTypeJson->second);
++
++        auto findSensorType = sensorTable.find(SensorTypeJson);
++        if (findSensorType == sensorTable.end())
++        {
++            std::cerr << "fail to find match for NVME sensorType: "
++                      << SensorTypeJson << "\n";
++            continue;
++        }
++
++        DeviceDetectInfo deviceDetectInfo;
++        auto findDetectName = baseConfiguration->second.find("DetectName");
++        auto findDetectBus = baseConfiguration->second.find("DetectBus");
++        auto findDetectAddr = baseConfiguration->second.find("DetectAddr");
++        auto findDetectCmd = baseConfiguration->second.find("DetectCmd");
++        auto findDetectBit = baseConfiguration->second.find("DetectBit");
++        if (findDetectName != baseConfiguration->second.end() &&
++            findDetectBus != baseConfiguration->second.end() &&
++            findDetectAddr != baseConfiguration->second.end() &&
++            findDetectCmd != baseConfiguration->second.end() &&
++            findDetectBit != baseConfiguration->second.end())
++        {
++            deviceDetectInfo.needToDetect = true;
++            deviceDetectInfo.name =
++                std::get<std::string>(findDetectName->second);
++            deviceDetectInfo.busId =
++                static_cast<uint8_t>(std::get<uint64_t>(findDetectBus->second));
++            deviceDetectInfo.addr = static_cast<uint8_t>(
++                std::get<uint64_t>(findDetectAddr->second));
++            deviceDetectInfo.cmd =
++                static_cast<uint8_t>(std::get<uint64_t>(findDetectCmd->second));
++            deviceDetectInfo.bit =
++                static_cast<uint8_t>(std::get<uint64_t>(findDetectBit->second));
++        }
++        else
++        {
++            deviceDetectInfo.needToDetect = false;
++        }
++
++        // on rescans, only update sensors we were signaled by
++        auto findSensor = sensors.find(sensorName);
++        if (!firstScan && findSensor != sensors.end())
++        {
++            bool found = false;
++            for (auto it = sensorsChanged->begin(); it != sensorsChanged->end();
++                 it++)
++            {
++                if (boost::ends_with(*it, findSensor->second->name))
++                {
++                    sensorsChanged->erase(it);
++                    findSensor->second = nullptr;
++                    found = true;
++                    break;
++                }
++            }
++            if (!found)
++            {
++                continue;
++            }
++        }
++
++        std::vector<thresholds::Threshold> sensorThresholds;
++        if (!parseThresholdsFromConfig(*sensorData, sensorThresholds))
++        {
++            std::cerr << "error populating thresholds for " << sensorName
++                      << "\n";
++        }
++
++        auto limits = std::make_pair(minReading, maxReading);
++        findLimits(limits, baseConfiguration);
++
++        auto findPowerState = baseConfiguration->second.find("PowerState");
++        PowerState readState = PowerState::on;
++        if (findPowerState != baseConfiguration->second.end())
++        {
++            std::string powerState =
++                std::visit(VariantToStringVisitor(), findPowerState->second);
++            setReadState(powerState, readState);
++        }
++
++        sensors[sensorName] = std::make_unique<NVMESensor>(
++            i2cBus, sensorType, objectServer, dbusConnection, io, sensorName,
++            std::move(sensorThresholds), *interfacePath, findSensorType->first,
++            findSensorType->second, limits.second, limits.first, readState,
++            busId, deviceDetectInfo);
++        sensors[sensorName]->setupRead();
++    }
++}
++
++void propertyInitialize(void)
++{
++    sensorTable = {{"power", "power/"},
++                   {"curr", "current/"},
++                   {"temp", "temperature/"},
++                   {"volt", "voltage/"}};
++}
++
++int main()
++{
++    boost::asio::io_service io;
++    auto systemBus = std::make_shared<sdbusplus::asio::connection>(io);
++    systemBus->request_name("xyz.openbmc_project.NVMESensor");
++    sdbusplus::asio::object_server objectServer(systemBus);
++    boost::container::flat_map<std::string, std::shared_ptr<NVMESensor>>
++        sensors;
++    std::vector<std::unique_ptr<sdbusplus::bus::match::match>> matches;
++    std::shared_ptr<boost::container::flat_set<std::string>> sensorsChanged =
++        std::make_shared<boost::container::flat_set<std::string>>();
++
++    propertyInitialize();
++
++    io.post([&]() {
++        createSensors(io, objectServer, sensors, systemBus, nullptr);
++    });
++
++    boost::asio::steady_timer filterTimer(io);
++    std::function<void(sdbusplus::message::message&)> eventHandler =
++        [&](sdbusplus::message::message& message) {
++            if (message.is_method_error())
++            {
++                std::cerr << "callback method error\n";
++                return;
++            }
++            sensorsChanged->insert(message.get_path());
++            // this implicitly cancels the timer
++            filterTimer.expires_from_now(std::chrono::seconds(1));
++
++            filterTimer.async_wait([&](const boost::system::error_code& ec) {
++                if (ec == boost::asio::error::operation_aborted)
++                {
++                    /* we were canceled*/
++                    return;
++                }
++                else if (ec)
++                {
++                    std::cerr << "timer error\n";
++                    return;
++                }
++                createSensors(io, objectServer, sensors, systemBus,
++                              sensorsChanged);
++            });
++        };
++
++    for (const char* type : sensorTypes)
++    {
++        auto match = std::make_unique<sdbusplus::bus::match::match>(
++            static_cast<sdbusplus::bus::bus&>(*systemBus),
++            "type='signal',member='PropertiesChanged',path_namespace='" +
++                std::string(inventoryPath) + "',arg0namespace='" + type + "'",
++            eventHandler);
++        matches.emplace_back(std::move(match));
++    }
++
++    io.run();
++}
+diff --git a/src/meson.build b/src/meson.build
+index c1f77ca..fed96b7 100644
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -163,7 +163,26 @@ if get_option('nvme').enabled()
+             i2c,
+             sdbusplus,
+             mctp,
+-	],
++        ],
++        implicit_include_directories: false,
++        include_directories: '../include',
++        install: true,
++        link_with: [
++            utils_a,
++            thresholds_a,
++        ],
++    )
++elif get_option('nvme-i2c').enabled()
++    executable(
++        'nvmesensor',
++        'NVMESensorMain.cpp',
++        'NVMESensor.cpp',
++        dependencies: [
++            i2c,
++            sdbusplus,
++            libobmci2c,
++            libobmcdbus
++        ],
+         implicit_include_directories: false,
+         include_directories: '../include',
+         install: true,
+-- 
+2.28.0
+

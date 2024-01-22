@@ -1,0 +1,12 @@
+[Unit]
+Description=Twitter Twitter Leaky Bucket Service
+StopWhenUnneeded=false
+
+[Service]
+Restart=always
+RestartSec=5
+ExecStart=/usr/bin/leaky-bucket
+SyslogIdentifier=leaky-bucket
+
+[Install]
+WantedBy=multi-user.target

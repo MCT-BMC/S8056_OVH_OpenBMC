@@ -1,0 +1,36 @@
+From ba70034882503f2d1935c3b3f885bbb6ba984ab3 Mon Sep 17 00:00:00 2001
+From: OsmondChen <osmond.chen@mic.com.tw>
+Date: Wed, 25 Aug 2021 13:58:18 +0800
+Subject: [PATCH] Fix issue that getting wrong BootNum in getPostCodes().
+
+---
+ src/post_code.cpp | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+ mode change 100644 => 100755 src/post_code.cpp
+
+diff --git a/src/post_code.cpp b/src/post_code.cpp
+old mode 100644
+new mode 100755
+index 31c3e16..ce8e90d
+--- a/src/post_code.cpp
++++ b/src/post_code.cpp
+@@ -45,7 +45,6 @@ std::vector<postcode_t> PostCode::getPostCodes(uint16_t index)
+     else
+     {
+         uint16_t bootNum = getBootNum(index);
+-
+         decltype(postCodes) codes;
+         deserializePostCodes(
+             fs::path(strPostCodeListPath + std::to_string(bootNum)), codes);
+@@ -233,7 +232,7 @@ uint16_t PostCode::getBootNum(const uint16_t index) const
+     }
+     else
+     {
+-        bootNum = currentBootCycleIndex - index + 1;
++        bootNum = index;
+     }
+     return bootNum;
+ }
+-- 
+2.29.0
+

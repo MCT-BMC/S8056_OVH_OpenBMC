@@ -1,0 +1,36 @@
+From f261c3f3e30e454a180b1a31f92ec353aa76da09 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Tue, 9 Aug 2022 11:10:27 +0800
+Subject: [PATCH] nct7904: Setting multi-function for TR1/TR2/TR3
+
+---
+ drivers/hwmon/nct7904.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/drivers/hwmon/nct7904.c b/drivers/hwmon/nct7904.c
+index b1c837f..a81647c 100644
+--- a/drivers/hwmon/nct7904.c
++++ b/drivers/hwmon/nct7904.c
+@@ -1070,12 +1070,19 @@ static int nct7904_probe(struct i2c_client *client)
+ 	if ((ret & 0x02) == 0x02)
+ 		data->tcpu_mask |= 0x10;
+ 
++	/* Mitac: Multi-Function setting for TR1/TR2/TR3. */
++	ret = nct7904_write_reg(data, BANK_0, VT_ADC_MD_REG, 0x3F);
++	if (ret < 0)
++		return ret;
+ 	/* Multi-Function detecting for Volt and TR/TD */
+ 	ret = nct7904_read_reg(data, BANK_0, VT_ADC_MD_REG);
+ 	if (ret < 0)
+ 		return ret;
+ 
+ 	data->temp_mode = 0;
++
++	printk("nct7904_read_reg: VT_ADC_MD_REG[0x%X]\n", ret);
++
+ 	for (i = 0; i < 4; i++) {
+ 		val = (ret >> (i * 2)) & 0x03;
+ 		bit = (1 << i);
+-- 
+2.7.4
+

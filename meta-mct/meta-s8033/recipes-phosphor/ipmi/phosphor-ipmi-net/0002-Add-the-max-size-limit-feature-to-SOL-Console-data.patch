@@ -1,0 +1,39 @@
+From 0d9962b1526defda760b33b7b3fb0f9a32224ed3 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Fri, 16 Oct 2020 14:13:55 +0800
+Subject: [PATCH 2/2] Add the max size limit feature to SOL Console data
+
+---
+ sol/console_buffer.hpp | 6 ++++++
+ 1 file changed, 6 insertions(+)
+ mode change 100644 => 100755 sol/console_buffer.hpp
+
+diff --git a/sol/console_buffer.hpp b/sol/console_buffer.hpp
+old mode 100644
+new mode 100755
+index dbb75c9..d8fa09c
+--- a/sol/console_buffer.hpp
++++ b/sol/console_buffer.hpp
+@@ -11,6 +11,8 @@ namespace sol
+ 
+ using ConsoleBuffer = std::deque<uint8_t>;
+ 
++constexpr auto MAX_CONSOLE_BUFFER_SIZE = 1048576;
++
+ /** @class ConsoleData
+  *
+  *  The console data is the buffer that holds the data that comes from the host
+@@ -51,6 +53,10 @@ class ConsoleData
+     void write(const std::vector<uint8_t>& input)
+     {
+         data.insert(data.end(), input.begin(), input.end());
++        if (data.size() >= MAX_CONSOLE_BUFFER_SIZE)
++        {
++            ConsoleData::erase(MAX_CONSOLE_BUFFER_SIZE/10);
++        }
+     }
+ 
+     /** @brief Erase console buffer.
+-- 
+2.7.4
+

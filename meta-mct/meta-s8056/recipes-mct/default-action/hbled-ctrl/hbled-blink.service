@@ -1,0 +1,14 @@
+[Unit]
+Description=Heart beat LED control
+After=phosphor-ipmi-host.service
+
+[Service]
+Restart=always
+ExecStart=/usr/sbin/hbled-blink.sh
+ExecStop=/usr/bin/env devmem 0x1e6e269C 32 0x80000000
+SyslogIdentifier=hbled-blink
+TimeoutSec=infinity
+
+[Install]
+WantedBy={SYSTEMD_DEFAULT_TARGET}
+

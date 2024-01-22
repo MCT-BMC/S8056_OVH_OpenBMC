@@ -1,0 +1,7 @@
+[Unit]
+Description=Phosphor-ipmi-flash update BIOS2 firmware service
+
+[Service]
+ExecStart=/usr/sbin/bios-update -p /run/initramfs/bios-image -s 1
+ExecStart=rm /run/initramfs/bios-image
+Type=oneshot

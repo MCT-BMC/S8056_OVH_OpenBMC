@@ -1,0 +1,31 @@
+From 1b38e5cf5d8a34e45834bba9e2ef846a5e4dd577 Mon Sep 17 00:00:00 2001
+From: Varun Sampat <vsampat@twitter.com>
+Date: Sat, 30 Nov 2019 16:33:58 -0500
+Subject: [PATCH] FRU state sensor for power cycle SEL
+
+---
+ include/sdrutils.hpp | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/include/sdrutils.hpp b/include/sdrutils.hpp
+index 713e670..21cd3ba 100644
+--- a/include/sdrutils.hpp
++++ b/include/sdrutils.hpp
+@@ -169,6 +169,7 @@ enum class SensorTypeCodes : uint8_t
+     button = 0x14,
+     acpi = 0x22,
+     watchdog2 = 0x23,
++    fru_state = 0x2c,
+ };
+ 
+ const static boost::container::flat_map<const char*, SensorTypeCodes, CmpStr>
+@@ -182,7 +183,8 @@ const static boost::container::flat_map<const char*, SensorTypeCodes, CmpStr>
+                  {"pattern", SensorTypeCodes::other},
+                  {"acpi", SensorTypeCodes::acpi},
+                  {"systemevent", SensorTypeCodes::systemevent},
+-                 {"button", SensorTypeCodes::button}}};
++                 {"button", SensorTypeCodes::button},
++                 {"fru_state", SensorTypeCodes::fru_state}}};
+ 
+ inline static std::string getSensorTypeStringFromPath(const std::string& path)
+ {

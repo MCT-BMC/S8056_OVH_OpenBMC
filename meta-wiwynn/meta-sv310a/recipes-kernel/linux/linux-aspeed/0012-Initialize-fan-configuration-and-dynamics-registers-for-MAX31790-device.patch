@@ -1,0 +1,101 @@
+From 3dcdd62384fd731901433da84d68271b23431d69 Mon Sep 17 00:00:00 2001
+From: Ren <Ren_Chen@wiwynn.com>
+Date: Wed, 16 Sep 2020 10:10:21 +0800
+Subject: [PATCH] Initialize fan configuration and dynamics registers for
+ MAX31790 device
+
+Description:
+- Initialize fan configuration and dynamics registers
+
+Design:
+- Add fanconfig parameter in DTS file
+- Initialize fan configuration register following the setting in DTS file
+- The speed range(fan dynamics register) for the hard code number of tach input
+---
+ drivers/hwmon/max31790.c | 46 ++++++++++++++++++++++++++++++----------
+ 1 file changed, 35 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/hwmon/max31790.c b/drivers/hwmon/max31790.c
+index 86e6c71db685..4dd96b59958f 100644
+--- a/drivers/hwmon/max31790.c
++++ b/drivers/hwmon/max31790.c
+@@ -170,7 +170,7 @@ static int max31790_read_fan(struct device *dev, u32 attr, int channel,
+ 
+ 	switch (attr) {
+ 	case hwmon_fan_input:
+-		sr = get_tach_period(data->fan_dynamics[channel]);
++		sr = get_tach_period(data->fan_dynamics[channel>NR_CHANNEL?(channel-NR_CHANNEL):channel]);
+ 		rpm = RPM_FROM_REG(data->tach[channel], sr);
+ 		*val = rpm;
+ 		return 0;
+@@ -427,17 +427,29 @@ static const struct hwmon_chip_info max31790_chip_info = {
+ };
+ 
+ static int max31790_init_client(struct i2c_client *client,
+-				struct max31790_data *data)
++				struct max31790_data *data,
++				u8 *fanconfig)
+ {
+-	int i, rv;
++	int i, rv, err;
+ 
+ 	for (i = 0; i < NR_CHANNEL; i++) {
+-		rv = i2c_smbus_read_byte_data(client,
+-				MAX31790_REG_FAN_CONFIG(i));
+-		if (rv < 0)
+-			return rv;
+-		data->fan_config[i] = rv;
+-
++		if(fanconfig == NULL)
++		{
++			rv = i2c_smbus_read_byte_data(client,
++					MAX31790_REG_FAN_CONFIG(i));
++			if (rv < 0)
++				return rv;
++			data->fan_config[i] = rv;
++		}
++		else
++		{
++			data->fan_config[i] = fanconfig[i];
++			err = i2c_smbus_write_byte_data(client,
++                                        MAX31790_REG_FAN_CONFIG(i),
++                                        data->fan_config[i]);
++			if (err < 0)
++				return err;
++		}
+ 		rv = i2c_smbus_read_byte_data(client,
+ 				MAX31790_REG_FAN_DYNAMICS(i));
+ 		if (rv < 0)
+@@ -454,7 +466,9 @@ static int max31790_probe(struct i2c_client *client)
+ 	struct device *dev = &client->dev;
+ 	struct max31790_data *data;
+ 	struct device *hwmon_dev;
+-	int err;
++	struct device_node *np = dev->of_node;
++	int err, ret;
++	u8 fanconfig[NR_CHANNEL];
+ 
+ 	if (!i2c_check_functionality(adapter,
+ 			I2C_FUNC_SMBUS_BYTE_DATA | I2C_FUNC_SMBUS_WORD_DATA))
+@@ -470,7 +484,17 @@ static int max31790_probe(struct i2c_client *client)
+ 	/*
+ 	 * Initialize the max31790 chip
+ 	 */
+-	err = max31790_init_client(client, data);
++	ret = of_property_read_u8_array(np, "fanconfig", fanconfig, NR_CHANNEL);
++	if(ret < 0)
++	{
++		dev_info(dev, "Without setting fanconfig for fan controller in DTS file.\n");
++		err = max31790_init_client(client, data, NULL);
++	}
++	else
++	{
++		err = max31790_init_client(client, data, fanconfig);
++	}
++
+ 	if (err)
+ 		return err;
+ 
+-- 
+2.28.0
+

@@ -1,0 +1,83 @@
+From 9fd1ebe5027357f6bfaf4ed205b3d83a2cac5942 Mon Sep 17 00:00:00 2001
+From: JarvisWang <Jarvis_Wang@wiwynn.com>
+Date: Wed, 3 Mar 2021 10:20:59 +0800
+Subject: [PATCH] Support for AMI BIOS to clear cmos
+
+---
+ chassishandler.cpp | 11 ++++++-----
+ chassishandler.hpp |  1 +
+ 2 files changed, 7 insertions(+), 5 deletions(-)
+
+diff --git a/chassishandler.cpp b/chassishandler.cpp
+index 0bc0fa4d..0926b54f 100644
+--- a/chassishandler.cpp
++++ b/chassishandler.cpp
+@@ -44,6 +44,7 @@ static constexpr uint8_t setParmBootFlagsPermanent = 0x40;
+ static constexpr uint8_t setParmBootFlagsValidOneTime = 0x80;
+ static constexpr uint8_t setParmBootFlagsValidPermanent = 0xC0;
+ static constexpr uint8_t setParmBootFlagsBootTypeUefi = 0x20;
++
+ // Set In Progress
+ static constexpr uint8_t setParmSetStatusComplete = 0x00;
+ static constexpr uint8_t setParmSetStatusInProgress = 0x01;
+@@ -76,6 +77,7 @@ static constexpr size_t forceIdentifyPos = 1;
+ static bool uefiboot = true;
+ static bool setInProgress = false;
+ static uint8_t bootInitiatorAckData = 0xff;
++static bool biosCMOSclear = false;
+ 
+ namespace ipmi
+ {
+@@ -1743,7 +1745,7 @@ ipmi::RspType<ipmi::message::Payload>
+         return ipmi::responseInvalidFieldRequest();
+     }
+ 
+-    constexpr uint4_t version = 0x01;
++    constexpr uint4_t version = setParmVersion;
+     ipmi::message::Payload response;
+     response.pack(version, uint4_t{});
+     using namespace boot_options;
+@@ -1841,9 +1843,8 @@ ipmi::RspType<ipmi::message::Payload>
+                 bootOptionParam |= setParmBootFlagsBootTypeUefi;
+             }
+ 
+-
+             response.pack(bootOptionParameter, reserved1, bootOptionParam,
+-                          uint2_t{}, uint4_t{bootOption}, uint2_t{}, uint8_t{},
++                          uint2_t{}, uint4_t{bootOption}, false, biosCMOSclear, uint8_t{},
+                           uint8_t{}, uint8_t{});
+             return ipmi::responseSuccess(std::move(response));
+         }
+@@ -1930,8 +1931,7 @@ ipmi::RspType<> ipmiChassisSetSysBootOptions(ipmi::Context::ptr ctx,
+      * Parameter #5 means boot flags. Please refer to 28.13 of ipmi doc.
+      * This is the only parameter used by petitboot.
+      */
+-    else if (parameterSelector ==
+-             static_cast<uint7_t>(BootOptionParameter::bootFlags))
++    else if (parameterSelector == static_cast<uint7_t>(BootOptionParameter::bootFlags))
+     {
+         uint5_t rsvd;
+         bool validFlag;
+@@ -1972,6 +1972,7 @@ ipmi::RspType<> ipmiChassisSetSysBootOptions(ipmi::Context::ptr ctx,
+         if (validFlag)
+         {
+             uefiboot = biosBootType;
++            biosCMOSclear = cmosClear;
+         }
+ 
+         try
+diff --git a/chassishandler.hpp b/chassishandler.hpp
+index b886b27c..d80df136 100644
+--- a/chassishandler.hpp
++++ b/chassishandler.hpp
+@@ -54,6 +54,7 @@ enum class BootOptionParameter : size_t
+ 
+ enum class BootOptionResponseSize : size_t
+ {
++    setInProgress = 1,
+     bootFlags = 5,
+     opalNetworkSettings = 50
+ };
+-- 
+2.28.0
+

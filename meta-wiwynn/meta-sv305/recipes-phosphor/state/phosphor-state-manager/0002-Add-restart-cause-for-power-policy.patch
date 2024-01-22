@@ -1,0 +1,63 @@
+From f26ed7b4a94d57dd92fc59465192b8227f9a514c Mon Sep 17 00:00:00 2001
+From: Eli Huang <Eli_Huang@wiwynn.com>
+Date: Mon, 19 Apr 2021 14:06:59 +0800
+Subject: [PATCH] Add restart cause for power policy
+
+---
+ discover_system_state.cpp | 19 +++++++++++++++++++
+ 1 file changed, 19 insertions(+)
+
+diff --git a/discover_system_state.cpp b/discover_system_state.cpp
+index 9a6fe1b..9ad6a16 100644
+--- a/discover_system_state.cpp
++++ b/discover_system_state.cpp
+@@ -12,6 +12,7 @@
+ #include <phosphor-logging/log.hpp>
+ #include <sdbusplus/exception.hpp>
+ #include <sdbusplus/server.hpp>
++#include <xyz/openbmc_project/State/Host/server.hpp>
+ 
+ #include <iostream>
+ #include <map>
+@@ -36,6 +37,11 @@ constexpr auto MAPPER_INTERFACE = "xyz.openbmc_project.ObjectMapper";
+ 
+ constexpr auto PROPERTY_INTERFACE = "org.freedesktop.DBus.Properties";
+ 
++constexpr auto RESTART_CAUSE_SERVICE = "xyz.openbmc_project.State.Host";
++constexpr auto RESTART_CAUSE_OBJ_PATH = "/xyz/openbmc_project/state/host0";
++constexpr auto RESTART_CAUSE_INTERFACE = "xyz.openbmc_project.State.Host";
++constexpr auto RESTART_CAUSE_PROPERTY = "RestartCause";
++
+ std::string getService(sdbusplus::bus::bus& bus, std::string path,
+                        std::string interface)
+ {
+@@ -250,6 +256,12 @@ int main(int argc, char** argv)
+             uint32_t delayTime = getRandomDelayTime(bus, settings);
+             std::this_thread::sleep_for(std::chrono::seconds(delayTime));
+ 
++            std::string restartCauseStr =
++                server::Host::convertRestartCauseToString(
++                    server::Host::RestartCause::PowerPolicyAlwaysOn);
++            setProperty(bus, RESTART_CAUSE_OBJ_PATH, RESTART_CAUSE_INTERFACE,
++                        RESTART_CAUSE_PROPERTY, restartCauseStr);
++
+             setProperty(bus, hostPath, HOST_BUSNAME, "RequestedHostTransition",
+                         convertForMessage(server::Host::Transition::On));
+         }
+@@ -267,6 +279,13 @@ int main(int argc, char** argv)
+             {
+                 uint32_t delayTime = getRandomDelayTime(bus, settings);
+                 std::this_thread::sleep_for(std::chrono::seconds(delayTime));
++
++                std::string restartCauseStr =
++                    server::Host::convertRestartCauseToString(
++                        server::Host::RestartCause::PowerPolicyPreviousState);
++                setProperty(bus, RESTART_CAUSE_OBJ_PATH,
++                            RESTART_CAUSE_INTERFACE, RESTART_CAUSE_PROPERTY,
++                            restartCauseStr);
+             }
+ 
+             setProperty(bus, hostPath, HOST_BUSNAME, "RequestedHostTransition",
+-- 
+2.28.0
+

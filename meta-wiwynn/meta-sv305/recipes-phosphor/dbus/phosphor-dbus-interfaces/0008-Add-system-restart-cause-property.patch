@@ -1,0 +1,51 @@
+From 54283692388cbff3692b88a1661c7a804886bdfe Mon Sep 17 00:00:00 2001
+From: Ren_Chen <Ren_Chen@wiwynn.com>
+Date: Tue, 22 Jun 2021 14:09:25 +0800
+Subject: [PATCH 5/5] Add system restart cause property
+
+---
+ .../openbmc_project/State/Host.interface.yaml    | 16 ++++++++++++++--
+ 1 file changed, 14 insertions(+), 2 deletions(-)
+
+diff --git a/yaml/xyz/openbmc_project/State/Host.interface.yaml b/yaml/xyz/openbmc_project/State/Host.interface.yaml
+index ba0c570..1ef3cfb 100644
+--- a/yaml/xyz/openbmc_project/State/Host.interface.yaml
++++ b/yaml/xyz/openbmc_project/State/Host.interface.yaml
+@@ -23,6 +23,12 @@ properties:
+       description: >
+           A property to define restart cause of a host.
+ 
++    - name: isNoise
++      type: boolean
++      default: false
++      description: >
++        Check the noise to skip to record SEL.
++
+ enumerations:
+     - name: Transition
+       description: >
+@@ -91,9 +97,9 @@ enumerations:
+         - name: 'Unknown'
+           description: >
+             Reason Unknown
+-        - name: 'RemoteCommand'
++        - name: 'IpmiPowerOn'
+           description: >
+-            Remote command issued
++            Ipmi power on
+         - name: 'ResetButton'
+           description: >
+             Reset button pressed
+@@ -112,3 +118,9 @@ enumerations:
+         - name: 'SoftReset'
+           description: >
+             Soft reset of Host
++        - name: 'IpmiPowerCycle'
++          description: >
++            Ipmi power cycle
++        - name: 'IpmiPowerReset'
++          description: >
++            Ipmi power Reset
+-- 
+2.28.0
+

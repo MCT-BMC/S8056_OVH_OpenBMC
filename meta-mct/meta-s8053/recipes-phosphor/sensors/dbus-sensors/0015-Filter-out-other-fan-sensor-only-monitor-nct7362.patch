@@ -1,0 +1,128 @@
+From 66e679adc8307969112b136a9f6ac2dfdfa6e4ee Mon Sep 17 00:00:00 2001
+From: "jocelyn.chou" <jocelyn.chou@mic.com.tw>
+Date: Fri, 5 Aug 2022 07:06:38 +0800
+Subject: [PATCH] Filter out other fan sensor only monitor nct7362.
+
+---
+ src/FanMain.cpp    | 22 ++++++++++++++++++++++
+ src/TachSensor.cpp | 23 +++++------------------
+ 2 files changed, 27 insertions(+), 18 deletions(-)
+
+diff --git a/src/FanMain.cpp b/src/FanMain.cpp
+index a00d9f2..8ced281 100755
+--- a/src/FanMain.cpp
++++ b/src/FanMain.cpp
+@@ -65,6 +65,24 @@ static std::regex inputRegex(R"(fan(\d+)_input)");
+ // todo: power supply fan redundancy
+ std::optional<RedundancySensor> systemRedundancy;
+ 
++// filter out Fan from any other Fan sensor
++bool isFan(const fs::path& parentPath)
++{
++    fs::path namePath = parentPath / "name";
++
++    std::ifstream nameFile(namePath);
++    if (!nameFile.good())
++    {
++        std::cerr << "Failure reading " << namePath.string() << "\n";
++        return false;
++    }
++
++    std::string name;
++    std::getline(nameFile, name);
++
++    return name == "nct7362";
++}
++
+ FanTypes getFanType(const fs::path& parentPath)
+ {
+     fs::path linkPath = parentPath / "device";
+@@ -176,6 +194,10 @@ void createSensors(
+             // configuration
+             for (const auto& path : paths)
+             {
++                if (!isFan(path.parent_path()))
++                {
++                    continue;
++                }
+                 std::smatch match;
+                 std::string pathStr = path.string();
+ 
+diff --git a/src/TachSensor.cpp b/src/TachSensor.cpp
+index 1856884..be3238a 100755
+--- a/src/TachSensor.cpp
++++ b/src/TachSensor.cpp
+@@ -138,7 +138,6 @@ void TachSensor::setupRead(void)
+ 
+ void TachSensor::handleResponse(const boost::system::error_code& err)
+ {
+-    std::weak_ptr<TachSensor> weakRef = weak_from_this();
+ 
+     if (err == boost::system::errc::bad_file_descriptor)
+     {
+@@ -167,13 +166,12 @@ void TachSensor::handleResponse(const boost::system::error_code& err)
+                 std::getline(responseStream, response);
+                 rawValue = std::stod(response);
+                 responseStream.clear();
++
+                 double averageCount = 0;
+                 double average =0;
+-
+                 if((rawValue == 0 && checkFanPresence()) || !readingStateGood())
+                 {
+                     markAvailable(false);
+-
+                     responseStream.clear();
+                     inputDev.close();
+                     int fd = open(path.c_str(), O_RDONLY);
+@@ -183,17 +181,12 @@ void TachSensor::handleResponse(const boost::system::error_code& err)
+                     }
+                     inputDev.assign(fd);
+                     waitTimer.expires_from_now(boost::asio::chrono::milliseconds(pollTime));
+-                    waitTimer.async_wait([weakRef](const boost::system::error_code& ec) {
++                    waitTimer.async_wait([&](const boost::system::error_code& ec) {
+                         if (ec == boost::asio::error::operation_aborted)
+                         {
+                             return; // we're being canceled
+                         }
+-                        std::shared_ptr<TachSensor> self = weakRef.lock();
+-                        if (!self)
+-                        {
+-                            return;
+-                        }
+-                        self->setupRead();
++                        setupRead();
+                     });
+                     return;
+                 }
+@@ -214,7 +207,6 @@ void TachSensor::handleResponse(const boost::system::error_code& err)
+                     average = average/averageCount;
+                 }
+                 updateValue(average);
+-
+             }
+             catch (const std::invalid_argument&)
+             {
+@@ -239,17 +231,12 @@ void TachSensor::handleResponse(const boost::system::error_code& err)
+     }
+     inputDev.assign(fd);
+     waitTimer.expires_from_now(boost::asio::chrono::milliseconds(pollTime));
+-    waitTimer.async_wait([weakRef](const boost::system::error_code& ec) {
++    waitTimer.async_wait([&](const boost::system::error_code& ec) {
+         if (ec == boost::asio::error::operation_aborted)
+         {
+             return; // we're being canceled
+         }
+-        std::shared_ptr<TachSensor> self = weakRef.lock();
+-        if (!self)
+-        {
+-            return;
+-        }
+-        self->setupRead();
++        setupRead();
+     });
+ }
+ 
+-- 
+2.7.4
+

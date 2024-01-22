@@ -1,0 +1,4 @@
+[Unit]
+Description=Chassis (Power On)
+RefuseManualStart=no
+RefuseManualStop=yes

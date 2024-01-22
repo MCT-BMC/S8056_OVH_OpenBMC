@@ -1,0 +1,96 @@
+From de9767e7481d3e124511ce102af951dd22d86ea1 Mon Sep 17 00:00:00 2001
+From: Osmond Chen <osmond.chen@mic.com.tw>
+Date: Wed, 16 Mar 2022 09:35:45 +0800
+Subject: [PATCH 1/5] Moidfy to support IPMI and SEL
+
+---
+ healthMonitor.cpp | 21 ++++++++++++++-------
+ 1 file changed, 14 insertions(+), 7 deletions(-)
+ mode change 100644 => 100755 healthMonitor.cpp
+
+diff --git a/healthMonitor.cpp b/healthMonitor.cpp
+old mode 100644
+new mode 100755
+index 9024048..b2424a3
+--- a/healthMonitor.cpp
++++ b/healthMonitor.cpp
+@@ -235,15 +235,17 @@ constexpr auto storage = "Storage";
+ constexpr auto inode = "Inode";
+ /** Map of read function for each health sensors supported */
+ const std::map<std::string, std::function<double(std::string path)>>
+-    readSensors = {{"CPU", readCPUUtilization},
+-                   {"Memory", readMemoryUtilization},
+-                   {storage, readStorageUtilization},
++    readSensors = {{"BMC_CPU_UTIL", readCPUUtilization},
++                   {"BMC_Memory_UTIL", readMemoryUtilization},
++                   {"BMC_Storage_UTIL", readStorageUtilization},
+                    {inode, readInodeUtilization}};
+ 
+ void HealthSensor::setSensorThreshold(double criticalHigh, double warningHigh)
+ {
+     CriticalInterface::criticalHigh(criticalHigh);
+     WarningInterface::warningHigh(warningHigh);
++    ValueIface::maxValue(100);
++    ValueIface::minValue(0);
+ }
+ 
+ void HealthSensor::setSensorValueToDbus(const double value)
+@@ -312,12 +314,14 @@ void HealthSensor::initHealthSensor(const std::vector<std::string>& chassisIds)
+ 
+ void HealthSensor::checkSensorThreshold(const double value)
+ {
+-    if (std::isfinite(sensorConfig.criticalHigh) &&
+-        (value > sensorConfig.criticalHigh))
++    //when checking Threshold, use dbus data to replace config data
++    if (sensorConfig.criticalHigh && (value > CriticalInterface::criticalHigh()))
+     {
+         if (!CriticalInterface::criticalAlarmHigh())
+         {
+             CriticalInterface::criticalAlarmHigh(true);
++            //signal SEL service
++            CriticalInterface::criticalHighAlarmAsserted(value);
+             if (sensorConfig.criticalLog)
+                 error(
+                     "ASSERT: sensor {SENSOR} is above the upper threshold critical high",
+@@ -329,6 +333,7 @@ void HealthSensor::checkSensorThreshold(const double value)
+     if (CriticalInterface::criticalAlarmHigh())
+     {
+         CriticalInterface::criticalAlarmHigh(false);
++        CriticalInterface::criticalHighAlarmDeasserted(value);
+         if (sensorConfig.criticalLog)
+             info(
+                 "DEASSERT: sensor {SENSOR} is under the upper threshold critical high",
+@@ -336,11 +341,12 @@ void HealthSensor::checkSensorThreshold(const double value)
+     }
+ 
+     if (std::isfinite(sensorConfig.warningHigh) &&
+-        (value > sensorConfig.warningHigh))
++        (value > WarningInterface::warningHigh()))
+     {
+         if (!WarningInterface::warningAlarmHigh())
+         {
+             WarningInterface::warningAlarmHigh(true);
++            WarningInterface::warningHighAlarmAsserted(value);
+             if (sensorConfig.warningLog)
+                 error(
+                     "ASSERT: sensor {SENSOR} is above the upper threshold warning high",
+@@ -352,6 +358,7 @@ void HealthSensor::checkSensorThreshold(const double value)
+     if (WarningInterface::warningAlarmHigh())
+     {
+         WarningInterface::warningAlarmHigh(false);
++        WarningInterface::warningHighAlarmDeasserted(value);
+         if (sensorConfig.warningLog)
+             info(
+                 "DEASSERT: sensor {SENSOR} is under the upper threshold warning high",
+@@ -609,7 +616,7 @@ int main()
+     healthMon = std::make_shared<phosphor::health::HealthMon>(*conn);
+ 
+     // Add object manager to sensor node
+-    sdbusplus::server::manager::manager objManager(*conn, SENSOR_OBJPATH);
++    sdbusplus::server::manager::manager objManager(*conn, "/");
+ 
+     sdbusplus::asio::sd_event_wrapper sdEvents(io);
+ 
+-- 
+2.7.4
+

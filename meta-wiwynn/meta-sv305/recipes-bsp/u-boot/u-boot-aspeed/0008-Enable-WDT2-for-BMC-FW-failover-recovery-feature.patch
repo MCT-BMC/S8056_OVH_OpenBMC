@@ -1,0 +1,166 @@
+From 8bda908ed228eaa482d5ddb891189a370c22640b Mon Sep 17 00:00:00 2001
+From: Eli Huang <Eli_Huang@wiwynn.com>
+Date: Thu, 31 Dec 2020 10:59:11 +0800
+Subject: [PATCH] Enable WDT2 for BMC FW failover recovery feature
+
+---
+ board/aspeed/ast-g5/ast-g5.c | 122 ++++++++++++++++++++++++++++++++++-
+ 1 file changed, 121 insertions(+), 1 deletion(-)
+
+diff --git a/board/aspeed/ast-g5/ast-g5.c b/board/aspeed/ast-g5/ast-g5.c
+index 87e90e982d..b16521c12c 100644
+--- a/board/aspeed/ast-g5/ast-g5.c
++++ b/board/aspeed/ast-g5/ast-g5.c
+@@ -62,6 +62,19 @@ DECLARE_GLOBAL_DATA_PTR;
+ #define BMC_LED_PWR_GRN           31
+ #define BMC_LED_PWR_AMBER         5
+ 
++#define SRAM_FAIL_OVER_STR_BASE   0x1e723000
++#define FAIL_OVER_STR_OFFSET_1    0x08
++#define FAIL_OVER_STR_OFFSET_2    0x0c
++#define STRING_STAR               0x53544152
++#define STRING_T_1SUM             0x545F31E2
++#define STRING_T_2SUM             0x545F32E1
++#define STRING_T_FSUM             0x545F46CD
++
++#define WDT_RELOAD_OFFSET         0x4
++#define WDT_RESTART_OFFSET        0x8
++#define WDT_CONTROL_OFFSET        0xc
++
++
+ /* --------------------------------------------------------------------
+  * @fn Chip_Register_Init
+  * @brief Initialize the BMC chip registers if needed
+@@ -249,6 +262,113 @@ void Set_Default_Status_LED()
+     *(volatile ulong *) (GPIO_REG_BASE + GPIO_MNOP_DIR) = ast_reg32;
+ }
+  
++/*
++    1. Get the FW fail-over status from SRAM.
++    2. Decide the WDT2 Control Reg. setting based on the status :
++    Setting WDT control register :
++        bit 0: WDT enable signal
++        bit 1: Reset system after timeout
++        bit 7: Enable second boot code
++*/
++ulong Get_Failover_WDT_Ctrl_Config()
++{
++    ulong reg_addr = 0;
++    ulong temp = 0;
++    ulong wdt_config = 0x00;
++    ulong str1_value = 0x0;
++    ulong str2_value = 0x0;
++
++    // Read WDT control register
++    reg_addr = AST_WDT2_BASE + WDT_CONTROL_OFFSET;
++    wdt_config = *((volatile ulong *) reg_addr);
++
++    // Read the fail-over strings from SRAM.
++    reg_addr = SRAM_FAIL_OVER_STR_BASE + FAIL_OVER_STR_OFFSET_1;
++    str1_value = *((volatile ulong *) reg_addr);
++    reg_addr = SRAM_FAIL_OVER_STR_BASE + FAIL_OVER_STR_OFFSET_2;
++    str2_value = *((volatile ulong *) reg_addr);
++
++    if (str1_value == STRING_STAR &&
++        str2_value == STRING_T_FSUM)        // Failover string: "START_F"
++    {
++        // The backup BMC was corrupted as well.
++        // Stop WDT2, stay in the primary one.
++        wdt_config &= ~(0x83);
++        wdt_config |= 0x10;
++    }
++    else if (str1_value == STRING_STAR &&
++             str2_value == STRING_T_1SUM)   // Failover string: "START_F"
++    {
++        // BMC boot up failed at the first time.
++        // If fails again, reboot to the backup BMC.
++        wdt_config |= 0x93;
++
++        // Write "START_2" to SRAM
++        temp = STRING_T_2SUM;
++        reg_addr = SRAM_FAIL_OVER_STR_BASE + FAIL_OVER_STR_OFFSET_2;
++        *((volatile ulong *) reg_addr) = temp;
++    }
++    else if (str1_value == STRING_STAR &&
++             str2_value == STRING_T_2SUM)   // Failover string: "START_F"
++    {
++        // Primary BMC boot up failed for twice.
++        // If backup BMC boot up fails, reboot to the primary BMC.
++        wdt_config |= 0x93;
++
++        // Write "START_F" to SRAM
++        temp = STRING_T_FSUM;
++        reg_addr = SRAM_FAIL_OVER_STR_BASE + FAIL_OVER_STR_OFFSET_2;
++        *((volatile ulong *) reg_addr) = temp;
++    }
++    else // BMC boot at the first time
++    {
++        // If primary BMC boot up fails, reboot to the same BMC.
++        wdt_config |= 0x13;
++        wdt_config &= ~(0x80);
++
++        // Write "START_1" to SRAM
++        temp = STRING_STAR;
++        reg_addr = SRAM_FAIL_OVER_STR_BASE + FAIL_OVER_STR_OFFSET_1;
++        *((volatile ulong *) reg_addr) = temp;
++
++        temp = STRING_T_1SUM;
++        reg_addr = SRAM_FAIL_OVER_STR_BASE + FAIL_OVER_STR_OFFSET_2;
++        *((volatile ulong *) reg_addr) = temp;
++    }
++    return wdt_config;
++}
++
++void Set_Failover_WDT()
++{
++    ulong reg_addr = 0;
++    ulong temp = 0;
++
++    // Disable WDT2
++    reg_addr = AST_WDT2_BASE + WDT_CONTROL_OFFSET;
++    temp = *((volatile ulong *) reg_addr);
++    temp &= ~(0x3);
++    *((volatile ulong *) reg_addr) = temp;
++
++    // Set to 5 minutes
++    reg_addr = AST_WDT2_BASE + WDT_RELOAD_OFFSET;
++    temp = 0x11E1A300;
++    *((volatile ulong *) reg_addr) = temp;
++
++    // Reload WDT2 counter value
++    reg_addr = AST_WDT2_BASE + WDT_RESTART_OFFSET;
++    temp = 0x4755; // reload & restart
++    *((volatile ulong *) reg_addr) = temp;
++
++    // Start WDT2 for FW fail-over recovery
++    reg_addr = AST_WDT2_BASE + WDT_CONTROL_OFFSET;
++    temp = *((volatile ulong *) reg_addr);
++    temp |= 0x2; // Bit 1 to high (reset system after timeout)
++    *((volatile ulong *) reg_addr) = temp;
++
++    temp = Get_Failover_WDT_Ctrl_Config();
++    *((volatile ulong *) reg_addr) = temp;
++}
++
+ /*--------------------------------------------------------------------
+  * @fn Set_Default_Power_LED
+  * @brief Set the BMC power LED control pin to low (ON) as default.
+@@ -281,7 +401,6 @@ void Set_Default_Power_LED()
+     *((volatile ulong *) reg_addr) = temp;
+ }
+ 
+-
+ int board_init(void)
+ {
+ 	gd->bd->bi_boot_params = CONFIG_SYS_SDRAM_BASE + 0x100;
+@@ -293,6 +412,7 @@ int board_init(void)
+ 	SCU_Init();
+         Set_Default_Status_LED();
+         Set_Default_Power_LED();
++        Set_Failover_WDT();
+ 
+ 	return 0;
+ }
+-- 
+2.28.0
+

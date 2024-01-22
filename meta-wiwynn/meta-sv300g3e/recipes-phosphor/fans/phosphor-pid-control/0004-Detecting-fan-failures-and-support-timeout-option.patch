@@ -1,0 +1,629 @@
+From 03948866ea5e8ab8224ec32621e2e6e839bf5eb0 Mon Sep 17 00:00:00 2001
+From: JPChang <JP_Chang@wiwynn.com>
+Date: Tue, 10 Dec 2019 11:32:56 +0800
+Subject: [PATCH] Detecting fan failures and support timeout option
+
+Description
+- Modify failsafe storage variables.
+- Support disable sensors timeout.
+- Support project define the maximum number of fan redundancy.
+- Modify debug mode dbus register process.
+- Detect fan failures.
+---
+ configure.ac              |  16 ++++
+ main.cpp                  |  23 +++---
+ pid/fancontroller.cpp     |  14 ++++
+ pid/pidcontroller.cpp     |   2 -
+ pid/pidcontroller.hpp     |  10 +++
+ pid/pidloop.cpp           | 157 ++++++++++++++++++++++----------------
+ pid/pidloop.hpp           |   2 +-
+ pid/thermalcontroller.cpp |   3 +
+ pid/zone.cpp              | 126 ++++++++++++++++++++++++++----
+ pid/zone.hpp              |  11 ++-
+ 10 files changed, 267 insertions(+), 97 deletions(-)
+
+diff --git a/configure.ac b/configure.ac
+index bfc6917..07e7287 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -209,6 +209,22 @@ AS_IF([test "x$enable_configure_dbus" = "xyes"],
+     [AC_DEFINE(CONFIGURE_DBUS, [0], [Do not read configuration from D-Bus.])]
+ )
+ 
++AC_ARG_ENABLE([not-sensors-timeout],
++    AS_HELP_STRING(
++        [--enable-not-sensors-timeout], [Disable sensor timeout checking mechanism.]
++    )
++)
++AS_IF([test "x$enable_not_sensors_timeout" = "xyes"],
++    [AC_DEFINE(DISABLE_SENSORS_TIMEOUT, [1], [Disable sensors timeout when updating values from D-Bus.])],
++    [AC_DEFINE(DISABLE_SENSORS_TIMEOUT, [0], [Ensable sensors timeout when updating values from D-Bus.])]
++)
++
++AC_ARG_VAR(MAX_FAN_REDUNDANCY,
++           [The maximum number of fan redundancy in the project(default = 1). If set to 0, process will not enter failsafe mode beacause of fan failures.])
++AS_IF([test "x$MAX_FAN_REDUNDANCY" == "x"], [MAX_FAN_REDUNDANCY=1])
++AC_DEFINE_UNQUOTED([MAX_FAN_REDUNDANCY], [$MAX_FAN_REDUNDANCY],
++                   [The maximum number of fan redundancy in the project(default = 1). If set to 0, process will not enter failsafe mode beacause of fan failures.])
++
+ AC_ARG_VAR(SYSTEMD_TARGET, "Target for starting this service")
+ AS_IF([test "x$SYSTEMD_TARGET" == "x"], [SYSTEMD_TARGET="multi-user.target"])
+ 
+diff --git a/main.cpp b/main.cpp
+index e0ac2f0..8bc83e0 100644
+--- a/main.cpp
++++ b/main.cpp
+@@ -75,7 +75,6 @@ static sdbusplus::asio::connection
+     passiveBus(io, sdbusplus::bus::new_system().release());
+ 
+ /* Setup debug/manual mode dbus objectPath/interface name. */
+-static constexpr auto serviceName = "xyz.openbmc_project.State.FanCtrl";
+ static constexpr auto debugModeObjPath = "/xyz/openbmc_project/mode/debug";
+ static constexpr auto manualModeObjPath = "/xyz/openbmc_project/mode/manual";
+ static constexpr auto debugModeIntfName =
+@@ -91,25 +90,24 @@ void registerSignalHandler(
+ 
+     memset(signalSetting, 0, sizeof(signalSetting));
+     snprintf(signalSetting, sizeof(signalSetting),
+-             "type='signal',sender='%s',interface='%s',member='Open',path='%s'",
+-             serviceName, debugModeIntfName, debugModeObjPath);
++             "type='signal',interface='%s',member='Open',path='%s'",
++             debugModeIntfName, debugModeObjPath);
+     static sdbusplus::bus::match::match openDebugMode(
+         modeControlBus, signalSetting,
+         [](sdbusplus::message::message& message) { debugModeEnabled = true; });
+ 
+     memset(signalSetting, 0, sizeof(signalSetting));
+-    snprintf(
+-        signalSetting, sizeof(signalSetting),
+-        "type='signal',sender='%s',interface='%s',member='Close',path='%s'",
+-        serviceName, debugModeIntfName, debugModeObjPath);
++    snprintf(signalSetting, sizeof(signalSetting),
++        "type='signal',interface='%s',member='Close',path='%s'",
++        debugModeIntfName, debugModeObjPath);
+     static sdbusplus::bus::match::match closeDebugMode(
+         modeControlBus, signalSetting,
+         [](sdbusplus::message::message& message) { debugModeEnabled = false; });
+ 
+     memset(signalSetting, 0, sizeof(signalSetting));
+     snprintf(signalSetting, sizeof(signalSetting),
+-             "type='signal',sender='%s',interface='%s',member='Open',path='%s'",
+-             serviceName, manualModeIntfName, manualModeObjPath);
++             "type='signal',interface='%s',member='Open',path='%s'",
++             manualModeIntfName, manualModeObjPath);
+     static sdbusplus::bus::match::match openManualMode(
+         modeControlBus, signalSetting,
+         [&zones](sdbusplus::message::message& message) {
+@@ -140,10 +138,9 @@ void registerSignalHandler(
+         });
+ 
+     memset(signalSetting, 0, sizeof(signalSetting));
+-    snprintf(
+-        signalSetting, sizeof(signalSetting),
+-        "type='signal',sender='%s',interface='%s',member='Close',path='%s'",
+-        serviceName, manualModeIntfName, manualModeObjPath);
++    snprintf(signalSetting, sizeof(signalSetting),
++        "type='signal',interface='%s',member='Close',path='%s'",
++        manualModeIntfName, manualModeObjPath);
+     static sdbusplus::bus::match::match closeManualMode(
+         modeControlBus, signalSetting,
+         [&zones](sdbusplus::message::message& message) {
+diff --git a/pid/fancontroller.cpp b/pid/fancontroller.cpp
+index 09c496c..ec69882 100644
+--- a/pid/fancontroller.cpp
++++ b/pid/fancontroller.cpp
+@@ -137,6 +137,20 @@ void FanController::outputProc(double value)
+         }
+     }
+ 
++    /* If current output pwm is equal to last output pwm
++     * Set fan failure checking flag to true
++     * Going to do fan failure checking process
++     */
++    if (percent == getLastOutput())
++    {
++        _owner->setCheckFanFailuresFlag(true);
++    }
++    else
++    {
++        _owner->setCheckFanFailuresFlag(false);
++        setLastOutput(percent);
++    }
++
+     // value and kFanFailSafeDutyCycle are 10 for 10% so let's fix that.
+     percent /= 100;
+ 
+diff --git a/pid/pidcontroller.cpp b/pid/pidcontroller.cpp
+index 08c41c4..d62bc78 100644
+--- a/pid/pidcontroller.cpp
++++ b/pid/pidcontroller.cpp
+@@ -79,8 +79,6 @@ void PIDController::process(void)
+         }
+     }
+ 
+-    lastOutput = output;
+-
+     // Output new value
+     outputProc(output);
+ 
+diff --git a/pid/pidcontroller.hpp b/pid/pidcontroller.hpp
+index c72bedf..d37c3bb 100644
+--- a/pid/pidcontroller.hpp
++++ b/pid/pidcontroller.hpp
+@@ -54,6 +54,16 @@ class PIDController : public Controller
+         return lastInput;
+     }
+ 
++    double getLastOutput(void)
++    {
++        return lastOutput;
++    }
++
++    void setLastOutput(double value)
++    {
++        lastOutput = value;
++    }
++
+   protected:
+     ZoneInterface* _owner;
+ 
+diff --git a/pid/pidloop.cpp b/pid/pidloop.cpp
+index 56bf8bd..c81114f 100644
+--- a/pid/pidloop.cpp
++++ b/pid/pidloop.cpp
+@@ -27,6 +27,14 @@
+ #include <thread>
+ #include <vector>
+ 
++/* Define cycle time interval (ms)
++ * Check fan failures every 10 seconds
++ * Update temperature sensor values every 1 second
++ */
++#define BASIC_CYCLE_INTERVAL 100
++#define CHECK_FAN_FAILURES_INTERVAL 10000 / BASIC_CYCLE_INTERVAL
++#define UPDATE_THERMAL_INTERVAL 1000 / BASIC_CYCLE_INTERVAL
++
+ static void processThermals(PIDZone* zone)
+ {
+     // Get the latest margins.
+@@ -41,7 +49,7 @@ static void processThermals(PIDZone* zone)
+ }
+ 
+ void pidControlLoop(PIDZone* zone, boost::asio::steady_timer& timer, bool first,
+-                    int ms100cnt)
++                    int ms100cnt, int checkFanFailuresCount)
+ {
+     if (first)
+     {
+@@ -54,69 +62,86 @@ void pidControlLoop(PIDZone* zone, boost::asio::steady_timer& timer, bool first,
+         processThermals(zone);
+     }
+ 
+-    timer.expires_after(std::chrono::milliseconds(100));
+-    timer.async_wait(
+-        [zone, &timer, ms100cnt](const boost::system::error_code& ec) mutable {
+-            if (ec == boost::asio::error::operation_aborted)
+-            {
+-                return; // timer being canceled, stop loop
+-            }
+-
+-            /*
+-             * This should sleep on the conditional wait for the listen thread
+-             * to tell us it's in sync.  But then we also need a timeout option
+-             * in case phosphor-hwmon is down, we can go into some weird failure
+-             * more.
+-             *
+-             * Another approach would be to start all sensors in worst-case
+-             * values, and fail-safe mode and then clear out of fail-safe mode
+-             * once we start getting values.  Which I think it is a solid
+-             * approach.
+-             *
+-             * For now this runs before it necessarily has any sensor values.
+-             * For the host sensors they start out in fail-safe mode.  For the
+-             * fans, they start out as 0 as input and then are adjusted once
+-             * they have values.
+-             *
+-             * If a fan has failed, it's value will be whatever we're told or
+-             * however we retrieve it.  This program disregards fan values of 0,
+-             * so any code providing a fan speed can set to 0 on failure and
+-             * that fan value will be effectively ignored.  The PID algorithm
+-             * will be unhappy but nothing bad will happen.
+-             *
+-             * TODO(venture): If the fan value is 0 should that loop just be
+-             * skipped? Right now, a 0 value is ignored in
+-             * FanController::inputProc()
+-             */
+-
+-            // Check if we should just go back to sleep.
+-            if (zone->getManualMode())
+-            {
+-                pidControlLoop(zone, timer, false, ms100cnt);
+-                return;
+-            }
+-
+-            // Get the latest fan speeds.
+-            zone->updateFanTelemetry();
+-
+-            if (10 <= ms100cnt)
+-            {
+-                ms100cnt = 0;
+-
+-                processThermals(zone);
+-            }
+-
+-            // Run the fan PIDs every iteration.
+-            zone->processFans();
+-
+-            if (loggingEnabled)
+-            {
+-                zone->getLogHandle() << "," << zone->getFailSafeMode();
+-                zone->getLogHandle() << std::endl;
+-            }
+-
+-            ms100cnt += 1;
+-
+-            pidControlLoop(zone, timer, false, ms100cnt);
+-        });
++    timer.expires_after(std::chrono::milliseconds(BASIC_CYCLE_INTERVAL));
++    timer.async_wait([zone, &timer, ms100cnt, checkFanFailuresCount](
++                         const boost::system::error_code& ec) mutable {
++        if (ec == boost::asio::error::operation_aborted)
++        {
++            return; // timer being canceled, stop loop
++        }
++
++        /*
++         * This should sleep on the conditional wait for the listen thread
++         * to tell us it's in sync.  But then we also need a timeout option
++         * in case phosphor-hwmon is down, we can go into some weird failure
++         * more.
++         *
++         * Another approach would be to start all sensors in worst-case
++         * values, and fail-safe mode and then clear out of fail-safe mode
++         * once we start getting values.  Which I think it is a solid
++         * approach.
++         *
++         * For now this runs before it necessarily has any sensor values.
++         * For the host sensors they start out in fail-safe mode.  For the
++         * fans, they start out as 0 as input and then are adjusted once
++         * they have values.
++         *
++         * If a fan has failed, it's value will be whatever we're told or
++         * however we retrieve it.  This program disregards fan values of 0,
++         * so any code providing a fan speed can set to 0 on failure and
++         * that fan value will be effectively ignored.  The PID algorithm
++         * will be unhappy but nothing bad will happen.
++         *
++         * TODO(venture): If the fan value is 0 should that loop just be
++         * skipped? Right now, a 0 value is ignored in
++         * FanController::inputProc()
++         */
++
++        // Check if we should just go back to sleep.
++        if (zone->getManualMode())
++        {
++            pidControlLoop(zone, timer, false, ms100cnt, checkFanFailuresCount);
++            return;
++        }
++
++        // Get the latest fan speeds.
++        zone->updateFanTelemetry();
++
++        // Check fail failure every 10 seconds
++        if (CHECK_FAN_FAILURES_INTERVAL <= checkFanFailuresCount)
++        {
++            checkFanFailuresCount = 0;
++
++            zone->checkFanFailures();
++        }
++
++        if (UPDATE_THERMAL_INTERVAL <= ms100cnt)
++        {
++            ms100cnt = 0;
++
++            processThermals(zone);
++        }
++
++        // Run the fan PIDs every iteration.
++        zone->processFans();
++
++        if (loggingEnabled)
++        {
++            zone->getLogHandle() << "," << zone->getFailSafeMode();
++            zone->getLogHandle() << std::endl;
++        }
++
++        ms100cnt += 1;
++        checkFanFailuresCount += 1;
++
++        /* If last output pwm and current output pwm are different.
++         * Reset check fan failures counter.
++         */
++        if (zone->getCheckFanFailuresFlag() == false)
++        {
++            checkFanFailuresCount = 0;
++        }
++
++        pidControlLoop(zone, timer, false, ms100cnt, checkFanFailuresCount);
++    });
+ }
+diff --git a/pid/pidloop.hpp b/pid/pidloop.hpp
+index 3a67954..0102d9e 100644
+--- a/pid/pidloop.hpp
++++ b/pid/pidloop.hpp
+@@ -15,4 +15,4 @@
+  * @param[in] ms100cnt - loop timer counter.
+  */
+ void pidControlLoop(PIDZone* zone, boost::asio::steady_timer& timer,
+-                    bool first = true, int ms100cnt = 0);
++                    bool first = true, int ms100cnt = 0, int checkFanFailuresCount = 0);
+diff --git a/pid/thermalcontroller.cpp b/pid/thermalcontroller.cpp
+index ccdd0db..72ad204 100644
+--- a/pid/thermalcontroller.cpp
++++ b/pid/thermalcontroller.cpp
+@@ -117,5 +117,8 @@ void ThermalController::outputProc(double value)
+         sd_journal_print(LOG_INFO, "%s temp output pwm: %lg", getID().c_str(),
+                          value);
+     }
++
++    setLastOutput(value);
++
+     return;
+ }
+diff --git a/pid/zone.cpp b/pid/zone.cpp
+index 619bf97..c1a0334 100644
+--- a/pid/zone.cpp
++++ b/pid/zone.cpp
+@@ -15,6 +15,8 @@
+  */
+ 
+ /* Configuration. */
++#include "config.h"
++
+ #include "zone.hpp"
+ 
+ #include "conf.hpp"
+@@ -54,8 +56,21 @@ void PIDZone::setManualMode(bool mode)
+ 
+ bool PIDZone::getFailSafeMode(void) const
+ {
+-    // If any keys are present at least one sensor is in fail safe mode.
+-    return !_failSafeSensors.empty();
++    /* If fail safe fans are more than the maximum number that project defined(default = 1) or
++     * any temperature sensors in fail safe, Enter fail safe mode.
++     * If MAX_FAN_REDUNDANCY == 0, process will not enter failsafe mode beacause of fan failures.
++     */
++    if ((MAX_FAN_REDUNDANCY != 0) && (_failSafeFans.size() >= MAX_FAN_REDUNDANCY))
++    {
++        return true;
++    }
++    // TODO: sensors failures handling.
++    else if (_failSafeTemps.empty() == false)
++    {
++        return true;
++    }
++
++    return false;
+ }
+ 
+ int64_t PIDZone::getZoneID(void) const
+@@ -93,6 +108,16 @@ double PIDZone::getMinThermalSetpoint(void) const
+     return _minThermalOutputSetPt;
+ }
+ 
++void PIDZone::setCheckFanFailuresFlag(bool value)
++{
++    _checkFanFailuresFlag = value;
++}
++
++bool PIDZone::getCheckFanFailuresFlag(void) const
++{
++    return _checkFanFailuresFlag;
++}
++
+ void PIDZone::addFanPID(std::unique_ptr<Controller> pid)
+ {
+     _fans.push_back(std::move(pid));
+@@ -254,23 +279,28 @@ void PIDZone::updateFanTelemetry(void)
+         if (sensor->getFailed())
+         {
+             sd_journal_print(LOG_INFO, "%s fan sensor getfailed", f.c_str());
+-            _failSafeSensors.insert(f);
++            _failSafeFans.insert(f);
+         }
+         else if (timeout != 0 && duration >= period)
+         {
++#if DISABLE_SENSORS_TIMEOUT == 0
+             sd_journal_print(LOG_INFO, "%s fan sensor timeout, duration: %lld",
+                              f.c_str(), duration);
+-            _failSafeSensors.insert(f);
++            _failSafeFans.insert(f);
++#endif
+         }
+         else
+         {
+             // Check if it's in there: remove it.
+-            auto kt = _failSafeSensors.find(f);
+-            if (kt != _failSafeSensors.end())
++            auto kt = _failSafeFans.find(f);
++            /* Avoid erasing failed fans from failSafeFans set.
++             * Because checkFanFailures detect that this fan is failed.
++             */
++            if ((kt != _failSafeFans.end()) && (_isFanFailure[f] == false))
+             {
+                 sd_journal_print(LOG_INFO, "erase %s fan sensor from failsafe",
+                                  f.c_str());
+-                _failSafeSensors.erase(kt);
++                _failSafeFans.erase(kt);
+             }
+         }
+     }
+@@ -286,6 +316,72 @@ void PIDZone::updateFanTelemetry(void)
+     return;
+ }
+ 
++void PIDZone::checkFanFailures(void)
++{
++    std::map<std::string, double> fanSpeeds;
++    double firstLargestFanTach = 0;
++    double secondLargestFanTach = 0;
++    double value = 0;
++    double twoLargestAverage = 0;
++
++    // Get the fan speeds
++    for (const auto& name : _fanInputs)
++    {
++        value = _cachedValuesByName[name];
++        if (value > 0)
++        {
++            fanSpeeds[name] = value;
++        }
++        // If the reading value is under 0 set the fan speed to 0
++        else
++        {
++            fanSpeeds[name] = 0;
++        }
++
++        // Find the two largest fan speeds
++        if (value > secondLargestFanTach)
++        {
++            if (value > firstLargestFanTach)
++            {
++                firstLargestFanTach = value;
++            }
++            else
++            {
++                secondLargestFanTach = value;
++            }
++        }
++    }
++
++    twoLargestAverage = (firstLargestFanTach + secondLargestFanTach) / 2;
++
++    /* If a fan tachometer value is 25% below the twoLargestAverage
++     * log a SEL to indicate a suspected failure on this fan
++     */
++    for (auto& it : fanSpeeds)
++    {
++        if (it.second < (twoLargestAverage * 0.75))
++        {
++            sd_journal_print(LOG_ERR, "%s is 25%% below the average",
++                             it.first.c_str());
++            _failSafeFans.insert(it.first);
++            _isFanFailure[it.first] = true;
++        }
++        else
++        {
++            /* Another sides place fans in failSafeFans.
++             * Do not erase them from set.
++             */
++            if (_isFanFailure[it.first] == true)
++            {
++                _failSafeFans.erase(it.first);
++            }
++            _isFanFailure[it.first] = false;
++        }
++    }
++
++    return;
++}
++
+ void PIDZone::updateSensors(void)
+ {
+     using namespace std::chrono;
+@@ -314,26 +410,28 @@ void PIDZone::updateSensors(void)
+         {
+             sd_journal_print(LOG_INFO, "%s temperature sensor getfailed",
+                              t.c_str());
+-            _failSafeSensors.insert(t);
++            _failSafeTemps.insert(t);
+         }
+         else if (timeout != 0 && duration >= period)
+         {
++#if DISABLE_SENSORS_TIMEOUT == 0
+             // std::cerr << "Entering fail safe mode.\n";
+             sd_journal_print(LOG_INFO,
+                              "%s temperature sensor timeout, duration: %lld",
+                              t.c_str(), duration);
+-            _failSafeSensors.insert(t);
++            _failSafeTemps.insert(t);
++#endif
+         }
+         else
+         {
+             // Check if it's in there: remove it.
+-            auto kt = _failSafeSensors.find(t);
+-            if (kt != _failSafeSensors.end())
++            auto kt = _failSafeTemps.find(t);
++            if (kt != _failSafeTemps.end())
+             {
+                 sd_journal_print(LOG_INFO,
+                                  "erase %s temperature sensor from failsafe",
+                                  t.c_str());
+-                _failSafeSensors.erase(kt);
++                _failSafeTemps.erase(kt);
+             }
+         }
+     }
+@@ -348,7 +446,7 @@ void PIDZone::initializeCache(void)
+         _cachedValuesByName[f] = 0;
+ 
+         // Start all fans in fail-safe mode.
+-        _failSafeSensors.insert(f);
++        _failSafeFans.insert(f);
+     }
+ 
+     for (const auto& t : _thermalInputs)
+@@ -356,7 +454,7 @@ void PIDZone::initializeCache(void)
+         _cachedValuesByName[t] = 0;
+ 
+         // Start all sensors in fail-safe mode.
+-        _failSafeSensors.insert(t);
++        _failSafeTemps.insert(t);
+     }
+ }
+ 
+diff --git a/pid/zone.hpp b/pid/zone.hpp
+index 3cf4e59..1be7e34 100644
+--- a/pid/zone.hpp
++++ b/pid/zone.hpp
+@@ -34,6 +34,8 @@ class ZoneInterface
+     virtual bool getFailSafeMode() const = 0;
+     virtual double getFailSafePercent() const = 0;
+     virtual Sensor* getSensor(const std::string& name) = 0;
++    virtual void setCheckFanFailuresFlag(bool value) = 0;
++    virtual bool getCheckFanFailuresFlag() const = 0;
+ };
+ 
+ /*
+@@ -73,10 +75,14 @@ class PIDZone : public ZoneInterface, public ModeObject
+     void clearRPMCeilings(void);
+     double getFailSafePercent(void) const override;
+     double getMinThermalSetpoint(void) const;
++    /* Method for set/get last pwm and current pwm are different */
++    void setCheckFanFailuresFlag(bool value) override;
++    bool getCheckFanFailuresFlag(void) const override;
+ 
+     Sensor* getSensor(const std::string& name) override;
+     void determineMaxSetPointRequest(void);
+     void updateFanTelemetry(void);
++    void checkFanFailures(void);
+     void updateSensors(void);
+     void initializeCache(void);
+     void dumpCache(void);
+@@ -105,8 +111,11 @@ class PIDZone : public ZoneInterface, public ModeObject
+     bool _manualMode = false;
+     const double _minThermalOutputSetPt;
+     const double _failSafePercent;
++    bool _checkFanFailuresFlag = false;
+ 
+-    std::set<std::string> _failSafeSensors;
++    std::set<std::string> _failSafeTemps;
++    std::set<std::string> _failSafeFans;
++    std::map<std::string, bool> _isFanFailure;
+ 
+     std::vector<double> _SetPoints;
+     std::vector<double> _RPMCeilings;
+-- 
+2.24.0
+

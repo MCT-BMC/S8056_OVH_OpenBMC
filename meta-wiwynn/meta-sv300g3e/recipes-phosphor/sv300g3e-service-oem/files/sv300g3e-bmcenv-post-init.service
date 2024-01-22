@@ -1,0 +1,13 @@
+[Unit]
+Description=SV300G3-E BMC Environment Post Initialization
+
+Wants=multi-user.target
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/sv300g3e-bmcenv-post-init.sh
+SyslogIdentifier=sv300g3e-bmcenv-post-init
+
+[Install]
+WantedBy=multi-user.target

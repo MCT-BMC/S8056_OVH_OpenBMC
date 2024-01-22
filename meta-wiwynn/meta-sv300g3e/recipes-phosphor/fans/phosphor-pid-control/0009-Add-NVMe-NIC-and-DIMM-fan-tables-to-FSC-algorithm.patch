@@ -1,0 +1,359 @@
+From 606db454a7b48d5524b6eed7e01e7805fa30c1c0 Mon Sep 17 00:00:00 2001
+From: Frederick Lee <Frederick_Lee@wiwynn.com>
+Date: Wed, 22 Apr 2020 01:52:59 +0800
+Subject: [PATCH] Add NVMe NIC and DIMM fan tables to FSC algorithm
+
+---
+ pid/stepwisecontroller.cpp |  15 ++--
+ pid/thermalcontroller.cpp  |  21 ++++--
+ pid/zone.cpp               | 151 +++++++++++++++++++------------------
+ 3 files changed, 102 insertions(+), 85 deletions(-)
+
+diff --git a/pid/stepwisecontroller.cpp b/pid/stepwisecontroller.cpp
+index 941e28e..30edf3b 100644
+--- a/pid/stepwisecontroller.cpp
++++ b/pid/stepwisecontroller.cpp
+@@ -36,7 +36,13 @@
+ std::map<std::string, double> compensationPwm;
+ static constexpr auto cpuStr = "CPU";
+ static constexpr uint8_t cpuStrLen = 3;
+-static constexpr uint8_t cpuStrPos = 7;
++static constexpr auto mezzStr = "Mezz";
++static constexpr uint8_t mezzStrLen = 4;
++static constexpr auto nvmeStr = "NVMe";
++static constexpr uint8_t nvmeStrLen = 4;
++static constexpr auto dimmStr = "DIMM";
++static constexpr uint8_t dimmStrLen = 4;
++static constexpr uint8_t strPos = 7;
+ 
+ void StepwiseController::process(void)
+ {
+@@ -130,13 +136,12 @@ void StepwiseController::outputProc(double value)
+                          name.c_str(), value);
+     }
+ 
+-// Refer to the pattern Linear_CPU
+-
+-    if (0 == name.compare(cpuStrPos, cpuStrLen, cpuStr))
++// Refer to the pattern Linear_CPU/Linear_Mezz/Linear_NVMe/Linear_DIMM
++    if ((0 == name.compare(strPos, cpuStrLen, cpuStr)) || (0 == name.compare(strPos, mezzStrLen, mezzStr)) || (0 == name.compare(strPos, nvmeStrLen, nvmeStr)) || (0 == name.compare(strPos, dimmStrLen, dimmStr)))
+     {
+         std::pair<std::map<std::string, double>::iterator, bool> ret;
+ 
+-        revisedName = name.substr(cpuStrPos);
++        revisedName = name.substr(strPos);
+ 
+         ret = compensationPwm.insert(std::pair<std::string, double>(revisedName, value));
+ 
+diff --git a/pid/thermalcontroller.cpp b/pid/thermalcontroller.cpp
+index 72ad990..6d34a9b 100644
+--- a/pid/thermalcontroller.cpp
++++ b/pid/thermalcontroller.cpp
+@@ -28,12 +28,15 @@
+ #include <map>
+ #include <math.h>
+ 
+-static constexpr auto service = "xyz.openbmc_project.CPUSensor";
+-static constexpr auto objPath = "/xyz/openbmc_project/sensors/temperature/";
+-static constexpr auto interface = "org.freedesktop.DBus.Properties";
+ static constexpr auto cpuStr = "CPU";
+-static constexpr uint8_t cpuStrPos = 4;
+ static constexpr uint8_t cpuStrLen = 3;
++static constexpr auto mezzStr = "Mezz";
++static constexpr uint8_t mezzStrLen = 4;
++static constexpr auto nvmeStr = "NVMe";
++static constexpr uint8_t nvmeStrLen = 4;
++static constexpr auto dimmStr = "DIMM";
++static constexpr uint8_t dimmStrLen = 4;
++static constexpr uint8_t strPos = 4;
+ 
+ extern std::map<std::string, double> compensationPwm;
+ extern std::map<std::string, double> sensorTempBuf;
+@@ -128,16 +131,18 @@ void ThermalController::outputProc(double value)
+     double sp = getSetpoint();
+     double temp = 0;
+ 
++    auto info = getPIDInfo();
++
+     value = round(value);
+ 
+     std::string name = getID();
+-    // Refer to the pattern Pid_CPU
+-    if (0 == name.compare(cpuStrPos, cpuStrLen, cpuStr))
++    // Refer to the pattern Pid_CPU/Pid_Mezz/Pid_NVMe/Pid_DIMM
++    if ((0 == name.compare(strPos, cpuStrLen, cpuStr)) || (0 == name.compare(strPos, mezzStrLen, mezzStr)) || (0 == name.compare(strPos, nvmeStrLen, nvmeStr)) || (0 == name.compare(strPos, dimmStrLen, dimmStr)))
+     {
+         std::string revisedName;
+         std::map<std::string, double>::iterator iter;
+ 
+-        revisedName = name.substr(cpuStrPos);
++        revisedName = name.substr(strPos);
+ 
+         iter = sensorTempBuf.find(revisedName);
+         if (iter != sensorTempBuf.end())
+@@ -156,7 +161,7 @@ void ThermalController::outputProc(double value)
+             }
+             
+             // PID PWM only be added to stepwise PWM when temperature is over set point
+-            if (temp > sp)
++            if (temp > (sp + info->positiveHysteresis))
+             {
+                 value += iter->second;
+ 
+diff --git a/pid/zone.cpp b/pid/zone.cpp
+index 5519f0b..c93d610 100644
+--- a/pid/zone.cpp
++++ b/pid/zone.cpp
+@@ -43,7 +43,13 @@ using namespace std::literals::chrono_literals;
+ std::map<std::string, double> sensorTempBuf;
+ static constexpr auto cpuStr = "CPU";
+ static constexpr uint8_t cpuStrLen = 3;
+-static constexpr uint8_t cpuStrPos = 0;
++static constexpr auto mezzStr = "Mezz";
++static constexpr uint8_t mezzStrLen = 4;
++static constexpr auto nvmeStr = "NVMe";
++static constexpr uint8_t nvmeStrLen = 4;
++static constexpr auto dimmStr = "DIMM";
++static constexpr uint8_t dimmStrLen = 4;
++static constexpr uint8_t strPos = 0;
+ 
+ double PIDZone::getMaxSetPointRequest(void) const
+ {
+@@ -67,6 +73,7 @@ bool PIDZone::getFailSafeMode(void) const
+      * safe mode. If MAX_FAN_REDUNDANCY == 0, process will not enter failsafe
+      * mode beacause of fan failures.
+      */
++/*
+     if ((MAX_FAN_REDUNDANCY != 0) && (_failSafeFans.size() >= MAX_FAN_REDUNDANCY))
+     {
+         return true;
+@@ -79,7 +86,7 @@ bool PIDZone::getFailSafeMode(void) const
+             return true;
+         }
+     }
+-
++*/
+     return false;
+ }
+ 
+@@ -283,13 +290,13 @@ void PIDZone::updateFanTelemetry(void)
+         auto sensor = _mgr.getSensor(f);
+         ReadReturn r = sensor->read();
+         _cachedValuesByName[f] = r.value;
+-        int64_t timeout = sensor->getTimeout();
+-        tstamp then = r.updated;
++//        int64_t timeout = sensor->getTimeout();
++//        tstamp then = r.updated;
+ 
+-        auto duration =
+-            std::chrono::duration_cast<std::chrono::seconds>(now - then)
+-                .count();
+-        auto period = std::chrono::seconds(timeout).count();
++//        auto duration =
++//            std::chrono::duration_cast<std::chrono::seconds>(now - then)
++//                .count();
++//        auto period = std::chrono::seconds(timeout).count();
+         /*
+          * TODO(venture): We should check when these were last read.
+          * However, these are the fans, so if I'm not getting updated values
+@@ -301,31 +308,31 @@ void PIDZone::updateFanTelemetry(void)
+         }
+ 
+         // check if fan fail.
+-        if (sensor->getFailed())
+-        {
+-            sd_journal_print(LOG_INFO, "%s fan sensor getfailed", f.c_str());
+-            _failSafeFans.insert(f);
+-        }
+-        else if (timeout != 0 && duration >= period)
+-        {
+-            sd_journal_print(LOG_INFO, "%s fan sensor timeout, duration: %lld",
+-                             f.c_str(), duration);
+-            _failSafeFans.insert(f);
+-        }
+-        else
+-        {
++//        if (sensor->getFailed())
++//        {
++//            sd_journal_print(LOG_INFO, "%s fan sensor getfailed", f.c_str());
++//            _failSafeFans.insert(f);
++//        }
++//        else if (timeout != 0 && duration >= period)
++//        {
++//            sd_journal_print(LOG_INFO, "%s fan sensor timeout, duration: %lld",
++//                             f.c_str(), duration);
++//            _failSafeFans.insert(f);
++//        }
++//        else
++//        {
+             // Check if it's in there: remove it.
+-            auto kt = _failSafeFans.find(f);
++//            auto kt = _failSafeFans.find(f);
+             /* Avoid erasing failed fans from failSafeFans set.
+              * Because checkFanFailures detect that this fan is failed.
+              */
+-            if ((kt != _failSafeFans.end()) && (_isFanFailure[f] == false))
+-            {
+-                sd_journal_print(LOG_INFO, "erase %s fan sensor from failsafe",
+-                                 f.c_str());
+-                _failSafeFans.erase(kt);
+-            }
+-        }
++//            if ((kt != _failSafeFans.end()) && (_isFanFailure[f] == false))
++//            {
++//                sd_journal_print(LOG_INFO, "erase %s fan sensor from failsafe",
++//                                 f.c_str());
++//                _failSafeFans.erase(kt);
++//            }
++//        }
+     }
+ 
+     if (loggingEnabled)
+@@ -410,21 +417,21 @@ void PIDZone::updateSensors(void)
+ {
+     using namespace std::chrono;
+     /* margin and temp are stored as temp */
+-    tstamp now = high_resolution_clock::now();
++//    tstamp now = high_resolution_clock::now();
+ 
+     for (const auto& t : _thermalInputs)
+     {
+         auto sensor = _mgr.getSensor(t);
+         ReadReturn r = sensor->read();
+         r.value = round(r.value);
+-        int64_t timeout = sensor->getTimeout();
++//        int64_t timeout = sensor->getTimeout();
+ 
+         if (debugModeEnabled)
+         {
+             sd_journal_print(LOG_INFO, "%s temperature sensor reading: %lg",
+                              t.c_str(), r.value);
+ 
+-            if (0 == t.compare(cpuStrPos, cpuStrLen, cpuStr))
++            if ((0 == t.compare(strPos, cpuStrLen, cpuStr)) || (0 == t.compare(strPos, mezzStrLen, mezzStr)) || (0 == t.compare(strPos, nvmeStrLen, nvmeStr)) || (0 == t.compare(strPos, dimmStrLen, dimmStr)))
+             {
+                 std::pair<std::map<std::string, double>::iterator, bool> ret;
+ 
+@@ -438,10 +445,10 @@ void PIDZone::updateSensors(void)
+         }
+ 
+         _cachedValuesByName[t] = r.value;
+-        tstamp then = r.updated;
++//        tstamp then = r.updated;
+ 
+-        auto duration = duration_cast<std::chrono::seconds>(now - then).count();
+-        auto period = std::chrono::seconds(timeout).count();
++//        auto duration = duration_cast<std::chrono::seconds>(now - then).count();
++//        auto period = std::chrono::seconds(timeout).count();
+ 
+         auto vReadingState = std::variant<bool>(false);
+         bool readingStateUnavailable = false;
+@@ -472,28 +479,28 @@ void PIDZone::updateSensors(void)
+             }
+         }
+ 
+-        if (sensor->getFailed())
+-        {
+-            sd_journal_print(LOG_INFO, "%s temperature sensor getfailed",
+-                             t.c_str());
+-            _failSafeTemps.insert(t);
+-        }
+-        else if (timeout != 0 && duration >= period)
+-        {
++//        if (sensor->getFailed())
++//        {
++//            sd_journal_print(LOG_INFO, "%s temperature sensor getfailed",
++//                             t.c_str());
++//            _failSafeTemps.insert(t);
++//        }
++//        else if (timeout != 0 && duration >= period)
++//        {
+             // std::cerr << "Entering fail safe mode.\n";
+-            sd_journal_print(LOG_INFO,
+-                             "%s temperature sensor timeout, duration: %lld",
+-                             t.c_str(), duration);
+-            _failSafeTemps.insert(t);
+-        }
++//            sd_journal_print(LOG_INFO,
++//                             "%s temperature sensor timeout, duration: %lld",
++//                             t.c_str(), duration);
++//            _failSafeTemps.insert(t);
++//        }
+         // readingStateUnavailable is true means that sensor value is invalid.
+-        else if (readingStateUnavailable == true)
+-        {
++//        else if (readingStateUnavailable == true)
++//        {
+             // The interval of pid control update sensor values.
+-            sensorFailuresTimer[t] += (getUpdateThermalsCycle() * getCycleTimeBase());
+-            sd_journal_print(LOG_INFO,
+-                 "%s temperature sensor readingStateUnavailable is true, duration: %lldms",
+-                 t.c_str(), sensorFailuresTimer[t]);
++//            sensorFailuresTimer[t] += (getUpdateThermalsCycle() * getCycleTimeBase());
++//            sd_journal_print(LOG_INFO,
++//                 "%s temperature sensor readingStateUnavailable is true, duration: %lldms",
++//                 t.c_str(), sensorFailuresTimer[t]);
+ 
+             /**
+              *  If BMC can’t get the correct response from CPU or DIMM over 30 seconds.
+@@ -505,23 +512,23 @@ void PIDZone::updateSensors(void)
+              */
+ 
+             // If sensor failure time is more than 20000 ms(20 seconds)
+-            if (sensorFailuresTimer[t] >= 20000)
+-            {
+-                _failSafeTemps.insert(t);
+-            }
+-        }
+-        else
+-        {
++//            if (sensorFailuresTimer[t] >= 20000)
++//            {
++//                _failSafeTemps.insert(t);
++//            }
++//        }
++//        else
++//        {
+             // Check if it's in there: remove it.
+-            auto kt = _failSafeTemps.find(t);
+-            if (kt != _failSafeTemps.end())
+-            {
+-                sd_journal_print(LOG_INFO,
+-                                 "erase %s temperature sensor from failsafe",
+-                                 t.c_str());
+-                _failSafeTemps.erase(kt);
+-            }
+-        }
++//            auto kt = _failSafeTemps.find(t);
++//            if (kt != _failSafeTemps.end())
++//            {
++//                sd_journal_print(LOG_INFO,
++//                                 "erase %s temperature sensor from failsafe",
++//                                 t.c_str());
++//                _failSafeTemps.erase(kt);
++//            }
++//        }
+     }
+ 
+     return;
+@@ -534,7 +541,7 @@ void PIDZone::initializeCache(void)
+         _cachedValuesByName[f] = 0;
+ 
+         // Start all fans in fail-safe mode.
+-        _failSafeFans.insert(f);
++//        _failSafeFans.insert(f);
+     }
+ 
+     for (const auto& t : _thermalInputs)
+@@ -542,7 +549,7 @@ void PIDZone::initializeCache(void)
+         _cachedValuesByName[t] = 0;
+ 
+         // Start all sensors in fail-safe mode.
+-        _failSafeTemps.insert(t);
++//        _failSafeTemps.insert(t);
+     }
+ }
+ 
+-- 
+2.24.1
+

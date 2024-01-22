@@ -1,0 +1,44 @@
+From 21d4d01cc6f6e083dd7ac307527e69ea1641ad27 Mon Sep 17 00:00:00 2001
+From: Bright Cheng <bright_cheng@wiwynn.com>
+Date: Fri, 6 Mar 2020 11:29:09 +0800
+Subject: [PATCH] Support Winbond w25q512jv flash
+
+---
+ arch/arm/mach-aspeed/flash.c | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/arch/arm/mach-aspeed/flash.c b/arch/arm/mach-aspeed/flash.c
+index b8a438df75..81b47d0271 100644
+--- a/arch/arm/mach-aspeed/flash.c
++++ b/arch/arm/mach-aspeed/flash.c
+@@ -86,6 +86,7 @@ flash_info_t flash_info[CONFIG_SYS_MAX_FLASH_BANKS];		/* FLASH chips info */
+ #define AT25DF321		0x01471F
+ #define MT25QL01GB		0x21ba20
+ #define W25M512JV		0x1971ef
++#define W25Q512JV		0x2040ef
+ 
+ /* SPI Define */
+ #define CS0_CTRL			0x10
+@@ -1185,6 +1186,19 @@ static ulong flash_get_size (ulong base, flash_info_t *info)
+ 			ReadClk  = 50;
+ 			info->address32 = 1;
+ 			break;
++		case W25Q512JV:
++			info->sector_count = 1024;
++			info->size = 0x4000000;
++			erase_region_size = 0x10000;
++			info->readcmd = 0x0b;
++			info->dualport = 0;
++			info->dummybyte = 1;
++			info->buffersize = 256;
++			WriteClk = 50;
++			EraseClk = 20;
++			ReadClk  = 50;
++			info->address32 = 1;
++			break;
+ 
+ 		default:	/* use JEDEC ID */
+ 			printf("Unsupported SPI Flash!! 0x%08lx\n", info->flash_id);
+-- 
+2.24.1
+

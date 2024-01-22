@@ -1,0 +1,216 @@
+From e7ff2d74c929ba838be8eea8afa9db1e93cc0d67 Mon Sep 17 00:00:00 2001
+From: Janny Au <janny.au@mic.com.tw>
+Date: Thu, 10 Mar 2022 17:05:07 +0800
+Subject: [PATCH] Add-NVIAID-A10-GPU-hardware-monitor-driver-supported
+
+---
+ drivers/hwmon/Kconfig      |   7 ++
+ drivers/hwmon/Makefile     |   1 +
+ drivers/hwmon/nvidia-a10.c | 167 +++++++++++++++++++++++++++++++++++++
+ 3 files changed, 175 insertions(+)
+ create mode 100755 drivers/hwmon/nvidia-a10.c
+
+diff --git a/drivers/hwmon/Kconfig b/drivers/hwmon/Kconfig
+index ccdaeafed0bb..93fa206f6cc2 100644
+--- a/drivers/hwmon/Kconfig
++++ b/drivers/hwmon/Kconfig
+@@ -2178,6 +2178,13 @@ config SENSORS_INTEL_M10_BMC_HWMON
+ 	  sensors monitor various telemetry data of different components on the
+ 	  card, e.g. board temperature, FPGA core temperature/voltage/current.
+ 
++config SENSORS_NVIDIA_A10
++	tristate "NVIDIA A10"
++	depends on I2C
++	help
++	  If you say yes here you get support for the NVIDIA A10 GPU Temperature
++	  Sensor Interface.
++
+ if ACPI
+ 
+ comment "ACPI drivers"
+diff --git a/drivers/hwmon/Makefile b/drivers/hwmon/Makefile
+index 162940270661..da97a6e8c832 100644
+--- a/drivers/hwmon/Makefile
++++ b/drivers/hwmon/Makefile
+@@ -201,6 +201,7 @@ obj-$(CONFIG_SENSORS_W83L786NG)	+= w83l786ng.o
+ obj-$(CONFIG_SENSORS_WM831X)	+= wm831x-hwmon.o
+ obj-$(CONFIG_SENSORS_WM8350)	+= wm8350-hwmon.o
+ obj-$(CONFIG_SENSORS_XGENE)	+= xgene-hwmon.o
++obj-$(CONFIG_SENSORS_NVIDIA_A10)	+= nvidia-a10.o
+ 
+ obj-$(CONFIG_SENSORS_OCC)	+= occ/
+ obj-$(CONFIG_PMBUS)		+= pmbus/
+diff --git a/drivers/hwmon/nvidia-a10.c b/drivers/hwmon/nvidia-a10.c
+new file mode 100755
+index 000000000000..c26d75696b47
+--- /dev/null
++++ b/drivers/hwmon/nvidia-a10.c
+@@ -0,0 +1,167 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++/*
++ * Copyright (C) 2021 MCT Corp.
++ *
++ * Driver for the NVIDIA A10 GPU Temperature Sensor Interface.
++ * Supported models: nvidai-a10 
++ */
++
++#include <linux/module.h>
++#include <linux/init.h>
++#include <linux/i2c.h>
++#include <linux/hwmon.h>
++#include <linux/hwmon-sysfs.h>
++#include <linux/err.h>
++#include <linux/of_device.h>
++#include <linux/regmap.h>
++
++/* The NVIDIA A10 registers */
++#define RLTS_REG        0x00
++
++static const char *rlts_label = "rlts";
++
++/* this is the number of sensors in the device */
++static const struct i2c_device_id a10_id[] = {
++    { "nvidai-a10" },
++    { }
++};
++
++MODULE_DEVICE_TABLE(i2c, a10_id);
++
++static const struct of_device_id __maybe_unused a10_of_match[] = {
++    {
++        .compatible = "nvidai,a10"
++    },
++    { },
++};
++MODULE_DEVICE_TABLE(of, a10_of_match);
++
++static inline long temp_of_sum(s8 value)
++{
++    return value*1000;
++}
++
++static int get_temp(struct regmap *regmap, long *val)
++{
++    unsigned int regval;
++    int ret;
++
++    ret = regmap_read(regmap, RLTS_REG, &regval);
++    if (ret < 0)
++        return ret;
++
++    *val = temp_of_sum(regval);
++    return 0;
++}
++
++static int a10_read_string(struct device *dev, enum hwmon_sensor_types type,
++            u32 attr, int channel, const char **str)
++{
++    if (attr != hwmon_temp_label)
++        return -EOPNOTSUPP;
++
++    *str = rlts_label;
++
++    return 0;
++}
++
++static int a10_read(struct device *dev, enum hwmon_sensor_types type,
++               u32 attr, int channel, long *val)
++{
++    struct regmap *regmap = dev_get_drvdata(dev);
++
++    switch (attr) {
++    case hwmon_temp_input:
++        return get_temp(regmap, val);
++    default:
++        return -EOPNOTSUPP;
++    }
++}
++
++static int a10_write(struct device *dev, enum hwmon_sensor_types type,
++            u32 attr, int channel, long val)
++{
++    struct regmap *regmap = dev_get_drvdata(dev);
++
++    return -EOPNOTSUPP;
++}
++
++static umode_t a10_is_visible(const void *data, enum hwmon_sensor_types type,
++                 u32 attr, int channel)
++{
++    switch (type) {
++    case hwmon_temp:
++        switch (attr) {
++        case hwmon_temp_input:
++        case hwmon_temp_label:
++            return 0444;
++        }
++        break;
++    default:
++        break;
++    }
++    return 0;
++}
++
++static const struct hwmon_channel_info *a10_info[] = {
++    HWMON_CHANNEL_INFO(temp,
++               HWMON_T_LABEL | HWMON_T_INPUT),
++    NULL
++};
++
++static const struct hwmon_ops a10_ops = {
++    .is_visible = a10_is_visible,
++    .read_string = a10_read_string,
++    .read = a10_read,
++    .write = a10_write,
++};
++
++static const struct hwmon_chip_info a10_chip_info = {
++    .ops = &a10_ops,
++    .info = a10_info,
++};
++
++static const struct regmap_config a10_regmap_config = {
++    .reg_bits = 8,
++    .val_bits = 8,
++};
++
++static int a10_probe(struct i2c_client *client,
++                     const struct i2c_device_id *id)
++{
++    struct device *dev = &client->dev;
++    struct device *hwmon_dev;
++    struct regmap *regmap;
++    int ret;
++
++    regmap = devm_regmap_init_i2c(client, &a10_regmap_config);
++    if (IS_ERR(regmap)) {
++        dev_err(dev, "failed to allocate register map\n");
++        return PTR_ERR(regmap);
++    }
++
++    i2c_set_clientdata(client, regmap);
++
++    hwmon_dev = devm_hwmon_device_register_with_info(dev,
++                             "nvidai_a10",
++                             regmap,
++                             &a10_chip_info,
++                             NULL);
++    return PTR_ERR_OR_ZERO(hwmon_dev);
++}
++
++static struct i2c_driver a10_driver = {
++    .class = I2C_CLASS_HWMON,
++    .driver = {
++        .name    = "nvidai-a10",
++        .of_match_table = of_match_ptr(a10_of_match),
++    },
++    .probe = a10_probe,
++    .id_table = a10_id,
++};
++
++module_i2c_driver(a10_driver);
++
++MODULE_AUTHOR("John Chung <john.chung@mic.com.tw>");
++MODULE_DESCRIPTION("NVIDIA A10 GPU Temperature Sensor Interface driver");
++MODULE_LICENSE("GPL");
+\ No newline at end of file

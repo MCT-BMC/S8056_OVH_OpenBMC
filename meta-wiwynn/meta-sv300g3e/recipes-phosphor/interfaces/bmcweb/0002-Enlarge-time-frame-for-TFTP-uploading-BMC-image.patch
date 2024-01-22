@@ -1,0 +1,30 @@
+From 7281a316b2aff579c52b1a23f9edd3df5205b46a Mon Sep 17 00:00:00 2001
+From: Jason <Jason_YX_Chang@wiwynn.com>
+Date: Sun, 5 Jan 2020 17:22:48 +0800
+Subject: [PATCH] Enlarge time frame for TFTP uploading BMC image
+
+---
+ redfish-core/lib/update_service.hpp | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/redfish-core/lib/update_service.hpp b/redfish-core/lib/update_service.hpp
+index 57dcc07..886e397 100644
+--- a/redfish-core/lib/update_service.hpp
++++ b/redfish-core/lib/update_service.hpp
+@@ -287,10 +287,10 @@ class UpdateServiceActionsSimpleUpdate : public Node
+         BMCWEB_LOG_DEBUG << "Server: " << tftpServer + " File: " << fwFile;
+ 
+         // Setup callback for when new software detected
+-        // Give TFTP 2 minutes to complete
+-        monitorForSoftwareAvailable(nullptr, req, 120);
++        // Give TFTP 5 minutes to complete
++        monitorForSoftwareAvailable(nullptr, req, 300);
+ 
+-        // TFTP can take up to 2 minutes depending on image size and
++        // TFTP can take up to 5 minutes depending on image size and
+         // connection speed. Return to caller as soon as the TFTP operation
+         // has been started. The callback above will ensure the activate
+         // is started once the download has completed
+-- 
+2.24.1
+

@@ -1,0 +1,47 @@
+From 4ddff51ec3056f1e94b984b80df6ecff282ac73a Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Mon, 6 Sep 2021 11:44:58 +0800
+Subject: [PATCH] Add default WDT mask setting supported
+
+Add default WDT mask for PWM feature
+
+---
+ board/aspeed/ast-g5/ast-g5.c | 13 ++++++++++++-
+ 1 file changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/board/aspeed/ast-g5/ast-g5.c b/board/aspeed/ast-g5/ast-g5.c
+index ebdca20671..8d93969577 100755
+--- a/board/aspeed/ast-g5/ast-g5.c
++++ b/board/aspeed/ast-g5/ast-g5.c
+@@ -121,6 +121,16 @@ void Set_Default_GPIO_Pass_Through(void)
+ 	}
+ }
+ 
++/*--------------------------------------------------------------------
++ * @fn Set_WDT_Reset_Mask
++ * @brief Set WDT reset mask
++ *--------------------------------------------------------------------*/
++void Set_WDT_Reset_Mask(void)
++{
++	puts("Set WDT reset mask...\n");
++	*(volatile ulong *)(0x1E78501c) &= ~(0x00020000);
++}
++
+ /*--------------------------------------------------------------------
+ + * @fn Set_Default_Fan_PWM
+ + * @brief Set default fan PWM
+@@ -235,6 +245,7 @@ int board_init(void)
+ 	Set_Default_UART_Route();
+ 	SET_watchdog_timeout();
+ 	Set_Default_GPIO_Pass_Through();
++	Set_WDT_Reset_Mask();
+ 	Set_Default_Fan_PWM(DEFAULT_PWM);
+ 
+ 	return 0;
+@@ -278,4 +289,4 @@ int mac_read_from_eeprom(void)
+ 	/* do nothing, the eth driver to do it*/
+ 	return 0;
+ }
+-#endif
+\ No newline at end of file
++#endif

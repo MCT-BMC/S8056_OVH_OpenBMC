@@ -1,0 +1,152 @@
+From 7b73d24ec530432282c95b097d86023185ff1b97 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Mon, 13 Dec 2021 15:06:50 +0800
+Subject: [PATCH] Support DHCP configuration updating
+
+---
+ src/ethernet_interface.cpp   | 50 +++++++++++++++++++++++++++++++++++++++++---
+ src/meson.build              |  4 ++--
+ src/network_manager_main.cpp | 25 ++++++++++++++++++++++
+ 3 files changed, 74 insertions(+), 5 deletions(-)
+ mode change 100644 => 100755 src/network_manager_main.cpp
+
+diff --git a/src/ethernet_interface.cpp b/src/ethernet_interface.cpp
+index 08b2bd0..bd7e01e 100755
+--- a/src/ethernet_interface.cpp
++++ b/src/ethernet_interface.cpp
+@@ -28,6 +28,7 @@
+ #include <string>
+ #include <string_view>
+ #include <xyz/openbmc_project/Common/error.hpp>
++#include <nlohmann/json.hpp>
+ 
+ namespace phosphor
+ {
+@@ -559,9 +560,42 @@ bool EthernetInterface::ipv6AcceptRA(bool value)
+ 
+ EthernetInterface::DHCPConf EthernetInterface::dhcpEnabled(DHCPConf value)
+ {
+-    if (value == EthernetInterfaceIntf::dhcpEnabled())
++    const static std::string dhcpConfigPath = "/etc/dhcp-config.json";
++    std::ifstream dhcpConfig(dhcpConfigPath);
++    nlohmann::json dhcpConfigInfo;
++
++    if(!dhcpConfig)
+     {
+-        return value;
++        if (value == EthernetInterfaceIntf::dhcpEnabled())
++        {
++            return value;
++        }
++    }
++    else
++    {
++        dhcpConfigInfo = nlohmann::json::parse(dhcpConfig, nullptr, false);
++        if(dhcpConfigInfo[interfaceName()] != "" && value != EthernetInterface::DHCPConf::none)
++        {
++            DHCPConf configValue = EthernetInterface::DHCPConf::none;
++            if(dhcpConfigInfo[interfaceName()] == "DualStack")
++            {
++                configValue = EthernetInterface::DHCPConf::both;
++            }
++            else if(dhcpConfigInfo[interfaceName()] == "IPv4Only")
++            {
++                configValue = EthernetInterface::DHCPConf::v4;
++                std::string cmd = "sysctl -w net.ipv6.conf." + interfaceName() + ".disable_ipv6=1";
++                system(cmd.c_str());
++            }
++            else if(dhcpConfigInfo[interfaceName()] == "IPv6Only")
++            {
++                configValue = EthernetInterface::DHCPConf::v6;
++            }
++
++            EthernetInterfaceIntf::dhcpEnabled(configValue);
++            manager.writeToConfigurationFile();
++            return configValue;
++        }
+     }
+ 
+     EthernetInterfaceIntf::dhcpEnabled(value);
+@@ -959,8 +993,18 @@ void EthernetInterface::writeConfigurationFile()
+ 
+     // write the network section
+     stream << "[Network]\n";
++    if(EthernetInterfaceIntf::dhcpEnabled() != EthernetInterfaceIntf::DHCPConf::none){
++        stream << "KeepConfiguration=dhcp\n";
++    }
+ #ifdef LINK_LOCAL_AUTOCONFIGURATION
+-    stream << "LinkLocalAddressing=yes\n";
++    if(EthernetInterfaceIntf::dhcpEnabled() == EthernetInterfaceIntf::DHCPConf::v4)
++    {
++        stream << "LinkLocalAddressing=no\n";
++    }
++    else
++    {
++        stream << "LinkLocalAddressing=yes\n";
++    }
+ #else
+     stream << "LinkLocalAddressing=no\n";
+ #endif
+diff --git a/src/meson.build b/src/meson.build
+index 31371f9..1cad30e 100644
+--- a/src/meson.build
++++ b/src/meson.build
+@@ -20,7 +20,7 @@ executable(
+   install_dir: get_option('bindir'))
+ 
+ json_dep = declare_dependency()
+-if get_option('sync-mac')
++# if get_option('sync-mac')
+   # nlohmann_json might not have a pkg-config. It is header only so just make
+   # sure we can access the needed symbols from the header.
+   has_json = meson.get_compiler('cpp').has_header_symbol(
+@@ -33,7 +33,7 @@ if get_option('sync-mac')
+       fallback: ['nlohmann_json', 'nlohmann_json_dep'],
+       required: true)
+   endif
+-endif
++# endif
+ 
+ networkd_deps = [
+   json_dep,
+diff --git a/src/network_manager_main.cpp b/src/network_manager_main.cpp
+old mode 100644
+new mode 100755
+index b0d6d2e..5e5edd0
+--- a/src/network_manager_main.cpp
++++ b/src/network_manager_main.cpp
+@@ -240,6 +240,31 @@ void refreshObjects()
+     {
+         log<level::INFO>("Refreshing the objects.");
+         manager->createChildObjects();
++        if((access("/run/dhcp-update", F_OK)) != -1) {
++            // Fix IPv6 address missing issue. Restart IPv6 feature.
++            std::ifstream ifs("/run/dhcp-update");
++            std::string line;
++            getline(ifs, line);
++
++            std::stringstream sstream(line);
++            std::vector<std::string> parameters{};
++            std::string parameter;
++            while (std::getline(sstream, parameter, ',')){
++                parameter.erase(std::remove_if(parameter.begin(), parameter.end(), ispunct), parameter.end());
++                parameters.push_back(parameter);
++            }
++
++            if(parameters[1].find("DualStack") != std::string::npos ||
++               parameters[1].find("IPv6Only") != std::string::npos)
++            {
++                std::string cmd = "sysctl -w net.ipv6.conf." + parameters[0] + ".disable_ipv6=1";
++                system(cmd.c_str());
++                cmd = "sysctl -w net.ipv6.conf." + parameters[0] + ".disable_ipv6=0";
++                system(cmd.c_str());
++            }
++
++            std::remove("/run/dhcp-update");
++        }
+         log<level::INFO>("Refreshing complete.");
+     }
+ }
+-- 
+2.7.4
+

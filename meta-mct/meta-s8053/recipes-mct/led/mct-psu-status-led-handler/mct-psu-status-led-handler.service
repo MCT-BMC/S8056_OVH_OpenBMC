@@ -1,0 +1,13 @@
+[Unit]
+Description=MiTAC PSU status LED handler
+Before=gpio-initial.service
+
+[Service]
+Restart=always
+ExecStartPre=/usr/bin/env get-default-psu-voltage.sh
+ExecStart=/usr/bin/env mct-psu-status-led-handler
+SyslogIdentifier=mct-psu-status-led-handler
+TimeoutSec=infinity
+
+[Install]
+WantedBy={SYSTEMD_DEFAULT_TARGET}

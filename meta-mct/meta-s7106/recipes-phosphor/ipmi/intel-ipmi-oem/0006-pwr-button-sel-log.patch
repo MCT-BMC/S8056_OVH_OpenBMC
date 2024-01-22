@@ -1,0 +1,29 @@
+From be73712b00b0f4f5c1ad4f27908de959c360c2d7 Mon Sep 17 00:00:00 2001
+From: Varun Sampat <vsampat@twitter.com>
+Date: Wed, 16 Oct 2019 21:35:56 -0400
+Subject: [PATCH] pwr button sel log
+
+---
+ include/sdrutils.hpp | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/include/sdrutils.hpp b/include/sdrutils.hpp
+index 11ed496..02de6b8 100755
+--- a/include/sdrutils.hpp
++++ b/include/sdrutils.hpp
+@@ -162,6 +162,7 @@ enum class SensorTypeCodes : uint8_t
+     current = 0x3,
+     fan = 0x4,
+     processor = 0x07,
++    pwr_button = 0x14,
+     restart = 0x1d,
+     acpi = 0x22,
+     other = 0xB,
+@@ -174,6 +175,7 @@ const static boost::container::flat_map<const char*, SensorTypeCodes, CmpStr>
+                  {"fan_tach", SensorTypeCodes::fan},
+                  {"fan_pwm", SensorTypeCodes::fan},
+                  {"processor", SensorTypeCodes::processor},   
++                 {"pwr_button", SensorTypeCodes::pwr_button},   
+                  {"restart", SensorTypeCodes::restart},  
+                  {"acpi", SensorTypeCodes::acpi},     
+                  {"power", SensorTypeCodes::other}}};

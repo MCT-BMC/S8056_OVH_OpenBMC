@@ -1,0 +1,118 @@
+From b871e89253374818487a5ce0c3a1a6944e384dc4 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Wed, 16 Mar 2022 12:10:29 +0800
+Subject: [PATCH 10/11] Support reading all and specified offset for Redfish
+ log node
+
+---
+ redfish-core/lib/log_services.hpp | 38 ++++++++++++++++++++++++++++++++++----
+ 1 file changed, 34 insertions(+), 4 deletions(-)
+
+diff --git a/redfish-core/lib/log_services.hpp b/redfish-core/lib/log_services.hpp
+index 57e4b7a..e8b8121 100755
+--- a/redfish-core/lib/log_services.hpp
++++ b/redfish-core/lib/log_services.hpp
+@@ -230,6 +230,26 @@ static bool getTopParam(const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
+     return true;
+ }
+ 
++static bool getAllParam(const std::shared_ptr<bmcweb::AsyncResp>& asyncResp,
++                         const crow::Request& req, bool& all)
++{
++    uint64_t buffer=0;
++    boost::urls::params_view::iterator it = req.urlView.params().find("$all");
++    if (it != req.urlView.params().end())
++    {
++        std::from_chars_result r = std::from_chars(
++            (*it).value.data(), (*it).value.data() + (*it).value.size(), buffer);
++        all = buffer ? true : false;
++        if (r.ec != std::errc())
++        {
++            messages::queryParameterValueTypeError(asyncResp->res, "", "$all");
++            return false;
++        }
++    }
++
++    return true;
++}
++
+ inline static bool getUniqueEntryID(sd_journal* journal, std::string& entryID,
+                                     const bool firstEntry = true)
+ {
+@@ -1289,6 +1309,7 @@ inline void requestRoutesJournalEventLogEntryCollection(App& app)
+                         const std::shared_ptr<bmcweb::AsyncResp>& asyncResp) {
+             uint64_t skip = 0;
+             uint64_t top = maxEntriesPerPage; // Show max entries by default
++            bool all = false;
+             if (!getSkipParam(asyncResp, req, skip))
+             {
+                 return;
+@@ -1297,6 +1318,10 @@ inline void requestRoutesJournalEventLogEntryCollection(App& app)
+             {
+                 return;
+             }
++            if (!getAllParam(asyncResp, req, all))
++            {
++                return;
++            }
+             // Collections don't include the static data added by SubRoute
+             // because it has a duplicate entry for members
+             asyncResp->res.jsonValue["@odata.type"] =
+@@ -1338,7 +1363,7 @@ inline void requestRoutesJournalEventLogEntryCollection(App& app)
+                     // Handle paging using skip (number of entries to skip
+                     // from the start) and top (number of entries to
+                     // display)
+-                    if (entryCount <= skip || entryCount > skip + top)
++                    if ((entryCount <= skip || entryCount > skip + top ) && !all)
+                     {
+                         continue;
+                     }
+@@ -1370,7 +1395,7 @@ inline void requestRoutesJournalEventLogEntryCollection(App& app)
+                 }
+             }
+             asyncResp->res.jsonValue["Members@odata.count"] = entryCount;
+-            if (skip + top < entryCount)
++            if ((skip + top < entryCount) && !all)
+             {
+                 asyncResp->res.jsonValue["Members@odata.nextLink"] =
+                     "/redfish/v1/Systems/system/LogServices/EventLog/Entries?$skip=" +
+@@ -2278,6 +2303,7 @@ inline void requestRoutesBMCJournalLogEntryCollection(App& app)
+             static constexpr const long maxEntriesPerPage = 1000;
+             uint64_t skip = 0;
+             uint64_t top = maxEntriesPerPage; // Show max entries by default
++            bool all = false;
+             if (!getSkipParam(asyncResp, req, skip))
+             {
+                 return;
+@@ -2286,6 +2312,10 @@ inline void requestRoutesBMCJournalLogEntryCollection(App& app)
+             {
+                 return;
+             }
++            if (!getAllParam(asyncResp, req, all))
++            {
++                return;
++            }
+             // Collections don't include the static data added by SubRoute
+             // because it has a duplicate entry for members
+             asyncResp->res.jsonValue["@odata.type"] =
+@@ -2320,7 +2350,7 @@ inline void requestRoutesBMCJournalLogEntryCollection(App& app)
+                 entryCount++;
+                 // Handle paging using skip (number of entries to skip from
+                 // the start) and top (number of entries to display)
+-                if (entryCount <= skip || entryCount > skip + top)
++                if ((entryCount <= skip || entryCount > skip + top)  && !all)
+                 {
+                     continue;
+                 }
+@@ -2346,7 +2376,7 @@ inline void requestRoutesBMCJournalLogEntryCollection(App& app)
+                 }
+             }
+             asyncResp->res.jsonValue["Members@odata.count"] = entryCount;
+-            if (skip + top < entryCount)
++            if ((skip + top < entryCount) && !all)
+             {
+                 asyncResp->res.jsonValue["Members@odata.nextLink"] =
+                     "/redfish/v1/Managers/bmc/LogServices/Journal/Entries?$skip=" +
+-- 
+2.7.4
+

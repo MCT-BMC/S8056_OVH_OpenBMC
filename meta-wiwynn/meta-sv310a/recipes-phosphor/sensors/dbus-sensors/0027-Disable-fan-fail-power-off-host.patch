@@ -1,0 +1,26 @@
+From 541263e56b77746bf68127724007c422da547072 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Tue, 2 Nov 2021 15:39:04 +0800
+Subject: [PATCH] Disable fan fail power off host
+
+---
+ src/TachSensor.cpp | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/src/TachSensor.cpp b/src/TachSensor.cpp
+index 2f8a93b..a428d36 100644
+--- a/src/TachSensor.cpp
++++ b/src/TachSensor.cpp
+@@ -173,6 +173,9 @@ void TachSensor::hardOffInCaceSoftOffFail(
+ 
+ void TachSensor::fanFailHostPowerOff(void)
+ {
++    // Do not power off host temporarily
++    return;
++
+     try
+     {
+         // Do host soft off
+-- 
+2.32.0
+

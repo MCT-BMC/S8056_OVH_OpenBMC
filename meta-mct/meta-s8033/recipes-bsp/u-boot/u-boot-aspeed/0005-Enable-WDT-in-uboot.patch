@@ -1,0 +1,49 @@
+From 0e3ebcbc9ff621f0a2f28704e257e7f97ac849f2 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Wed, 7 Apr 2021 17:37:16 +0800
+Subject: [PATCH] Enable WDT in uboot
+
+---
+ board/aspeed/ast-g5/ast-g5.c | 15 ++++++++++++++-
+ 1 file changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/board/aspeed/ast-g5/ast-g5.c b/board/aspeed/ast-g5/ast-g5.c
+index 4c90fd8ddb..f0b77a14fa 100755
+--- a/board/aspeed/ast-g5/ast-g5.c
++++ b/board/aspeed/ast-g5/ast-g5.c
+@@ -39,6 +39,18 @@ void Set_Default_UART_Route(void)
+ 	*(volatile ulong *)(0x1E78909C) = 0x1400000 ;
+ }
+ 
++/*--------------------------------------------------------------------
++ * @fn SET_watchdog_timeout
++ * @brief SET watchdog timeout
++ *--------------------------------------------------------------------*/
++void SET_watchdog_timeout(void)
++{
++	puts("set watchdog timeout to 180 second...\n");
++	writel(0xABA9500, AST_WDT2_BASE + 0x04);
++	writel(0x4755, AST_WDT2_BASE + 0x08);
++	writel(0x93, AST_WDT2_BASE + 0x0c);
++}
++
+ int board_init(void)
+ {
+ 	gd->bd->bi_boot_params = CONFIG_SYS_SDRAM_BASE + 0x100;
+@@ -46,6 +58,7 @@ int board_init(void)
+ 
+ 	Light_BMC_Heartbeat_LED();
+ 	Set_Default_UART_Route();
++	SET_watchdog_timeout();
+ 
+ 	return 0;
+ }
+@@ -78,7 +91,7 @@ int board_eth_init(bd_t *bd)
+ void hw_watchdog_reset(void)
+ {
+ 	/* Restart WD2 timer */
+-	writel(0x4755, AST_WDT2_BASE + 0x08);
++	// writel(0x4755, AST_WDT2_BASE + 0x08);
+ }
+ #endif /* CONFIG_WATCHDOG */
+ 

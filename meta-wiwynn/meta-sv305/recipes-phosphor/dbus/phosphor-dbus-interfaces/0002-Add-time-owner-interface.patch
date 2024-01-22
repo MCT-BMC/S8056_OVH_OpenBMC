@@ -1,0 +1,94 @@
+From aff950c66171adc04291ddd0c432ec94f6ca703a Mon Sep 17 00:00:00 2001
+From: Ren_Chen <Ren_Chen@wiwynn.com>
+Date: Tue, 22 Jun 2021 13:51:57 +0800
+Subject: [PATCH 2/5] Add time owner interface
+
+---
+ .../openbmc_project/Time/Owner/meson.build    | 15 +++++++++++
+ gen/xyz/openbmc_project/Time/meson.build      | 14 ++++++++++
+ .../openbmc_project/Time/Owner.interface.yaml | 26 +++++++++++++++++++
+ 3 files changed, 55 insertions(+)
+ create mode 100644 gen/xyz/openbmc_project/Time/Owner/meson.build
+ create mode 100644 yaml/xyz/openbmc_project/Time/Owner.interface.yaml
+
+diff --git a/gen/xyz/openbmc_project/Time/Owner/meson.build b/gen/xyz/openbmc_project/Time/Owner/meson.build
+new file mode 100644
+index 0000000..a938759
+--- /dev/null
++++ b/gen/xyz/openbmc_project/Time/Owner/meson.build
+@@ -0,0 +1,15 @@
++# Generated file; do not modify.
++generated_sources += custom_target(
++    'xyz/openbmc_project/Time/Owner__cpp'.underscorify(),
++    input: [ '../../../../../yaml/xyz/openbmc_project/Time/Owner.interface.yaml',  ],
++    output: [ 'server.cpp', 'server.hpp', 'client.hpp',  ],
++    command: [
++        sdbuspp_gen_meson_prog, '--command', 'cpp',
++        '--output', meson.current_build_dir(),
++        '--tool', sdbusplusplus_prog,
++        '--directory', meson.current_source_dir() / '../../../../../yaml',
++        'xyz/openbmc_project/Time/Owner',
++    ],
++)
++
++
+diff --git a/gen/xyz/openbmc_project/Time/meson.build b/gen/xyz/openbmc_project/Time/meson.build
+index 26c4405..289253b 100644
+--- a/gen/xyz/openbmc_project/Time/meson.build
++++ b/gen/xyz/openbmc_project/Time/meson.build
+@@ -26,6 +26,20 @@ generated_others += custom_target(
+     ],
+ )
+ 
++subdir('Owner')
++generated_others += custom_target(
++    'xyz/openbmc_project/Time/Owner__markdown'.underscorify(),
++    input: [ '../../../../yaml/xyz/openbmc_project/Time/Owner.interface.yaml',  ],
++    output: [ 'Owner.md' ],
++    command: [
++        sdbuspp_gen_meson_prog, '--command', 'markdown',
++        '--output', meson.current_build_dir(),
++        '--tool', sdbusplusplus_prog,
++        '--directory', meson.current_source_dir() / '../../../../yaml',
++        'xyz/openbmc_project/Time/Owner',
++    ],
++)
++
+ subdir('Synchronization')
+ generated_others += custom_target(
+     'xyz/openbmc_project/Time/Synchronization__markdown'.underscorify(),
+diff --git a/yaml/xyz/openbmc_project/Time/Owner.interface.yaml b/yaml/xyz/openbmc_project/Time/Owner.interface.yaml
+new file mode 100644
+index 0000000..35046e7
+--- /dev/null
++++ b/yaml/xyz/openbmc_project/Time/Owner.interface.yaml
+@@ -0,0 +1,26 @@
++ description: >
++     Implement to set time owner.
++ 
++ properties:
++     - name: TimeOwner
++       type: enum[self.Owners]
++       description: >
++           The time owner.
++ 
++ enumerations:
++     - name: Owners
++       description: >
++         Possible owners of time.
++       values:
++         - name: BMC
++           description: >
++             BMC alone owns system time.
++         - name: Host
++           description: >
++             Host alone owns system time.
++         - name: Both
++           description: >
++             BMC and host own system time.
++         - name: Split
++           description: >
++             BMC and host maintain their own time.
+-- 
+2.28.0
+

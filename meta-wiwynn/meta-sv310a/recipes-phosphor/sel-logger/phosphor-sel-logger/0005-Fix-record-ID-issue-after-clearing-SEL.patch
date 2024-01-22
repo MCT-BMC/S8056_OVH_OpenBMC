@@ -1,0 +1,141 @@
+From dac226119b48f1ae37997a0d4c91489e125ea860 Mon Sep 17 00:00:00 2001
+From: Ren Chen <ren_chen@wiwynn.com>
+Date: Tue, 26 Oct 2021 14:11:08 +0800
+Subject: [PATCH] Fix record ID issue after clearing SEL
+
+%% original patch: 0005-Fix-record-ID-issue-after-clearing-SEL.patch
+---
+ include/sel_logger.hpp |  4 ++++
+ src/sel_logger.cpp     | 45 ++++++++++++++++++++++++++++--------------
+ 2 files changed, 34 insertions(+), 15 deletions(-)
+
+diff --git a/include/sel_logger.hpp b/include/sel_logger.hpp
+index 2a11364..9b27b58 100644
+--- a/include/sel_logger.hpp
++++ b/include/sel_logger.hpp
+@@ -43,12 +43,16 @@ static constexpr uint8_t selEvtDataUnspecified = 0xFF;
+ static const std::filesystem::path selLogDir = "/usr/share/sel";
+ static const std::string selLogFilename = "ipmi_sel";
+ 
++static uint16_t recordId = 0;
++
+ constexpr int waitSystemdJobPreDelay = 100;
+ constexpr int waitSystemdJobDelay = 300;
+ constexpr int waitSystemdJobMaxRetry = 3;
++constexpr int waitSyslogReady = 1000;
+ 
+ template <typename... T>
+ static uint16_t
+     selAddSystemRecord(const std::string& message, const std::string& path,
+                        const std::vector<uint8_t>& selData, const bool& assert,
+                        const uint16_t& genId, T&&... metadata);
++
+diff --git a/src/sel_logger.cpp b/src/sel_logger.cpp
+index 92cbc4f..7d13dc8 100644
+--- a/src/sel_logger.cpp
++++ b/src/sel_logger.cpp
+@@ -98,7 +98,7 @@ static bool getSELLogFiles(std::vector<std::filesystem::path>& selLogFiles)
+     return !selLogFiles.empty();
+ }
+ 
+-static unsigned int initializeRecordId(void)
++static unsigned int getSyslogRecordId(void)
+ {
+     std::vector<std::filesystem::path> selLogFiles;
+     if (!getSELLogFiles(selLogFiles))
+@@ -130,18 +130,15 @@ static unsigned int initializeRecordId(void)
+ 
+ static unsigned int getNewRecordId(void)
+ {
+-    static unsigned int recordId = initializeRecordId();
+-
+-    // If the log has been cleared, also clear the current ID
+-    std::vector<std::filesystem::path> selLogFiles;
+-    if (!getSELLogFiles(selLogFiles))
++    /* 0xFFFE -> Max valid record id
++       0xFFFF -> BMC Init with empty SEL log */
++    if (recordId >= (selInvalidRecID - 1))
+     {
+-        recordId = selInvalidRecID;
++        recordId = 1;
+     }
+-
+-    if (++recordId >= selInvalidRecID)
++    else
+     {
+-        recordId = 1;
++        recordId++;
+     }
+     return recordId;
+ }
+@@ -180,7 +177,7 @@ static uint16_t
+         Created::SENSOR_PATH(path.c_str()));
+     return static_cast<uint16_t>(entryID);
+ #else
+-    unsigned int recordId = getNewRecordId();
++    recordId = getNewRecordId();
+     sd_journal_send("MESSAGE=%s", message.c_str(), "PRIORITY=%i", selPriority,
+                     "MESSAGE_ID=%s", selMessageId, "IPMI_SEL_RECORD_ID=%d",
+                     recordId, "IPMI_SEL_RECORD_TYPE=%x", selSystemType,
+@@ -215,7 +212,7 @@ static uint16_t selAddOemRecord(const std::string& message,
+         Created::SENSOR_PATH(""));
+     return static_cast<uint16_t>(entryID);
+ #else
+-    unsigned int recordId = getNewRecordId();
++    recordId = getNewRecordId();
+     sd_journal_send("MESSAGE=%s", message.c_str(), "PRIORITY=%i", selPriority,
+                     "MESSAGE_ID=%s", selMessageId, "IPMI_SEL_RECORD_ID=%d",
+                     recordId, "IPMI_SEL_RECORD_TYPE=%x", recordType,
+@@ -302,6 +299,18 @@ static void checkSELCapacity()
+ 
+ static int selClear()
+ {
++    uint16_t syslogRecordId = getSyslogRecordId();
++    if (syslogRecordId == selInvalidRecID)
++    {
++        return -ENOENT;
++    }
++
++    if (syslogRecordId != recordId)
++    {
++        std::this_thread::sleep_for(
++            std::chrono::milliseconds(waitSyslogReady));
++    }
++
+     std::error_code ec;
+     for (const auto& dirEntry : std::filesystem::directory_iterator(selLogDir))
+     {
+@@ -369,10 +378,11 @@ static int selClear()
+ 
+     try
+     {
++        recordId = 0;
+         std::vector<uint8_t> eventData{selClearOffset, 0xFF, 0xFF};
+-        uint16_t recordID = selAddSystemRecord("SEL Clear", eventLoggingPath,
+-                                               eventData, true, selBMCGenID);
+-        if (recordID == selInvalidRecID)
++        recordId = selAddSystemRecord("SEL Clear", eventLoggingPath,
++                                      eventData, true, selBMCGenID);
++        if (recordId == selInvalidRecID)
+         {
+             sd_journal_print(LOG_ERR,
+                              "Failed to add SEL clear: Got invalid record ID");
+@@ -464,6 +474,10 @@ int main(int argc, char* argv[])
+ 
+     initializeFullFlag();
+ 
++#ifndef SEL_LOGGER_SEND_TO_LOGGING_SERVICE
++    recordId = getSyslogRecordId();
++#endif
++
+ #ifdef SEL_LOGGER_MONITOR_THRESHOLD_EVENTS
+     sdbusplus::bus::match::match thresholdAssertMonitor =
+         startThresholdAssertMonitor(conn, outBus);
+@@ -488,3 +502,4 @@ int main(int argc, char* argv[])
+ 
+     return 0;
+ }
++
+-- 
+2.32.0
+

@@ -1,0 +1,11 @@
+[Unit]
+Conflicts=dropbear.service
+
+[Socket]
+ListenStream=22
+Accept=yes
+BindToDevice=eth0
+
+[Install]
+WantedBy=sockets.target
+Also=dropbearkey.service

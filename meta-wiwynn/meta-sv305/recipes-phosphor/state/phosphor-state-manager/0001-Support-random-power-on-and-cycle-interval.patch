@@ -1,0 +1,126 @@
+From 385c6df2f3a786563c85e3b9bda922e5907a9484 Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Fri, 13 Nov 2020 16:15:09 +0800
+Subject: [PATCH] Support random power on and cycle interval
+
+---
+ discover_system_state.cpp                     | 52 +++++++++++++++++++
+ .../phosphor-discover-system-state@.service   |  2 +
+ service_files/phosphor-reboot-host@.service   |  3 +-
+ 3 files changed, 56 insertions(+), 1 deletion(-)
+
+diff --git a/discover_system_state.cpp b/discover_system_state.cpp
+index 88fa4ab..9a6fe1b 100644
+--- a/discover_system_state.cpp
++++ b/discover_system_state.cpp
+@@ -15,6 +15,7 @@
+ 
+ #include <iostream>
+ #include <map>
++#include <random>
+ #include <string>
+ 
+ namespace phosphor
+@@ -117,6 +118,45 @@ void setProperty(sdbusplus::bus::bus& bus, const std::string& path,
+     return;
+ }
+ 
++uint32_t getRandomDelayTime(sdbusplus::bus::bus& bus,
++                            settings::Objects& settings)
++{
++    auto method = bus.new_method_call(
++        settings
++            .service(settings.powerRestorePolicy, settings::powerRestoreIntf)
++            .c_str(),
++        settings.powerRestorePolicy.c_str(), "org.freedesktop.DBus.Properties",
++        "Get");
++    method.append(settings::powerRestoreIntf, "PowerRestoreDelay");
++
++    std::string delayPolicyString;
++    try
++    {
++        std::variant<std::string> result;
++        auto reply = bus.call(method);
++        reply.read(result);
++        delayPolicyString = std::get<std::string>(result);
++    }
++    catch (const SdBusError& e)
++    {
++        log<level::ERR>("Error in PowerRestoreDelay Get",
++                        entry("ERROR=%s", e.what()));
++        elog<InternalFailure>();
++    }
++    auto delayPolicy = RestorePolicy::convertDelayFromString(delayPolicyString);
++
++    std::random_device rd;
++    std::mt19937 generator(rd());
++
++    std::uniform_int_distribution<uint32_t> uniform(
++        0, static_cast<uint32_t>(delayPolicy) * 60);
++    uint32_t delayTime = uniform(generator);
++
++    sd_journal_print(LOG_INFO, "Restore delay policy: %s, time: %u\n",
++                     delayPolicyString.c_str(), delayTime);
++    return delayTime;
++}
++
+ } // namespace manager
+ } // namespace state
+ } // namespace phosphor
+@@ -206,6 +246,10 @@ int main(int argc, char** argv)
+             RestorePolicy::convertPolicyFromString(powerPolicy))
+         {
+             log<level::INFO>("power_policy=ALWAYS_POWER_ON, powering host on");
++
++            uint32_t delayTime = getRandomDelayTime(bus, settings);
++            std::this_thread::sleep_for(std::chrono::seconds(delayTime));
++
+             setProperty(bus, hostPath, HOST_BUSNAME, "RequestedHostTransition",
+                         convertForMessage(server::Host::Transition::On));
+         }
+@@ -217,6 +261,14 @@ int main(int argc, char** argv)
+             // Read last requested state and re-request it to execute it
+             auto hostReqState = getProperty(bus, hostPath, HOST_BUSNAME,
+                                             "RequestedHostTransition");
++
++            if (hostReqState !=
++                convertForMessage(server::Host::Transition::Off))
++            {
++                uint32_t delayTime = getRandomDelayTime(bus, settings);
++                std::this_thread::sleep_for(std::chrono::seconds(delayTime));
++            }
++
+             setProperty(bus, hostPath, HOST_BUSNAME, "RequestedHostTransition",
+                         hostReqState);
+         }
+diff --git a/service_files/phosphor-discover-system-state@.service b/service_files/phosphor-discover-system-state@.service
+index 6b966f0..ee01b9a 100644
+--- a/service_files/phosphor-discover-system-state@.service
++++ b/service_files/phosphor-discover-system-state@.service
+@@ -7,7 +7,9 @@ After=mapper-wait@-xyz-openbmc_project-state-host%i.service
+ Wants=mapper-wait@-xyz-openbmc_project-state-chassis%i.service
+ After=mapper-wait@-xyz-openbmc_project-state-chassis%i.service
+ After=op-reset-chassis-on@%i.service
++After=multi-user.target
+ ConditionPathExists=!/run/openbmc/chassis@%i-on
++ConditionPathExists=/run/openbmc/AC-lost@%i
+ 
+ [Service]
+ Restart=no
+diff --git a/service_files/phosphor-reboot-host@.service b/service_files/phosphor-reboot-host@.service
+index 0dd8bbb..bea2c43 100644
+--- a/service_files/phosphor-reboot-host@.service
++++ b/service_files/phosphor-reboot-host@.service
+@@ -13,7 +13,8 @@ After=obmc-host-stopped@%i.target
+ # solution does the job.
+ # Since this is a part of the reboot target, call the startmin
+ # target which does the minimum required to start the host.
+-ExecStart=/bin/sh -c "sleep 5 && systemctl start obmc-host-startmin@%i.target"
++EnvironmentFile=/etc/default/obmc/phosphor-reboot-host/reboot.conf
++ExecStart=/bin/sh -c "sleep ${{REBOOT_DELAY}} && systemctl start obmc-host-startmin@%i.target"
+ 
+ [Install]
+ WantedBy=obmc-host-reboot@%i.target
+-- 
+2.28.0
+

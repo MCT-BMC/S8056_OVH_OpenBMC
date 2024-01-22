@@ -1,0 +1,12 @@
+[Unit]
+Description=BMC Hardware Watchdog Daemon
+
+[Service]
+EnvironmentFile=/etc/default/obmc/system-watchdog/system-watchdog.conf
+ExecStart=/sbin/watchdog -T ${{TIMEOUT}} -t ${{INTERVAL}} -F ${{DEVICE}}
+ExecStop=/sbin/devmem ${{DISABLE_ADDRESS}} 32 ${{DISABLE_REGISTER}}
+KillSignal=SIGKILL
+Nice=-20
+
+[Install]
+WantedBy=basic.target

@@ -1,0 +1,51 @@
+From e5cca04f50a10cc90bb290b06496e1206a8feb62 Mon Sep 17 00:00:00 2001
+From: Alwin Joseph <alwinj@twitter.com>
+Date: Mon, 11 Jan 2021 19:22:12 +0000
+Subject: [PATCH] Add Process Name to BMC Journal Log JSON Response
+
+---
+ redfish-core/lib/log_services.hpp | 17 ++++++++++++++++-
+ 1 file changed, 16 insertions(+), 1 deletion(-)
+
+diff --git a/redfish-core/lib/log_services.hpp b/redfish-core/lib/log_services.hpp
+index 0e93f5c..acd079e 100644
+--- a/redfish-core/lib/log_services.hpp
++++ b/redfish-core/lib/log_services.hpp
+@@ -1774,6 +1774,20 @@ static int fillBMCJournalLogEntryJson(const std::string& bmcJournalLogEntryID,
+     // Get the Log Entry contents
+     int ret = 0;
+ 
++    //Get SYSLOG Message and Process Name
++    std::string message;
++    std::string_view syslogID;
++    ret = getJournalMetadata(journal, "SYSLOG_IDENTIFIER", syslogID);
++    if (ret < 0)
++    {
++        BMCWEB_LOG_ERROR << "Failed to read SYSLOG_IDENTIFIER field: "
++                         << strerror(-ret);
++    }
++    if (!syslogID.empty())
++    {
++        message += "[" + std::string(syslogID) + "]: ";
++    }
++
+     std::string_view msg;
+     ret = getJournalMetadata(journal, "MESSAGE", msg);
+     if (ret < 0)
+@@ -1781,6 +1795,7 @@ static int fillBMCJournalLogEntryJson(const std::string& bmcJournalLogEntryID,
+         BMCWEB_LOG_ERROR << "Failed to read MESSAGE field: " << strerror(-ret);
+         return 1;
+     }
++    message += std::string(msg);
+ 
+     // Get the severity from the PRIORITY field
+     long int severity = 8; // Default to an invalid priority
+@@ -1804,7 +1819,7 @@ static int fillBMCJournalLogEntryJson(const std::string& bmcJournalLogEntryID,
+                           bmcJournalLogEntryID},
+         {"Name", "BMC Journal Entry"},
+         {"Id", bmcJournalLogEntryID},
+-        {"Message", msg},
++        {"Message", std::move(message)}, 
+         {"EntryType", "Oem"},
+         {"Severity",
+          severity <= 2 ? "Critical" : severity <= 4 ? "Warning" : "OK"},

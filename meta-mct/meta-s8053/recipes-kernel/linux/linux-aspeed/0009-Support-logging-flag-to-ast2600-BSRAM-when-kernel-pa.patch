@@ -1,0 +1,36 @@
+From 0eebaba710b9072b6d8ac333ed18fc8493a7a797 Mon Sep 17 00:00:00 2001
+From: Janny Au <janny.au@mic.com.tw>
+Date: Thu, 10 Mar 2022 17:00:29 +0800
+Subject: [PATCH] Support logging flag to ast2600 BSRAM when kernel panic
+
+---
+ kernel/panic.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/kernel/panic.c b/kernel/panic.c
+index cefd7d82366f..dffbeaa9d69f 100644
+--- a/kernel/panic.c
++++ b/kernel/panic.c
+@@ -177,6 +177,20 @@ static void panic_print_sys_info(void)
+  */
+ void panic(const char *fmt, ...)
+ {
++	/*write BSRAM*/
++	uint32_t bSramConorlAddress = 0x1e6ef000;
++	uint32_t bSramKey = 0xdba078e2;
++	uint32_t bSramStoteAddress = 0x1e6ef110;
++	uint32_t writeValue = 0x4B50263F; //ascii "K P & [checksum]"
++
++	void __iomem		*physical_addr;
++	physical_addr = ioremap(bSramConorlAddress, 4);
++	writel(bSramKey, physical_addr);
++	physical_addr = ioremap(bSramStoteAddress, 4);
++	writel(writeValue, physical_addr);
++	physical_addr = ioremap(bSramConorlAddress, 4);
++	writel(0x0, physical_addr);
++
+ 	static char buf[1024];
+ 	va_list args;
+ 	long i, i_next = 0, len;
+-- 
+2.25.1

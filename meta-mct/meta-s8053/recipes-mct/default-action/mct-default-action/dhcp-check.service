@@ -1,0 +1,12 @@
+[Unit]
+Description=Workaround for restarting the dedicated network port 
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/env dhcp-check.sh
+SyslogIdentifier=dhcp-check
+
+[Install]
+WantedBy=basic.target
+

@@ -1,0 +1,69 @@
+From 9533199d151297928a1ac169c97b243de790314f Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Thu, 26 Aug 2021 16:35:55 +0800
+Subject: [PATCH] Initialize default LED status
+
+---
+ board/aspeed/ast-g5/ast-g5.c | 32 ++++++++++++++++++++++++++++++++
+ 1 file changed, 32 insertions(+)
+
+diff --git a/board/aspeed/ast-g5/ast-g5.c b/board/aspeed/ast-g5/ast-g5.c
+index b11de688a5..1c9e68df59 100644
+--- a/board/aspeed/ast-g5/ast-g5.c
++++ b/board/aspeed/ast-g5/ast-g5.c
+@@ -27,6 +27,12 @@ DECLARE_GLOBAL_DATA_PTR;
+ #define FWSPICS1_FUNC_PIN         24
+ #define FWSPICS2_FUNC_PIN         25
+ 
++#define GPIO_REG_BASE             0x1e780000
++#define GPIO_MNOP_VALUE           0x78
++#define GPIO_MNOP_DIR             0x7c
++#define AMBER_LED                 BIT(5)
++#define POWER_LED                 BIT(31)
++
+ /* --------------------------------------------------------------------
+  * @fn Chip_Register_Init
+  * @brief Initialize the BMC chip registers if needed
+@@ -78,6 +84,31 @@ void SCU_Init(void)
+     *(volatile ulong *) (AST_SCU_BASE + 0x88) = ast_reg32;
+ }
+ 
++void LED_Init()
++{
++    puts("LED register initialization\n");
++
++    // Set default amber LED direction to output
++    uint32_t direction = readl(GPIO_REG_BASE + GPIO_MNOP_DIR);
++    direction |= AMBER_LED;
++    writel(direction, GPIO_REG_BASE + GPIO_MNOP_DIR);
++
++    // Set default amber LED value to low
++    uint32_t value = readl(GPIO_REG_BASE + GPIO_MNOP_VALUE);
++    value &= (~AMBER_LED);
++    writel(value, GPIO_REG_BASE + GPIO_MNOP_VALUE);
++
++    // Set default power LED direction to output
++    direction = readl(GPIO_REG_BASE + GPIO_MNOP_DIR);
++    direction |= POWER_LED;
++    writel(direction, GPIO_REG_BASE + GPIO_MNOP_DIR);
++
++    // Set default power LED data to low
++    value = readl(GPIO_REG_BASE + GPIO_MNOP_VALUE);
++    value &= (~POWER_LED);
++    writel(value, GPIO_REG_BASE + GPIO_MNOP_VALUE);
++}
++
+ int board_init(void)
+ {
+ 	gd->bd->bi_boot_params = CONFIG_SYS_SDRAM_BASE + 0x100;
+@@ -86,6 +117,7 @@ int board_init(void)
+ 	Chip_Register_Init();
+ 	Set_Default_UART_Route();
+ 	SCU_Init();
++	LED_Init();
+ 
+ 	return 0;
+ }
+-- 
+2.32.0
+

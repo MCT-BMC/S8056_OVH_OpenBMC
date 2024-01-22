@@ -1,0 +1,2282 @@
+From c4193dc8a757b0464ecd453798a8140e12f01b11 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Tue, 15 Mar 2022 17:44:46 +0800
+Subject: [PATCH 03/11] Implement the SEL feature for redfish log service
+
+---
+ meson.build                                        |    5 +-
+ redfish-core/include/event_service_manager.hpp     |    4 +-
+ redfish-core/include/registries.hpp                |    2 +-
+ .../registries/openbmc_message_registry.hpp        |  101 +-
+ redfish-core/include/utils/logutils.hpp            | 1816 ++++++++++++++++++++
+ redfish-core/lib/log_services.hpp                  |  145 +-
+ 6 files changed, 2046 insertions(+), 27 deletions(-)
+ mode change 100644 => 100755 redfish-core/include/event_service_manager.hpp
+ mode change 100644 => 100755 redfish-core/include/registries.hpp
+ mode change 100644 => 100755 redfish-core/include/registries/openbmc_message_registry.hpp
+ create mode 100755 redfish-core/include/utils/logutils.hpp
+ mode change 100644 => 100755 redfish-core/lib/log_services.hpp
+
+diff --git a/meson.build b/meson.build
+index 97eb92d..8a55e46 100755
+--- a/meson.build
++++ b/meson.build
+@@ -10,7 +10,7 @@ project('bmcweb', 'cpp',
+             'cpp_rtti=false',
+             'cpp_std=c++20',
+             'warning_level=3',
+-            'werror=true',
++            'werror=false',
+            ])
+ 
+ # Project related links
+@@ -122,11 +122,8 @@ endif
+ add_project_arguments(
+   cxx.get_supported_arguments([
+   '-Wcast-align',
+-  '-Wconversion',
+   '-Wformat=2',
+-  '-Wold-style-cast',
+   '-Woverloaded-virtual',
+-  '-Wsign-conversion',
+   '-Wunused',
+   '-Wno-unused-parameter',
+   '-Wno-attributes',
+diff --git a/redfish-core/include/event_service_manager.hpp b/redfish-core/include/event_service_manager.hpp
+old mode 100644
+new mode 100755
+index e879f9e..d985dfa
+--- a/redfish-core/include/event_service_manager.hpp
++++ b/redfish-core/include/event_service_manager.hpp
+@@ -74,8 +74,8 @@ inline std::span<const MessageEntry>
+ 
+ #ifndef BMCWEB_ENABLE_REDFISH_DBUS_LOG_ENTRIES
+ static std::optional<boost::asio::posix::stream_descriptor> inotifyConn;
+-static constexpr const char* redfishEventLogDir = "/var/log";
+-static constexpr const char* redfishEventLogFile = "/var/log/redfish";
++static constexpr const char* redfishEventLogDir = "/var/lib/ipmi";
++static constexpr const char* redfishEventLogFile = "/var/lib/ipmi/redfish";
+ static constexpr const size_t iEventSize = sizeof(inotify_event);
+ static int inotifyFd = -1;
+ static int dirWatchDesc = -1;
+diff --git a/redfish-core/include/registries.hpp b/redfish-core/include/registries.hpp
+old mode 100644
+new mode 100755
+index f85d2a5..8d0531b
+--- a/redfish-core/include/registries.hpp
++++ b/redfish-core/include/registries.hpp
+@@ -41,7 +41,7 @@ struct Message
+     const char* severity;
+     const char* messageSeverity;
+     const size_t numberOfArgs;
+-    std::array<const char*, 5> paramTypes;
++    std::array<const char*, 15> paramTypes;
+     const char* resolution;
+ };
+ using MessageEntry = std::pair<const char*, const Message>;
+diff --git a/redfish-core/include/registries/openbmc_message_registry.hpp b/redfish-core/include/registries/openbmc_message_registry.hpp
+old mode 100644
+new mode 100755
+index edb39ae..e79d90a
+--- a/redfish-core/include/registries/openbmc_message_registry.hpp
++++ b/redfish-core/include/registries/openbmc_message_registry.hpp
+@@ -29,7 +29,7 @@ const Header header = {
+     "0.3.0",
+     "OpenBMC",
+ };
+-constexpr std::array<MessageEntry, 189> registry = {
++constexpr std::array<MessageEntry, 193> registry = {
+     MessageEntry{
+         "ADDDCCorrectable",
+         {
+@@ -2189,6 +2189,105 @@ constexpr std::array<MessageEntry, 189> registry = {
+                      },
+                      "None.",
+                  }},
++    MessageEntry{"SELEntry",
++                 {
++                     "Indicates a SEL entry was added using the "
++                     "Add SEL Entry or Platform Event command.",
++                     "Sensor:%1, Sensor Type:%2, Record Type:%3, "
++                     "Generator ID:%4, EvM Rev:%5, Event Dir:%6, Event Type:%7, "
++                     "Event Data [1,2,3]:[%8,%9,%10]",
++                     "OK",
++                     "OK",
++                     10,
++                     {
++                         "string",
++                         "string",
++                         "string",
++                         "string",
++                         "string",
++                         "string",
++                         "string",
++                         "string",
++                         "string",
++                         "string"
++                     },
++                     "None.",
++                 }},
++    MessageEntry{"SELEntryOK",
++                 {
++                     "Indicates a SEL entry was added using the "
++                     "Add SEL Entry or Platform Event command.",
++                     "Sensor:%1, Sensor Type:%2, Description: %3, Record Type:%4, "
++                     "Generator ID:%5, EvM Rev:%6, Event Data [1,2,3]:[%7,%8,%9], "
++                     "Event Direction:%10, Event Type:%11",
++                     "OK",
++                     "OK",
++                     11,
++                     {
++                         "string",
++                         "string",
++                         "string",
++                         "string",
++                         "string",
++                         "string",
++                         "string",
++                         "string",
++                         "string",
++                         "string",
++                         "string"
++                     },
++                     "None.",
++                 }},
++    MessageEntry{"SELEntryCritical",
++                 {
++                     "Indicates a SEL entry was added using the "
++                     "Add SEL Entry or Platform Event command.",
++                     "Sensor:%1, Sensor Type:%2, Description: %3, Record Type:%4, "
++                     "Generator ID:%5, EvM Rev:%6, Event Data [1,2,3]:[%7,%8,%9], "
++                     "Event Direction:%10, Event Type:%11",
++                     "Critical",
++                     "Critical",
++                     11,
++                     {
++                         "string",
++                         "string",
++                         "string",
++                         "string",
++                         "string",
++                         "string",
++                         "string",
++                         "string",
++                         "string",
++                         "string",
++                         "string"
++                     },
++                     "None.",
++                 }},
++    MessageEntry{"SELEntryWarning",
++                 {
++                     "Indicates a SEL entry was added using the "
++                     "Add SEL Entry or Platform Event command.",
++                     "Sensor:%1, Sensor Type:%2, Description: %3, Record Type:%4, "
++                     "Generator ID:%5, EvM Rev:%6, Event Data [1,2,3]:[%7,%8,%9], "
++                     "Event Direction:%10, Event Type:%11",
++                     "Warning",
++                     "Warning",
++                     11,
++                     {
++                         "string",
++                         "string",
++                         "string",
++                         "string",
++                         "string",
++                         "string",
++                         "string",
++                         "string",
++                         "string",
++                         "string",
++                         "string"
++                     },
++                     "None.",
++                 }},
+     MessageEntry{"SensorThresholdCriticalHighGoingHigh",
+                  {
+                      "Indicates that a threshold sensor has crossed a "
+diff --git a/redfish-core/include/utils/logutils.hpp b/redfish-core/include/utils/logutils.hpp
+new file mode 100755
+index 0000000..083f014
+--- /dev/null
++++ b/redfish-core/include/utils/logutils.hpp
+@@ -0,0 +1,1816 @@
++#include <boost/algorithm/string.hpp>
++#include <boost/bimap.hpp>
++#include <boost/container/flat_map.hpp>
++#include <cstring>
++#include <sdbusplus/bus.hpp>
++#include <sdbusplus/bus/match.hpp>
++#include <sdbusplus/timer.hpp>
++#include <sstream>
++#include <string>
++#include <array>
++#include <exception>
++
++#pragma once
++
++#define SENSOR_TYPE_MAX 0x2C
++#define DATA_BYTE2_SPECIFIED_MASK    0xc0 
++#define SIZE_OF_DESC    128
++
++#define BSWAP_16(x) ((((x) & 0xff00) >> 8) | (((x) & 0x00ff) << 8))
++#define BSWAP_32(x) ((((x) & 0xff000000) >> 24) | (((x) & 0x00ff0000) >> 8) |\
++                     (((x) & 0x0000ff00) << 8) | (((x) & 0x000000ff) << 24))
++
++#define tos32(val, bits)    ((val & ((1<<((bits)-1)))) ? (-((val) & (1<<((bits)-1))) | (val)) : (val))
++
++#define __TO_M(mtol)       (int16_t)(tos32((((BSWAP_16(mtol) & 0xff00) >> 8) | ((BSWAP_16(mtol) & 0xc0) << 2)), 10))
++#define __TO_B(bacc)       (int32_t)(tos32((((BSWAP_32(bacc) & 0xff000000) >> 24) | \
++                            ((BSWAP_32(bacc) & 0xc00000) >> 14)), 10))
++#define __TO_R_EXP(bacc)   (int32_t)(tos32(((BSWAP_32(bacc) & 0xf0) >> 4), 4))
++#define __TO_B_EXP(bacc)   (int32_t)(tos32((BSWAP_32(bacc) & 0xf), 4))
++
++#define SDR_SENSOR_L_LINEAR     0x00
++#define SDR_SENSOR_L_LN         0x01
++#define SDR_SENSOR_L_LOG10      0x02
++#define SDR_SENSOR_L_LOG2       0x03
++#define SDR_SENSOR_L_E          0x04
++#define SDR_SENSOR_L_EXP10      0x05
++#define SDR_SENSOR_L_EXP2       0x06
++#define SDR_SENSOR_L_1_X        0x07
++#define SDR_SENSOR_L_SQR        0x08
++#define SDR_SENSOR_L_CUBE       0x09
++#define SDR_SENSOR_L_SQRT       0x0a
++#define SDR_SENSOR_L_CUBERT     0x0b
++#define SDR_SENSOR_L_NONLINEAR  0x70
++
++#define UNIT_TYPE_MAX 92 /* This is the ID of "grams" */
++#define UNIT_TYPE_LONGEST_NAME 19 /* This is the length of "color temp deg K" */
++
++#define SDR_UNIT_MOD_NONE 0 /* none */
++#define SDR_UNIT_MOD_DIV 1 /* Basic Unit / Modifier Unit */
++#define SDR_UNIT_MOD_MUL 2 /* Basic Unit * Mofifier Unit */
++
++enum MessageID 
++{ 
++    SELEntry,
++    SELEntryOK,
++    SELEntryCritical,
++    SELEntryWarning
++};
++
++enum class SensorTypeCodes : uint8_t
++{
++    reserved = 0x0,
++    temperature = 0x1,
++    voltage = 0x2,
++    current = 0x3,
++    fan = 0x4,
++    processor = 0x7,
++    power_supply = 0x8,
++    power_unit = 0x9,
++    other = 0xB,
++    system_firmware = 0xF,
++    chassis = 0x18,
++    event_disabled = 0x10,
++    system_event = 0x12,
++    pwr_button = 0x14,
++    restart = 0x1D,
++    acpi = 0x22,
++    watchdog2 = 0x23,
++    mgtsubsyshealth = 0x28,
++    versionchange = 0x2B,
++    fru_state = 0x2C,
++};
++
++enum class SensorUnits : uint8_t
++{
++    unspecified = 0x0,
++    degreesC = 0x1,
++    volts = 0x4,
++    amps = 0x5,
++    watts = 0x6,
++    rpm = 0x12,
++    hit = 0x4e
++};
++
++struct CmpStrVersion
++{
++    bool operator()(std::string a, std::string b) const
++    {
++        return strverscmp(a.c_str(), b.c_str()) < 0;
++    }
++};
++
++struct CmpStr
++{
++    bool operator()(const char* a, const char* b) const
++    {
++        return std::strcmp(a, b) < 0;
++    }
++};
++
++struct ipmiEventSensorTypes {
++    uint8_t	code;
++    uint8_t	offset;
++#define ALL_OFFSETS_SPECIFIED  0xff
++    uint8_t   data;
++    const char  * desc;
++};
++
++struct sensors{
++    uint8_t linearization;  /* 70h=non linear, 71h-7Fh=non linear, OEM */
++    uint16_t mtol;          /* M, tolerance */
++    uint32_t bacc;          /* accuracy, B, Bexp, Rexp */
++    uint8_t analog;         /* Analog(numeric) data format*/
++};
++
++using SensorSubTree = boost::container::flat_map<
++    std::string,
++    boost::container::flat_map<std::string, std::vector<std::string>>,
++    CmpStrVersion>;
++using SensorNumMap = boost::bimap<int, std::string>;
++
++std::vector<std::string> logEntryBuffer;
++
++const char *ipmiGenericSensorTypeVals[] = {
++    "reserved",
++    "Temperature",
++    "Voltage",
++    "Current", 
++    "Fan",
++    "Physical Security",
++    "Platform Security",
++    "Processor",
++    "Power Supply",
++    "Power Unit",
++    "Cooling Device",
++    "Other",
++    "Memory",
++    "Drive Slot / Bay",
++    "POST Memory Resize",
++    "System Firmwares",
++    "Event Logging Disabled",
++    "Watchdog1",
++    "System Event",
++    "Critical Interrupt",
++    "Button",
++    "Module / Board",
++    "Microcontroller",
++    "Add-in Card",
++    "Chassis",
++    "Chip Set",
++    "Other FRU",
++    "Cable / Interconnect",
++    "Terminator",
++    "System Boot Initiated",
++    "Boot Error",
++    "OS Boot",
++    "OS Critical Stop",
++    "Slot / Connector",
++    "System ACPI Power State",
++    "Watchdog2",
++    "Platform Alert",
++    "Entity Presence",
++    "Monitor ASIC",
++    "LAN",
++    "Management Subsys Health",
++    "Battery",
++    "Session Audit",
++    "Version Change",
++    "FRU State",
++    NULL
++};
++
++static const struct ipmiEventSensorTypes genericEventTypes[] = {
++    /* Threshold Based States */
++    { 0x01, 0x00, 0xff, "Lower Non-critical going low " },
++    { 0x01, 0x01, 0xff, "Lower Non-critical going high" },
++    { 0x01, 0x02, 0xff, "Lower Critical going low " },
++    { 0x01, 0x03, 0xff, "Lower Critical going high" },
++    { 0x01, 0x04, 0xff, "Lower Non-recoverable going low " },
++    { 0x01, 0x05, 0xff, "Lower Non-recoverable going high" },
++    { 0x01, 0x06, 0xff, "Upper Non-critical going low " },
++    { 0x01, 0x07, 0xff, "Upper Non-critical going high" },
++    { 0x01, 0x08, 0xff, "Upper Critical going low " },
++    { 0x01, 0x09, 0xff, "Upper Critical going high" },
++    { 0x01, 0x0a, 0xff, "Upper Non-recoverable going low " },
++    { 0x01, 0x0b, 0xff, "Upper Non-recoverable going high" },
++    /* DMI-based "usage state" States */
++    { 0x02, 0x00, 0xff, "Transition to Idle" },
++    { 0x02, 0x01, 0xff, "Transition to Active" },
++    { 0x02, 0x02, 0xff, "Transition to Busy" },
++    /* Digital-Discrete Event States */
++    { 0x03, 0x00, 0xff, "State Deasserted" },
++    { 0x03, 0x01, 0xff, "State Asserted" },
++    { 0x04, 0x00, 0xff, "Predictive Failure Deasserted" },
++    { 0x04, 0x01, 0xff, "Predictive Failure Asserted" },
++    { 0x05, 0x00, 0xff, "Limit Not Exceeded" },
++    { 0x05, 0x01, 0xff, "Limit Exceeded" },
++    { 0x06, 0x00, 0xff, "Performance Met" },
++    { 0x06, 0x01, 0xff, "Performance Lags" },
++    /* Severity Event States */
++    { 0x07, 0x00, 0xff, "Transition to OK" },
++    { 0x07, 0x01, 0xff, "Transition to Non-critical from OK" },
++    { 0x07, 0x02, 0xff, "Transition to Critical from less severe" },
++    { 0x07, 0x03, 0xff, "Transition to Non-recoverable from less severe" },
++    { 0x07, 0x04, 0xff, "Transition to Non-critical from more severe" },
++    { 0x07, 0x05, 0xff, "Transition to Critical from Non-recoverable" },
++    { 0x07, 0x06, 0xff, "Transition to Non-recoverable" },
++    { 0x07, 0x07, 0xff, "Monitor" },
++    { 0x07, 0x08, 0xff, "Informational" },
++    /* Availability Status States */
++    { 0x08, 0x00, 0xff, "Device Absent" },
++    { 0x08, 0x01, 0xff, "Device Present" },
++    { 0x09, 0x00, 0xff, "Device Disabled" },
++    { 0x09, 0x01, 0xff, "Device Enabled" },
++    { 0x0a, 0x00, 0xff, "Transition to Running" },
++    { 0x0a, 0x01, 0xff, "Transition to In Test" },
++    { 0x0a, 0x02, 0xff, "Transition to Power Off" },
++    { 0x0a, 0x03, 0xff, "Transition to On Line" },
++    { 0x0a, 0x04, 0xff, "Transition to Off Line" },
++    { 0x0a, 0x05, 0xff, "Transition to Off Duty" },
++    { 0x0a, 0x06, 0xff, "Transition to Degraded" },
++    { 0x0a, 0x07, 0xff, "Transition to Power Save" },
++    { 0x0a, 0x08, 0xff, "Install Error" },
++    /* Redundancy States */
++    { 0x0b, 0x00, 0xff, "Fully Redundant" },
++    { 0x0b, 0x01, 0xff, "Redundancy Lost" },
++    { 0x0b, 0x02, 0xff, "Redundancy Degraded" },
++    { 0x0b, 0x03, 0xff, "Non-Redundant: Sufficient from Redundant" },
++    { 0x0b, 0x04, 0xff, "Non-Redundant: Sufficient from Insufficient" },
++    { 0x0b, 0x05, 0xff, "Non-Redundant: Insufficient Resources" },
++    { 0x0b, 0x06, 0xff, "Redundancy Degraded from Fully Redundant" },
++    { 0x0b, 0x07, 0xff, "Redundancy Degraded from Non-Redundant" },
++    /* ACPI Device Power States */
++    { 0x0c, 0x00, 0xff, "D0 Power State" },
++    { 0x0c, 0x01, 0xff, "D1 Power State" },
++    { 0x0c, 0x02, 0xff, "D2 Power State" },
++    { 0x0c, 0x03, 0xff, "D3 Power State" },
++    /* END */
++    { 0x00, 0x00, 0xff, NULL },
++};
++
++static const struct ipmiEventSensorTypes sensorSpecificEventTypes[] = {
++    /* Physical Security */
++    { 0x05, 0x00, 0xff, "General Chassis intrusion" },
++    { 0x05, 0x01, 0xff, "Drive Bay intrusion" },
++    { 0x05, 0x02, 0xff, "I/O Card area intrusion" },
++    { 0x05, 0x03, 0xff, "Processor area intrusion" },
++    { 0x05, 0x04, 0xff, "System unplugged from LAN" },
++    { 0x05, 0x05, 0xff, "Unauthorized dock" },
++    { 0x05, 0x06, 0xff, "FAN area intrusion" },
++    /* Platform Security */
++    { 0x06, 0x00, 0xff, "Front Panel Lockout violation attempted" },
++    { 0x06, 0x01, 0xff, "Pre-boot password violation - user password" },
++    { 0x06, 0x02, 0xff, "Pre-boot password violation - setup password" },
++    { 0x06, 0x03, 0xff, "Pre-boot password violation - network boot password" },
++    { 0x06, 0x04, 0xff, "Other pre-boot password violation" },
++    { 0x06, 0x05, 0xff, "Out-of-band access password violation" },
++    /* Processor */
++    { 0x07, 0x00, 0xff, "IERR" },
++    { 0x07, 0x01, 0xff, "Thermal Trip" },
++    { 0x07, 0x02, 0xff, "FRB1/BIST failure" },
++    { 0x07, 0x03, 0xff, "FRB2/Hang in POST failure" },
++    { 0x07, 0x04, 0xff, "FRB3/Processor startup/init failure" },
++    { 0x07, 0x05, 0xff, "Configuration Error" },
++    { 0x07, 0x06, 0xff, "SM BIOS Uncorrectable CPU-complex Error" },
++    { 0x07, 0x07, 0xff, "Presence detected" },
++    { 0x07, 0x08, 0xff, "Disabled" },
++    { 0x07, 0x09, 0xff, "Terminator presence detected" },
++    { 0x07, 0x0a, 0xff, "Throttled" },
++    { 0x07, 0x0b, 0xff, "Uncorrectable machine check exception" },
++    { 0x07, 0x0c, 0xff, "Correctable machine check error" },
++    /* Power Supply */
++    { 0x08, 0x00, 0xff, "Presence detected" },
++    { 0x08, 0x01, 0xff, "Failure detected" },
++    { 0x08, 0x02, 0xff, "Predictive failure" },
++    { 0x08, 0x03, 0xff, "Power Supply AC lost" },
++    { 0x08, 0x04, 0xff, "AC lost or out-of-range" },
++    { 0x08, 0x05, 0xff, "AC out-of-range, but present" },
++    { 0x08, 0x06, 0x00, "Config Error: Vendor Mismatch" },
++    { 0x08, 0x06, 0x01, "Config Error: Revision Mismatch" },
++    { 0x08, 0x06, 0x02, "Config Error: Processor Missing" },
++    { 0x08, 0x06, 0x03, "Config Error: Power Supply Rating Mismatch" },
++    { 0x08, 0x06, 0x04, "Config Error: Voltage Rating Mismatch" },
++    { 0x08, 0x06, 0xff, "Config Error" },
++    { 0x08, 0x06, 0xff, "Power Supply Inactive" },
++    /* Power Unit */
++    { 0x09, 0x00, 0xff, "Power off/down" },
++    { 0x09, 0x01, 0xff, "Power cycle" },
++    { 0x09, 0x02, 0xff, "240VA power down" },
++    { 0x09, 0x03, 0xff, "Interlock power down" },
++    { 0x09, 0x04, 0xff, "AC lost" },
++    { 0x09, 0x05, 0xff, "Soft-power control failure" },
++    { 0x09, 0x06, 0xff, "Failure detected" },
++    { 0x09, 0x07, 0xff, "Predictive failure" },
++    /* Memory */
++    { 0x0c, 0x00, 0xff, "Correctable ECC" },
++    { 0x0c, 0x01, 0xff, "Uncorrectable ECC" },
++    { 0x0c, 0x02, 0xff, "Parity" },
++    { 0x0c, 0x03, 0xff, "Memory Scrub Failed" },
++    { 0x0c, 0x04, 0xff, "Memory Device Disabled" },
++    { 0x0c, 0x05, 0xff, "Correctable ECC logging limit reached" },
++    { 0x0c, 0x06, 0xff, "Presence Detected" },
++    { 0x0c, 0x07, 0xff, "Configuration Error" },
++    { 0x0c, 0x08, 0xff, "Spare" },
++    { 0x0c, 0x09, 0xff, "Throttled" },
++    { 0x0c, 0x0a, 0xff, "Critical Overtemperature" },
++    /* Drive Slot */
++    { 0x0d, 0x00, 0xff, "Drive Present" },
++    { 0x0d, 0x01, 0xff, "Drive Fault" },
++    { 0x0d, 0x02, 0xff, "Predictive Failure" },
++    { 0x0d, 0x03, 0xff, "Hot Spare" },
++    { 0x0d, 0x04, 0xff, "Parity Check In Progress" },
++    { 0x0d, 0x05, 0xff, "In Critical Array" },
++    { 0x0d, 0x06, 0xff, "In Failed Array" },
++    { 0x0d, 0x07, 0xff, "Rebuild In Progress" },
++    { 0x0d, 0x08, 0xff, "Rebuild Aborted" },
++    /* System Firmware Error */
++    { 0x0f, 0x00, 0x00, "Unspecified" },
++    { 0x0f, 0x00, 0x01, "No system memory installed" },
++    { 0x0f, 0x00, 0x02, "No usable system memory" },
++    { 0x0f, 0x00, 0x03, "Unrecoverable IDE device failure" },
++    { 0x0f, 0x00, 0x04, "Unrecoverable system-board failure" },
++    { 0x0f, 0x00, 0x05, "Unrecoverable diskette failure" },
++    { 0x0f, 0x00, 0x06, "Unrecoverable hard-disk controller failure" },
++    { 0x0f, 0x00, 0x07, "Unrecoverable PS/2 or USB keyboard failure" },
++    { 0x0f, 0x00, 0x08, "Removable boot media not found" },
++    { 0x0f, 0x00, 0x09, "Unrecoverable video controller failure" },
++    { 0x0f, 0x00, 0x0a, "No video device selected" },
++    { 0x0f, 0x00, 0x0b, "BIOS corruption detected" },
++    { 0x0f, 0x00, 0x0c, "CPU voltage mismatch" },
++    { 0x0f, 0x00, 0x0d, "CPU speed mismatch failure" },
++    { 0x0f, 0x00, 0xff, "Unknown Error" },
++    /* System Firmware Hang */
++    { 0x0f, 0x01, 0x00, "Unspecified" },
++    { 0x0f, 0x01, 0x01, "Memory initialization" },
++    { 0x0f, 0x01, 0x02, "Hard-disk initialization" },
++    { 0x0f, 0x01, 0x03, "Secondary CPU Initialization" },
++    { 0x0f, 0x01, 0x04, "User authentication" },
++    { 0x0f, 0x01, 0x05, "User-initiated system setup" },
++    { 0x0f, 0x01, 0x06, "USB resource configuration" },
++    { 0x0f, 0x01, 0x07, "PCI resource configuration" },
++    { 0x0f, 0x01, 0x08, "Option ROM initialization" },
++    { 0x0f, 0x01, 0x09, "Video initialization" },
++    { 0x0f, 0x01, 0x0a, "Cache initialization" },
++    { 0x0f, 0x01, 0x0b, "SMBus initialization" },
++    { 0x0f, 0x01, 0x0c, "Keyboard controller initialization" },
++    { 0x0f, 0x01, 0x0d, "Management controller initialization" },
++    { 0x0f, 0x01, 0x0e, "Docking station attachment" },
++    { 0x0f, 0x01, 0x0f, "Enabling docking station" },
++    { 0x0f, 0x01, 0x10, "Docking station ejection" },
++    { 0x0f, 0x01, 0x11, "Disabling docking station" },
++    { 0x0f, 0x01, 0x12, "Calling operating system wake-up vector" },
++    { 0x0f, 0x01, 0x13, "System boot initiated" },
++    { 0x0f, 0x01, 0x14, "Motherboard initialization" },
++    { 0x0f, 0x01, 0x15, "reserved" },
++    { 0x0f, 0x01, 0x16, "Floppy initialization" },
++    { 0x0f, 0x01, 0x17, "Keyboard test" },
++    { 0x0f, 0x01, 0x18, "Pointing device test" },
++    { 0x0f, 0x01, 0x19, "Primary CPU initialization" },
++    { 0x0f, 0x01, 0xff, "Unknown Hang" },
++    /* System Firmware Progress */
++    { 0x0f, 0x02, 0x00, "Unspecified" },
++    { 0x0f, 0x02, 0x01, "Memory initialization" },
++    { 0x0f, 0x02, 0x02, "Hard-disk initialization" },
++    { 0x0f, 0x02, 0x03, "Secondary CPU Initialization" },
++    { 0x0f, 0x02, 0x04, "User authentication" },
++    { 0x0f, 0x02, 0x05, "User-initiated system setup" },
++    { 0x0f, 0x02, 0x06, "USB resource configuration" },
++    { 0x0f, 0x02, 0x07, "PCI resource configuration" },
++    { 0x0f, 0x02, 0x08, "Option ROM initialization" },
++    { 0x0f, 0x02, 0x09, "Video initialization" },
++    { 0x0f, 0x02, 0x0a, "Cache initialization" },
++    { 0x0f, 0x02, 0x0b, "SMBus initialization" },
++    { 0x0f, 0x02, 0x0c, "Keyboard controller initialization" },
++    { 0x0f, 0x02, 0x0d, "Management controller initialization" },
++    { 0x0f, 0x02, 0x0e, "Docking station attachment" },
++    { 0x0f, 0x02, 0x0f, "Enabling docking station" },
++    { 0x0f, 0x02, 0x10, "Docking station ejection" },
++    { 0x0f, 0x02, 0x11, "Disabling docking station" },
++    { 0x0f, 0x02, 0x12, "Calling operating system wake-up vector" },
++    { 0x0f, 0x02, 0x13, "System boot initiated" },
++    { 0x0f, 0x02, 0x14, "Motherboard initialization" },
++    { 0x0f, 0x02, 0x15, "reserved" },
++    { 0x0f, 0x02, 0x16, "Floppy initialization" },
++    { 0x0f, 0x02, 0x17, "Keyboard test" },
++    { 0x0f, 0x02, 0x18, "Pointing device test" },
++    { 0x0f, 0x02, 0x19, "Primary CPU initialization" },
++    { 0x0f, 0x02, 0xff, "Unknown Progress" },
++    /* Event Logging Disabled */
++    { 0x10, 0x00, 0xff, "Correctable memory error logging disabled" },
++    { 0x10, 0x01, 0xff, "Event logging disabled" },
++    { 0x10, 0x02, 0xff, "Log area reset/cleared" },
++    { 0x10, 0x03, 0xff, "All event logging disabled" },
++    { 0x10, 0x04, 0xff, "Log full" },
++    { 0x10, 0x05, 0xff, "Log almost full" },
++    /* Watchdog 1 */
++    { 0x11, 0x00, 0xff, "BIOS Reset" },
++    { 0x11, 0x01, 0xff, "OS Reset" },
++    { 0x11, 0x02, 0xff, "OS Shut Down" },
++    { 0x11, 0x03, 0xff, "OS Power Down" },
++    { 0x11, 0x04, 0xff, "OS Power Cycle" },
++    { 0x11, 0x05, 0xff, "OS NMI/Diag Interrupt" },
++    { 0x11, 0x06, 0xff, "OS Expired" },
++    { 0x11, 0x07, 0xff, "OS pre-timeout Interrupt" },
++    /* System Event */
++    { 0x12, 0x00, 0xff, "System Reconfigured" },
++    { 0x12, 0x01, 0xff, "OEM System boot event" },
++    { 0x12, 0x02, 0xff, "Undetermined system hardware failure" },
++    { 0x12, 0x03, 0xff, "Entry added to auxiliary log" },
++    { 0x12, 0x04, 0xff, "PEF Action" },
++    { 0x12, 0x05, 0xff, "Timestamp Clock Sync" },
++    /* Critical Interrupt */
++    { 0x13, 0x00, 0xff, "NMI/Diag Interrupt" },
++    { 0x13, 0x01, 0xff, "Bus Timeout" },
++    { 0x13, 0x02, 0xff, "I/O Channel check NMI" },
++    { 0x13, 0x03, 0xff, "Software NMI" },
++    { 0x13, 0x04, 0xff, "PCI PERR" },
++    { 0x13, 0x05, 0xff, "PCI SERR" },
++    { 0x13, 0x06, 0xff, "EISA failsafe timeout" },
++    { 0x13, 0x07, 0xff, "Bus Correctable error" },
++    { 0x13, 0x08, 0xff, "Bus Uncorrectable error" },
++    { 0x13, 0x09, 0xff, "Fatal NMI" },
++    { 0x13, 0x0a, 0xff, "Bus Fatal Error" },
++    { 0x13, 0x0b, 0xff, "Bus Degraded" },
++    /* Button */
++    { 0x14, 0x00, 0xff, "Power Button pressed" },
++    { 0x14, 0x01, 0xff, "Sleep Button pressed" },
++    { 0x14, 0x02, 0xff, "Reset Button pressed" },
++    { 0x14, 0x03, 0xff, "FRU Latch" },
++    { 0x14, 0x04, 0xff, "FRU Service" },
++    /* Chip Set */
++    { 0x19, 0x00, 0xff, "Soft Power Control Failure" },
++    { 0x19, 0x01, 0xff, "Thermal Trip" },
++    /* Cable/Interconnect */
++    { 0x1b, 0x00, 0xff, "Connected" },
++    { 0x1b, 0x01, 0xff, "Config Error" },
++    /* System Boot Initiated */
++    { 0x1d, 0x00, 0xff, "Initiated by power up" },
++    { 0x1d, 0x01, 0xff, "Initiated by hard reset" },
++    { 0x1d, 0x02, 0xff, "Initiated by warm reset" },
++    { 0x1d, 0x03, 0xff, "User requested PXE boot" },
++    { 0x1d, 0x04, 0xff, "Automatic boot to diagnostic" },
++    { 0x1d, 0x05, 0xff, "OS initiated hard reset" },
++    { 0x1d, 0x06, 0xff, "OS initiated warm reset" },
++    { 0x1d, 0x07, 0xff, "System Restart" },
++    /* Boot Error */
++    { 0x1e, 0x00, 0xff, "No bootable media" },
++    { 0x1e, 0x01, 0xff, "Non-bootable disk in drive" },
++    { 0x1e, 0x02, 0xff, "PXE server not found" },
++    { 0x1e, 0x03, 0xff, "Invalid boot sector" },
++    { 0x1e, 0x04, 0xff, "Timeout waiting for selection" },
++    /* OS Boot */
++    { 0x1f, 0x00, 0xff, "A: boot completed" },
++    { 0x1f, 0x01, 0xff, "C: boot completed" },
++    { 0x1f, 0x02, 0xff, "PXE boot completed" },
++    { 0x1f, 0x03, 0xff, "Diagnostic boot completed" },
++    { 0x1f, 0x04, 0xff, "CD-ROM boot completed" },
++    { 0x1f, 0x05, 0xff, "ROM boot completed" },
++    { 0x1f, 0x06, 0xff, "boot completed - device not specified" },
++    { 0x1f, 0x07, 0xff, "Installation started" },
++    { 0x1f, 0x08, 0xff, "Installation completed" },
++    { 0x1f, 0x09, 0xff, "Installation aborted" },
++    { 0x1f, 0x0a, 0xff, "Installation failed" },
++    /* OS Stop/Shutdown */
++    { 0x20, 0x00, 0xff, "Error during system startup" },
++    { 0x20, 0x01, 0xff, "Run-time critical stop" },
++    { 0x20, 0x02, 0xff, "OS graceful stop" },
++    { 0x20, 0x03, 0xff, "OS graceful shutdown" },
++    { 0x20, 0x04, 0xff, "PEF initiated soft shutdown" },
++    { 0x20, 0x05, 0xff, "Agent not responding" },
++    /* Slot/Connector */
++    { 0x21, 0x00, 0xff, "Fault Status" },
++    { 0x21, 0x01, 0xff, "Identify Status" },
++    { 0x21, 0x02, 0xff, "Device Installed" },
++    { 0x21, 0x03, 0xff, "Ready for Device Installation" },
++    { 0x21, 0x04, 0xff, "Ready for Device Removal" },
++    { 0x21, 0x05, 0xff, "Slot Power is Off" },
++    { 0x21, 0x06, 0xff, "Device Removal Request" },
++    { 0x21, 0x07, 0xff, "Interlock" },
++    { 0x21, 0x08, 0xff, "Slot is Disabled" },
++    { 0x21, 0x09, 0xff, "Spare Device" },
++    /* System ACPI Power State */
++    { 0x22, 0x00, 0xff, "S0/G0: working" },
++    { 0x22, 0x01, 0xff, "S1: sleeping with system hw & processor context maintained" },
++    { 0x22, 0x02, 0xff, "S2: sleeping, processor context lost" },
++    { 0x22, 0x03, 0xff, "S3: sleeping, processor & hw context lost, memory retained" },
++    { 0x22, 0x04, 0xff, "S4: non-volatile sleep/suspend-to-disk" },
++    { 0x22, 0x05, 0xff, "S5/G2: soft-off" },
++    { 0x22, 0x06, 0xff, "S4/S5: soft-off" },
++    { 0x22, 0x07, 0xff, "G3: mechanical off" },
++    { 0x22, 0x08, 0xff, "Sleeping in S1/S2/S3 state" },
++    { 0x22, 0x09, 0xff, "G1: sleeping" },
++    { 0x22, 0x0a, 0xff, "S5: entered by override" },
++    { 0x22, 0x0b, 0xff, "Legacy ON state" },
++    { 0x22, 0x0c, 0xff, "Legacy OFF state" },
++    { 0x22, 0x0e, 0xff, "Unknown" },
++    /* Watchdog 2 */
++    { 0x23, 0x00, 0xff, "Timer expired" },
++    { 0x23, 0x01, 0xff, "Hard reset" },
++    { 0x23, 0x02, 0xff, "Power down" },
++    { 0x23, 0x03, 0xff, "Power cycle" },
++    { 0x23, 0x04, 0xff, "reserved" },
++    { 0x23, 0x05, 0xff, "reserved" },
++    { 0x23, 0x06, 0xff, "reserved" },
++    { 0x23, 0x07, 0xff, "reserved" },
++    { 0x23, 0x08, 0xff, "Timer interrupt" },
++    /* Platform Alert */
++    { 0x24, 0x00, 0xff, "Platform generated page" },
++    { 0x24, 0x01, 0xff, "Platform generated LAN alert" },
++    { 0x24, 0x02, 0xff, "Platform Event Trap generated" },
++    { 0x24, 0x03, 0xff, "Platform generated SNMP trap, OEM format" },
++    /* Entity Presence */
++    { 0x25, 0x00, 0xff, "Present" },
++    { 0x25, 0x01, 0xff, "Absent" },
++    { 0x25, 0x02, 0xff, "Disabled" },
++    /* LAN */
++    { 0x27, 0x00, 0xff, "Heartbeat Lost" },
++    { 0x27, 0x01, 0xff, "Heartbeat" },
++    /* Management Subsystem Health */
++    { 0x28, 0x00, 0xff, "Sensor access degraded or unavailable" },
++    { 0x28, 0x01, 0xff, "Controller access degraded or unavailable" },
++    { 0x28, 0x02, 0xff, "Management controller off-line" },
++    { 0x28, 0x03, 0xff, "Management controller unavailable" },
++    { 0x28, 0x04, 0xff, "Sensor failure" },
++    { 0x28, 0x05, 0xff, "FRU failure" },
++    /* Battery */
++    { 0x29, 0x00, 0xff, "Low" },
++    { 0x29, 0x01, 0xff, "Failed" },
++    { 0x29, 0x02, 0xff, "Presence Detected" },
++    /* Version Change */
++    { 0x2b, 0x00, 0xff, "Hardware change detected" },
++    { 0x2b, 0x01, 0x00, "Firmware or software change detected" },
++    { 0x2b, 0x01, 0x01, "Firmware or software change detected, Mngmt Ctrl Dev Id" },
++    { 0x2b, 0x01, 0x02, "Firmware or software change detected, Mngmt Ctrl Firm Rev" },
++    { 0x2b, 0x01, 0x03, "Firmware or software change detected, Mngmt Ctrl Dev Rev" },
++    { 0x2b, 0x01, 0x04, "Firmware or software change detected, Mngmt Ctrl Manuf Id" },
++    { 0x2b, 0x01, 0x05, "Firmware or software change detected, Mngmt Ctrl IPMI Vers" },
++    { 0x2b, 0x01, 0x06, "Firmware or software change detected, Mngmt Ctrl Aux Firm Id" },
++    { 0x2b, 0x01, 0x07, "Firmware or software change detected, Mngmt Ctrl Firm Boot Block" },
++    { 0x2b, 0x01, 0x08, "Firmware or software change detected, Mngmt Ctrl Other" },
++    { 0x2b, 0x01, 0x09, "Firmware or software change detected, BIOS/EFI change" },
++    { 0x2b, 0x01, 0x0A, "Firmware or software change detected, SMBIOS change" },
++    { 0x2b, 0x01, 0x0B, "Firmware or software change detected, O/S change" },
++    { 0x2b, 0x01, 0x0C, "Firmware or software change detected, O/S loader change" },
++    { 0x2b, 0x01, 0x0D, "Firmware or software change detected, Service Diag change" },
++    { 0x2b, 0x01, 0x0E, "Firmware or software change detected, Mngmt SW agent change" },
++    { 0x2b, 0x01, 0x0F, "Firmware or software change detected, Mngmt SW App change" },
++    { 0x2b, 0x01, 0x10, "Firmware or software change detected, Mngmt SW Middle" },
++    { 0x2b, 0x01, 0x11, "Firmware or software change detected, Prog HW Change (FPGA)" },
++    { 0x2b, 0x01, 0x12, "Firmware or software change detected, board/FRU module change" },
++    { 0x2b, 0x01, 0x13, "Firmware or software change detected, board/FRU component change" },
++    { 0x2b, 0x01, 0x14, "Firmware or software change detected, board/FRU replace equ ver" },
++    { 0x2b, 0x01, 0x15, "Firmware or software change detected, board/FRU replace new ver" },
++    { 0x2b, 0x01, 0x16, "Firmware or software change detected, board/FRU replace old ver" },
++    { 0x2b, 0x01, 0x17, "Firmware or software change detected, board/FRU HW conf change" },
++    { 0x2b, 0x02, 0xff, "Hardware incompatibility detected" },
++    { 0x2b, 0x03, 0xff, "Firmware or software incompatibility detected" },
++    { 0x2b, 0x04, 0xff, "Invalid or unsupported hardware version" },
++    { 0x2b, 0x05, 0xff, "Invalid or unsupported firmware or software version" },
++    { 0x2b, 0x06, 0xff, "Hardware change success" },
++    { 0x2b, 0x07, 0x00, "Firmware or software change success" },
++    { 0x2b, 0x07, 0x01, "Firmware or software change success, Mngmt Ctrl Dev Id" },
++    { 0x2b, 0x07, 0x02, "Firmware or software change success, Mngmt Ctrl Firm Rev" },
++    { 0x2b, 0x07, 0x03, "Firmware or software change success, Mngmt Ctrl Dev Rev" },
++    { 0x2b, 0x07, 0x04, "Firmware or software change success, Mngmt Ctrl Manuf Id" },
++    { 0x2b, 0x07, 0x05, "Firmware or software change success, Mngmt Ctrl IPMI Vers" },
++    { 0x2b, 0x07, 0x06, "Firmware or software change success, Mngmt Ctrl Aux Firm Id" },
++    { 0x2b, 0x07, 0x07, "Firmware or software change success, Mngmt Ctrl Firm Boot Block" },
++    { 0x2b, 0x07, 0x08, "Firmware or software change success, Mngmt Ctrl Other" },
++    { 0x2b, 0x07, 0x09, "Firmware or software change success, BIOS/EFI change" },
++    { 0x2b, 0x07, 0x0A, "Firmware or software change success, SMBIOS change" },
++    { 0x2b, 0x07, 0x0B, "Firmware or software change success, O/S change" },
++    { 0x2b, 0x07, 0x0C, "Firmware or software change success, O/S loader change" },
++    { 0x2b, 0x07, 0x0D, "Firmware or software change success, Service Diag change" },
++    { 0x2b, 0x07, 0x0E, "Firmware or software change success, Mngmt SW agent change" },
++    { 0x2b, 0x07, 0x0F, "Firmware or software change success, Mngmt SW App change" },
++    { 0x2b, 0x07, 0x10, "Firmware or software change success, Mngmt SW Middle" },
++    { 0x2b, 0x07, 0x11, "Firmware or software change success, Prog HW Change (FPGA)" },
++    { 0x2b, 0x07, 0x12, "Firmware or software change success, board/FRU module change" },
++    { 0x2b, 0x07, 0x13, "Firmware or software change success, board/FRU component change" },
++    { 0x2b, 0x07, 0x14, "Firmware or software change success, board/FRU replace equ ver" },
++    { 0x2b, 0x07, 0x15, "Firmware or software change success, board/FRU replace new ver" },
++    { 0x2b, 0x07, 0x16, "Firmware or software change success, board/FRU replace old ver" },
++    { 0x2b, 0x07, 0x17, "Firmware or software change success, board/FRU HW conf change" },
++    /* FRU State */
++    { 0x2c, 0x00, 0xff, "Not Installed" },
++    { 0x2c, 0x01, 0xff, "Inactive" },
++    { 0x2c, 0x02, 0xff, "Activation Requested" },
++    { 0x2c, 0x03, 0xff, "Activation in Progress" },
++    { 0x2c, 0x04, 0xff, "Active" },
++    { 0x2c, 0x05, 0xff, "Deactivation Requested" },
++    { 0x2c, 0x06, 0xff, "Deactivation in Progress" },
++    { 0x2c, 0x07, 0xff, "Communication lost" },
++    /* PICMG FRU Hot Swap */
++    { 0xF0, 0x00, 0xFF, "Transition to M0" },
++    { 0xF0, 0x01, 0xFF, "Transition to M1" },
++    { 0xF0, 0x02, 0xFF, "Transition to M2" },
++    { 0xF0, 0x03, 0xFF, "Transition to M3" },
++    { 0xF0, 0x04, 0xFF, "Transition to M4" },
++    { 0xF0, 0x05, 0xFF, "Transition to M5" },
++    { 0xF0, 0x06, 0xFF, "Transition to M6" },
++    { 0xF0, 0x07, 0xFF, "Transition to M7" },
++    /* PICMG IPMB Physical Link */
++    { 0xF1, 0x00, 0xff, "IPMB-A disabled, IPMB-B disabled" },
++    { 0xF1, 0x01, 0xff, "IPMB-A enabled, IPMB-B disabled" },
++    { 0xF1, 0x02, 0xff, "IPMB-A disabled, IPMB-B enabled" },
++    { 0xF1, 0x03, 0xff, "IPMB-A enabled, IPMB-B enabled" },
++    /* PICMG Module Hot Swap */
++    { 0xF2, 0x00, 0xff, "Module Handle Closed" },
++    { 0xF2, 0x01, 0xff, "Module Handle Opened" },
++    { 0xF2, 0x02, 0xff, "Quiesced" },
++    { 0x00, 0x00, 0xff, NULL },
++};
++
++static const char *unit_desc[] = {
++	"unspecified",
++	"degrees C",
++	"degrees F",
++	"degrees K",
++	"Volts",
++	"Amps",
++	"Watts",
++	"Joules",
++	"Coulombs",
++	"VA",
++	"Nits",
++	"lumen",
++	"lux",
++	"Candela",
++	"kPa",
++	"PSI",
++	"Newton",
++	"CFM",
++	"RPM",
++	"Hz",
++	"microsecond",
++	"millisecond",
++	"second",
++	"minute",
++	"hour",
++	"day",
++	"week",
++	"mil",
++	"inches",
++	"feet",
++	"cu in",
++	"cu feet",
++	"mm",
++	"cm",
++	"m",
++	"cu cm",
++	"cu m",
++	"liters",
++	"fluid ounce",
++	"radians",
++	"steradians",
++	"revolutions",
++	"cycles",
++	"gravities",
++	"ounce",
++	"pound",
++	"ft-lb",
++	"oz-in",
++	"gauss",
++	"gilberts",
++	"henry",
++	"millihenry",
++	"farad",
++	"microfarad",
++	"ohms",
++	"siemens",
++	"mole",
++	"becquerel",
++	"PPM",
++	"reserved",
++	"Decibels",
++	"DbA",
++	"DbC",
++	"gray",
++	"sievert",
++	"color temp deg K",
++	"bit",
++	"kilobit",
++	"megabit",
++	"gigabit",
++	"byte",
++	"kilobyte",
++	"megabyte",
++	"gigabyte",
++	"word",
++	"dword",
++	"qword",
++	"line",
++	"hit",
++	"miss",
++	"retry",
++	"reset",
++	"overflow",
++	"underrun",
++	"collision",
++	"packets",
++	"messages",
++	"characters",
++	"error",
++	"correctable error",
++	"uncorrectable error",
++	"fatal error",
++	"grams"
++};
++
++const static boost::container::flat_map<const char*, SensorTypeCodes, CmpStr>
++    sensorTypes{{{"temperature", SensorTypeCodes::temperature},
++                 {"voltage", SensorTypeCodes::voltage},
++                 {"current", SensorTypeCodes::current},
++                 {"fan_tach", SensorTypeCodes::fan},
++                 {"fan_present", SensorTypeCodes::fan},
++                 {"fan_pwm", SensorTypeCodes::fan},
++                 {"processor", SensorTypeCodes::processor},
++                 {"power_supply", SensorTypeCodes::power_supply},
++                 {"power_unit", SensorTypeCodes::power_unit},
++                 {"power", SensorTypeCodes::other},
++                 {"pattern", SensorTypeCodes::other},
++                 {"system_firmware", SensorTypeCodes::system_firmware},
++                 {"chassis", SensorTypeCodes::chassis},
++                 {"event_disabled", SensorTypeCodes::event_disabled},
++                 {"system_event", SensorTypeCodes::system_event},
++                 {"pwr_button", SensorTypeCodes::pwr_button},
++                 {"restart", SensorTypeCodes::restart},
++                 {"acpi", SensorTypeCodes::acpi},
++                 {"watchdog2", SensorTypeCodes::watchdog2},
++                 {"mgtsubsyshealth", SensorTypeCodes::mgtsubsyshealth},
++                 {"utilization", SensorTypeCodes::mgtsubsyshealth},
++                 {"versionchange", SensorTypeCodes::versionchange},
++                 {"fru_state", SensorTypeCodes::fru_state}
++                 }};
++
++enum class SensorEventTypeCodes : uint8_t
++{
++    reserved = 0x0,
++    threshold = 0x1,
++    specific = 0x6F,
++};
++
++const static boost::container::flat_map<const char*, SensorEventTypeCodes, CmpStr>
++    sensorEventTypes{{{"fan_present", SensorEventTypeCodes::specific},
++                      {"utilization", SensorEventTypeCodes::threshold},  
++                      }};
++
++const static boost::container::flat_map<const char *, SensorUnits, CmpStr>
++    sensorUnits{{{"temperature", SensorUnits::degreesC},
++                 {"voltage", SensorUnits::volts},
++                 {"current", SensorUnits::amps},
++                 {"fan_tach", SensorUnits::rpm},
++                 {"pattern", SensorUnits::hit},
++                 {"power", SensorUnits::watts}}};
++
++const std::string MessageIDToString(MessageID value)
++{
++    static std::string table[] = {
++        "OpenBMC.0.1.SELEntry",
++        "OpenBMC.0.1.SELEntryOK",
++        "OpenBMC.0.1.SELEntryCritical",
++        "OpenBMC.0.1.SELEntryWarning"
++    };
++	return table[value];
++}
++
++template <typename T>
++std::string toStringWithPrecision(const T value, const int precision = 6)
++{
++    std::ostringstream result;
++    result.precision(precision);
++    result << std::fixed << value;
++    return result.str();
++}
++
++template <class T>
++std::string hexToSring(T input,bool header)
++{
++  const char *hex = "0123456789ABCDEF";
++  std::stringstream ss;
++  if(header)
++  {
++     ss << "0x";
++  }
++  for(int i=sizeof(T)*2;i>0;i--)
++  {
++      ss << hex[input >> 4*(i-1) & 0xF];
++  }
++
++  return ss.str();
++}
++
++static int fromHexStr(const std::string hexStr, std::vector<uint8_t>& data)
++{
++    for (unsigned int i = 0; i < hexStr.size(); i += 2)
++    {
++        try
++        {
++            data.push_back(static_cast<uint8_t>(
++                std::stoul(hexStr.substr(i, 2), nullptr, 16)));
++        }
++        catch (std::invalid_argument& e)
++        {
++            return -1;
++        }
++        catch (std::out_of_range& e)
++        {
++            return -1;
++        }
++    }
++    return 0;
++}
++
++std::string getService(const std::string& intf, const std::string& path)
++{
++    auto bus = sdbusplus::bus::new_default();
++
++    auto mapperCall =
++        bus.new_method_call("xyz.openbmc_project.ObjectMapper",
++                            "/xyz/openbmc_project/object_mapper",
++                            "xyz.openbmc_project.ObjectMapper", "GetObject");
++
++    mapperCall.append(path);
++    mapperCall.append(std::vector<std::string>({intf}));
++
++    auto mapperResponseMsg = bus.call(mapperCall);
++
++    if (mapperResponseMsg.is_method_error())
++    {
++        throw std::runtime_error("ERROR in mapper call");
++    }
++
++    std::map<std::string, std::vector<std::string>> mapperResponse;
++    mapperResponseMsg.read(mapperResponse);
++
++    if (mapperResponse.begin() == mapperResponse.end())
++    {
++        throw std::runtime_error("ERROR in reading the mapper response");
++    }
++
++    return mapperResponse.begin()->first;
++}
++
++namespace ipmitool
++{
++std::string ipmiGetGenericSensorType(uint8_t sensorType)
++{
++    std::string sensorTypeStr;
++	if (sensorType <= SENSOR_TYPE_MAX) {
++        sensorTypeStr = ipmiGenericSensorTypeVals[sensorType];
++	}
++
++	return sensorTypeStr;
++}
++
++const struct ipmiEventSensorTypes *
++ipmiGetFirstEventSensorType(uint8_t sensorType, uint8_t eventType)
++{
++    const struct ipmiEventSensorTypes *evt, *start, *next = NULL;
++    uint8_t code;
++
++    if (eventType == 0x6f) {
++        /* check generic sensor types */
++        start = sensorSpecificEventTypes;
++        code = sensorType;
++    } else {
++        start = genericEventTypes;
++        code = eventType;
++    }
++
++    for (evt = start; evt->desc || next; evt++) {
++        /* check if VITA sensor event types has finished */
++        if (!evt->desc) {
++            /* proceed with next table */
++            evt = next;
++            next = NULL;
++        }
++
++        if (code == evt->code){
++            return evt;
++        }
++    }
++
++    return NULL;
++}
++
++const struct ipmiEventSensorTypes *
++ipmiGetNextEventSensorType(const struct ipmiEventSensorTypes *evt)
++{
++    const struct ipmiEventSensorTypes *start = evt;
++
++    for (evt = start + 1; evt->desc; evt++) {
++        if (evt->code == start->code) {
++            return evt;
++        }
++    }
++
++    return NULL;
++}
++
++double sdrConvertSensorReading(struct sensors *sensor, uint8_t val)
++{
++    int m, b, k1, k2;
++    double result;
++
++    m = __TO_M(sensor->mtol);
++    b = __TO_B(sensor->bacc);
++    k1 = __TO_B_EXP(sensor->bacc);
++    k2 = __TO_R_EXP(sensor->bacc);
++
++    switch (sensor->analog) {
++    case 0:
++        result = (double) (((m * val) +
++                    (b * pow(10, k1))) * pow(10, k2));
++        break;
++    case 1:
++        if (val & 0x80)
++            val++;
++        /* fall through */
++    case 2:
++        result = (double) (((m * (int8_t) val) +
++                    (b * pow(10, k1))) * pow(10, k2));
++        break;
++    default:
++        /* Oops! This isn't an analog sensor. */
++        return 0.0;
++    }
++
++    switch (sensor->linearization & 0x7f) {
++    case SDR_SENSOR_L_LN:
++        result = log(result);
++        break;
++    case SDR_SENSOR_L_LOG10:
++        result = log10(result);
++        break;
++    case SDR_SENSOR_L_LOG2:
++        result = (double) (log(result) / log(2.0));
++        break;
++    case SDR_SENSOR_L_E:
++        result = exp(result);
++        break;
++    case SDR_SENSOR_L_EXP10:
++        result = pow(10.0, result);
++        break;
++    case SDR_SENSOR_L_EXP2:
++        result = pow(2.0, result);
++        break;
++    case SDR_SENSOR_L_1_X:
++        result = pow(result, -1.0);    /*1/x w/o exception */
++        break;
++    case SDR_SENSOR_L_SQR:
++        result = pow(result, 2.0);
++        break;
++    case SDR_SENSOR_L_CUBE:
++        result = pow(result, 3.0);
++        break;
++    case SDR_SENSOR_L_SQRT:
++        result = sqrt(result);
++        break;
++    case SDR_SENSOR_L_CUBERT:
++        result = cbrt(result);
++        break;
++    case SDR_SENSOR_L_LINEAR:
++    default:
++        break;
++    }
++    return result;
++}
++
++const char* ipmiSdrGetUnitString(bool pct, uint8_t relation,
++                         uint8_t base, uint8_t modifier)
++{
++	/*
++	 * Twice as long as the longest possible unit name, plus
++	 * two characters for '%' and relation (either '*' or '/'),
++	 * plus the terminating null-byte.
++	 */
++	static char unitstr[2 * UNIT_TYPE_LONGEST_NAME + 2 + 1];
++
++	/*
++	 * By default, if units are supposed to be percent, we will pre-pend
++	 * the percent string  to the textual representation of the units.
++	 */
++	const char *pctstr = pct ? "% " : "";
++	const char *basestr;
++	const char *modstr;
++
++	if (base <= UNIT_TYPE_MAX) {
++		basestr = unit_desc[base];
++	}
++	else {
++		basestr = "invalid";
++	}
++
++	if (modifier <= UNIT_TYPE_MAX) {
++		modstr = unit_desc[base];
++	}
++	else {
++		modstr = "invalid";
++	}
++
++	switch (relation) {
++	case SDR_UNIT_MOD_MUL:
++		snprintf(unitstr, sizeof (unitstr), "%s%s*%s",
++			 pctstr, basestr, modstr);
++		break;
++	case SDR_UNIT_MOD_DIV:
++		snprintf(unitstr, sizeof (unitstr), "%s%s/%s",
++			 pctstr, basestr, modstr);
++		break;
++	case SDR_UNIT_MOD_NONE:
++	default:
++		/*
++		 * Display the text "percent" only when the Base unit is
++		 * "unspecified" and the caller specified to print percent.
++		 */
++		if (base == 0 && pct) {
++			snprintf(unitstr, sizeof(unitstr), "percent");
++		} else {
++			snprintf(unitstr, sizeof (unitstr), "%s%s",
++			         pctstr, basestr);
++		}
++		break;
++	}
++	return unitstr;
++}
++} // namespace ipmitool
++
++namespace ipmi
++{
++namespace details
++{
++inline static bool getSensorSubtree(std::shared_ptr<SensorSubTree>& subtree)
++{
++    static std::shared_ptr<SensorSubTree> sensorTreePtr;
++    sd_bus* bus = NULL;
++    int ret = sd_bus_default_system(&bus);
++    if (ret < 0)
++    {
++        sd_bus_unref(bus);
++        return false;
++    }
++    sdbusplus::bus::bus dbus(bus);
++    static sdbusplus::bus::match::match sensorAdded(
++        dbus,
++        "type='signal',member='InterfacesAdded',arg0path='/xyz/openbmc_project/"
++        "sensors/'",
++        [](sdbusplus::message::message& m) { sensorTreePtr.reset(); });
++
++    static sdbusplus::bus::match::match sensorRemoved(
++        dbus,
++        "type='signal',member='InterfacesRemoved',arg0path='/xyz/"
++        "openbmc_project/sensors/'",
++        [](sdbusplus::message::message& m) { sensorTreePtr.reset(); });
++
++    bool sensorTreeUpdated = false;
++    if (sensorTreePtr)
++    {
++        subtree = sensorTreePtr;
++        return sensorTreeUpdated;
++    }
++
++    sensorTreePtr = std::make_shared<SensorSubTree>();
++
++    auto mapperCall =
++        dbus.new_method_call("xyz.openbmc_project.ObjectMapper",
++                             "/xyz/openbmc_project/object_mapper",
++                             "xyz.openbmc_project.ObjectMapper", "GetSubTree");
++    static constexpr const auto depth = 2;
++    static constexpr std::array<const char*, 3> interfaces = {
++        "xyz.openbmc_project.Sensor.Value",
++        "xyz.openbmc_project.Sensor.Threshold.Warning",
++        "xyz.openbmc_project.Sensor.Threshold.Critical"};
++    mapperCall.append("/xyz/openbmc_project/sensors", depth, interfaces);
++
++    try
++    {
++        auto mapperReply = dbus.call(mapperCall);
++        mapperReply.read(*sensorTreePtr);
++    }
++    catch (sdbusplus::exception_t& e)
++    {
++        return sensorTreeUpdated;
++    }
++    subtree = sensorTreePtr;
++    sensorTreeUpdated = true;
++    return sensorTreeUpdated;
++}
++
++inline static bool getSensorNumMap(std::shared_ptr<SensorNumMap>& sensorNumMap)
++{
++    static std::shared_ptr<SensorNumMap> sensorNumMapPtr;
++    bool sensorNumMapUpated = false;
++
++    std::shared_ptr<SensorSubTree> sensorTree;
++    bool sensorTreeUpdated = details::getSensorSubtree(sensorTree);
++    if (!sensorTree)
++    {
++        return sensorNumMapUpated;
++    }
++
++    if (!sensorTreeUpdated && sensorNumMapPtr)
++    {
++        sensorNumMap = sensorNumMapPtr;
++        return sensorNumMapUpated;
++    }
++
++    sensorNumMapPtr = std::make_shared<SensorNumMap>();
++
++    uint8_t sensorNum = 0;
++    for (const auto& sensor : *sensorTree)
++    {
++        sensorNumMapPtr->insert(
++            SensorNumMap::value_type(sensorNum++, sensor.first));
++    }
++    sensorNumMap = sensorNumMapPtr;
++    sensorNumMapUpated = true;
++    return sensorNumMapUpated;
++}
++} // namespace details
++
++inline static bool getSensorSubtree(SensorSubTree& subtree)
++{
++    std::shared_ptr<SensorSubTree> sensorTree;
++    details::getSensorSubtree(sensorTree);
++    if (!sensorTree)
++    {
++        return false;
++    }
++
++    subtree = *sensorTree;
++    return true;
++}
++
++inline static std::string getSensorTypeStringFromPath(const std::string& path)
++{
++    // get sensor type string from path, path is defined as
++    // /xyz/openbmc_project/sensors/<type>/label
++    size_t typeEnd = path.rfind("/");
++    if (typeEnd == std::string::npos)
++    {
++        return path;
++    }
++    size_t typeStart = path.rfind("/", typeEnd - 1);
++    if (typeStart == std::string::npos)
++    {
++        return path;
++    }
++    // Start at the character after the '/'
++    typeStart++;
++    return path.substr(typeStart, typeEnd - typeStart);
++}
++
++inline static std::string getSensorNameStringFromPath(const std::string& path)
++{
++    // get sensor name string from path, path is defined as
++    // /xyz/openbmc_project/sensors/type/<label>
++    size_t typeEnd = path.rfind("/");
++    if (typeEnd == std::string::npos)
++    {
++        return path;
++    }
++    size_t typeStart = path.rfind("/", typeEnd);
++    if (typeStart == std::string::npos)
++    {
++        return path;
++    }
++    // Start at the character after the '/'
++    typeStart++;
++    return path.substr(typeStart, typeEnd - typeStart);
++}
++
++inline static uint8_t getSensorTypeFromPath(const std::string& path)
++{
++    uint8_t sensorType = 0;
++    std::string type = ipmi::getSensorTypeStringFromPath(path);
++    auto findSensor = sensorTypes.find(type.c_str());
++    if (findSensor != sensorTypes.end())
++    {
++        sensorType = static_cast<uint8_t>(findSensor->second);
++    } // else default 0x0 RESERVED
++
++    return sensorType;
++}
++
++inline static uint8_t getSensorNumberFromPath(const std::string& path)
++{
++    std::shared_ptr<SensorNumMap> sensorNumMapPtr;
++    details::getSensorNumMap(sensorNumMapPtr);
++    if (!sensorNumMapPtr)
++    {
++        return 0xFF;
++    }
++
++#if 0
++    //ray__ print map
++    for (auto& sensor : *sensorNumMapPtr) {
++             std::cerr << sensor.left << " " << sensor.right <<  "\n";
++    }
++#endif 
++
++    try
++    {
++        return sensorNumMapPtr->right.at(path);
++    }
++    catch (std::out_of_range& e)
++    {
++        return 0xFF;
++    }
++}
++
++inline static uint8_t getSensorEventTypeFromPath(const std::string& path)
++{
++    std::string type = getSensorTypeStringFromPath(path);
++    auto findSensor = sensorEventTypes.find(type.c_str());
++    if (findSensor != sensorEventTypes.end())
++    {
++        return static_cast<uint8_t>(findSensor->second);
++    }
++    // else default 0x0 RESERVED
++    uint8_t selType = getSensorTypeFromPath(path);
++    return ((selType > 0x04) && (selType != 0x0b)) ? 0x6f:0x1;
++   
++}
++
++inline static std::string getPathFromSensorNumber(uint8_t sensorNum)
++{
++    std::shared_ptr<SensorNumMap> sensorNumMapPtr;
++    details::getSensorNumMap(sensorNumMapPtr);
++    if (!sensorNumMapPtr)
++    {
++        return std::string();
++    }
++
++    try
++    {
++        return sensorNumMapPtr->left.at(sensorNum);
++    }
++    catch (std::out_of_range& e)
++    {
++        return std::string();
++    }
++}
++
++static inline bool getSensorAttributes(const double max, const double min,
++                                       int16_t& mValue, int8_t& rExp,
++                                       int16_t& bValue, int8_t& bExp,
++                                       bool& bSigned)
++{
++    static constexpr int16_t maxInt10 = 0x1FF;
++    static constexpr int16_t minInt10 = -0x200;
++    static constexpr int8_t maxInt4 = 7;
++    static constexpr int8_t minInt4 = -8;
++
++    // computing y = (10^rRexp) * (Mx + (B*(10^Bexp)))
++    // check for 0, assume always positive
++    double mDouble;
++    double bDouble;
++    if (max <= min)
++    {
++        std::cerr << "getSensorAttributes: Max must be greater than min\n";
++        return false;
++    }
++
++    mDouble = (max - min) / 0xFF;
++
++    if (min < 0)
++    {
++        bSigned = true;
++        bDouble = floor(0.5 + ((max + min) / 2));
++    }
++    else
++    {
++        bSigned = false;
++        bDouble = min;
++    }
++
++    rExp = 0;
++
++    // M too big for 10 bit variable
++    while (mDouble > maxInt10)
++    {
++        if (rExp >= maxInt4)
++        {
++            std::cerr << "rExp Too big, Max and Min range too far REXP=" << rExp
++                      << "\n";
++            return false;
++        }
++        mDouble /= 10;
++        rExp++;
++    }
++
++    // M too small, loop until we lose less than 1 eight bit count of precision
++    while (((mDouble - floor(mDouble)) / mDouble) > (1.0 / 255))
++    {
++        if (rExp <= minInt4)
++        {
++            std::cerr << "rExp Too Small, Max and Min range too close\n";
++            return false;
++        }
++        // check to see if we reached the limit of where we can adjust back the
++        // B value
++        if (bDouble / std::pow(10, rExp + minInt4 - 1) > bDouble)
++        {
++            if (mDouble < 1.0)
++            {
++                std::cerr << "Could not find mValue and B value with enough "
++                             "precision.\n";
++                return false;
++            }
++            break;
++        }
++        // can't multiply M any more, max precision reached
++        else if (mDouble * 10 > maxInt10)
++        {
++            break;
++        }
++        mDouble *= 10;
++        rExp--;
++    }
++
++    bDouble /= std::pow(10, rExp);
++    bExp = 0;
++
++    // B too big for 10 bit variable
++    while (bDouble > maxInt10 || bDouble < minInt10)
++    {
++        if (bExp >= maxInt4)
++        {
++            std::cerr
++                << "bExp Too Big, Max and Min range need to be adjusted\n";
++            return false;
++        }
++        bDouble /= 10;
++        bExp++;
++    }
++
++    while (((fabs(bDouble) - floor(fabs(bDouble))) / fabs(bDouble)) >
++           (1.0 / 255))
++    {
++        if (bExp <= minInt4)
++        {
++            std::cerr
++                << "bExp Too Small, Max and Min range need to be adjusted\n";
++            return false;
++        }
++        bDouble *= 10;
++        bExp -= 1;
++    }
++
++    mValue = static_cast<int16_t>(std::round(mDouble)) & maxInt10;
++    bValue = static_cast<int16_t>(bDouble) & maxInt10;
++
++    return true;
++}
++} // namespace ipmi
++
++
++std::string getEventType(uint8_t eventType)
++{
++    uint8_t eventTypeSplit = (eventType & 0x7f);
++    
++    if (eventTypeSplit == 0)
++            return "Unspecified";
++    if (eventTypeSplit == 1)
++            return "Threshold";
++    if (eventTypeSplit >= 0x02 && eventTypeSplit <= 0x0b)
++            return "Generic Discrete";
++    if (eventTypeSplit == 0x6f)
++            return "Sensor-specific Discrete";
++    if (eventTypeSplit >= 0x70 && eventTypeSplit <= 0x7f)
++            return "OEM";
++    return "Reserved";
++}
++
++std::string getEventDesc(uint8_t sensorType, uint8_t eventType, uint8_t eventData1,
++                        uint8_t eventData2)
++{
++    const struct ipmiEventSensorTypes *evt = NULL;
++    uint8_t eventTypeSplit = (eventType & 0x7f);
++    std::string desc;
++
++    uint8_t offset = eventData1 & 0xf;
++
++    for (evt = ipmitool::ipmiGetFirstEventSensorType(sensorType, eventTypeSplit);
++         evt; evt = ipmitool::ipmiGetNextEventSensorType(evt))
++    {
++        if ((evt->offset == offset && evt->desc) &&
++            ((evt->data == ALL_OFFSETS_SPECIFIED) ||
++             ((eventData1 & DATA_BYTE2_SPECIFIED_MASK) &&
++              (evt->data == eventData2))))
++        {
++            desc = evt->desc;
++            return desc;
++        }
++    }
++
++    return desc;
++}
++
++bool getSensorMaxMin(std::string path, double &max, double &min)
++{
++    auto bus = sdbusplus::bus::new_default();
++    constexpr auto PROP_INTERFACE = "org.freedesktop.DBus.Properties";
++    constexpr auto VALUE_INTERFACE = "xyz.openbmc_project.Sensor.Value";
++
++    std::map<std::string, std::variant<bool, uint8_t, int16_t, uint16_t, int32_t, uint32_t,
++                           int64_t, uint64_t, double, std::string>> properties;
++    try
++    {
++        auto method = bus.new_method_call(getService(VALUE_INTERFACE,path).c_str(), path.c_str(),
++                                        PROP_INTERFACE, "GetAll");
++        method.append(VALUE_INTERFACE);
++
++        auto reply = bus.call(method);
++
++        if (reply.is_method_error())
++        {
++            return false;
++        }
++
++        reply.read(properties);
++
++        max = std::get<double>(properties["MaxValue"]);
++        min = std::get<double>(properties["MinValue"]);
++    }
++    catch (const std::exception& e)
++    {
++        return false;
++    }
++
++    return true;
++}
++
++std::string thresholdReadingHandler(std::string path,uint8_t eventData1, 
++                                    uint8_t eventData2, uint8_t eventData3)
++{
++    std::string thresholdResult = "";
++    struct sensors sensor;
++    int16_t mValue = 0;
++    int8_t rExp = 0;
++    int16_t bValue = 0;
++    int8_t bExp = 0;
++    bool bSigned = false;
++
++    uint8_t m_lsb;
++    uint8_t m_msb_and_tolerance;
++    uint8_t b_lsb;
++    uint8_t b_msb_and_accuracy_lsb;
++    uint8_t accuracy_and_sensor_direction = 0x00;
++    uint8_t r_b_exponents;
++    uint8_t sensorUnits1 = 0x00;
++    uint8_t sensorUnits2Base = 0x00;
++    uint8_t sensorUnits3Modifier = 0x00;
++
++    sensor.linearization = 0x00;
++
++    double max = 128;
++    double min = -127;
++
++    if(!getSensorMaxMin(path,max,min))
++    {
++        return thresholdResult;
++    }
++
++    std::string type = ipmi::getSensorTypeStringFromPath(path);
++    auto typeCstr = type.c_str();
++    auto findUnits = sensorUnits.find(typeCstr);
++    if (findUnits != sensorUnits.end())
++    {
++        sensorUnits2Base =
++            static_cast<uint8_t>(findUnits->second);
++    } // else default 0x0 unspecified
++
++    if (!ipmi::getSensorAttributes(max, min, mValue, rExp, bValue, bExp, bSigned))
++    {
++        return thresholdResult;
++    }
++
++    // apply M, B, and exponents, M and B are 10 bit values, exponents are 4
++    m_lsb = mValue & 0xFF;
++
++    // move the smallest bit of the MSB into place (bit 9)
++    // the MSbs are bits 7:8 in m_msb_and_tolerance
++    uint8_t mMsb = (mValue & (1 << 8)) > 0 ? (1 << 6) : 0;
++
++    // assign the negative
++    if (mValue < 0)
++    {
++        mMsb |= (1 << 7);
++    }
++    m_msb_and_tolerance = mMsb;
++
++    b_lsb = bValue & 0xFF;
++
++    // move the smallest bit of the MSB into place
++    // the MSbs are bits 7:8 in b_msb_and_accuracy_lsb
++    uint8_t bMsb = (bValue & (1 << 8)) > 0 ? (1 << 6) : 0;
++
++    // assign the negative
++    if (bValue < 0)
++    {
++        bMsb |= (1 << 7);
++    }
++    b_msb_and_accuracy_lsb = bMsb;
++
++    r_b_exponents = bExp & 0x7;
++    if (bExp < 0)
++    {
++        r_b_exponents |= 1 << 3;
++    }
++    r_b_exponents = (rExp & 0x7) << 4;
++    if (rExp < 0)
++    {
++        r_b_exponents |= 1 << 7;
++    }
++
++    // todo fill out rest of units
++    if (bSigned)
++    {
++        sensorUnits1 = 1 << 7;
++    }
++
++    sensor.mtol = (m_msb_and_tolerance << 8) +
++                  m_lsb;
++    sensor.bacc = (r_b_exponents << 24) +
++                  (accuracy_and_sensor_direction << 16) +
++                  (b_msb_and_accuracy_lsb << 8) +
++                  b_lsb;
++    sensor.analog = (sensorUnits1 & 0xc0) >> 6;
++
++    thresholdResult = "Reading " +
++                      toStringWithPrecision(ipmitool::sdrConvertSensorReading(&sensor,eventData2),2) +
++                      (((eventData1 & 0xf) % 2) ? " > " : " < ") +
++                      "Threshold " +
++                      toStringWithPrecision(ipmitool::sdrConvertSensorReading(&sensor,eventData3),2) +
++                      " " +
++                      ipmitool::ipmiSdrGetUnitString((sensorUnits1 & 0x01),
++                                           ((sensorUnits1 & 0x06) >> 1),
++                                           sensorUnits2Base,
++                                           sensorUnits3Modifier);
++
++    return thresholdResult;
++}
++
++bool checkEventExist(std::string logEntry)
++{
++    if (std::find(logEntryBuffer.begin(), logEntryBuffer.end(),logEntry)!=logEntryBuffer.end())
++    {
++        return true;
++    }
++
++    logEntryBuffer.push_back(logEntry);
++    return false;
++
++}
++
++void clearEventBuffer()
++{
++    logEntryBuffer.clear();
++}
++
++void SELEntryHandler(std::vector<std::string>& logEntryFields, MessageID messageID,
++                    uint8_t recordType, uint16_t generatorID, uint8_t evmRev,
++                    uint8_t sensorType, uint8_t sensorNum, uint8_t eventType,
++                    uint8_t eventData1, uint8_t eventData2, uint8_t eventData3)
++{
++    std::string eventDir;
++    if(eventType & 0x80)
++    {
++        eventDir = "Deassertion";
++    }
++    else
++    {
++        eventDir = "Assertion";
++    }
++
++    logEntryFields.insert(logEntryFields.end(),"reserved");
++    logEntryFields.insert(logEntryFields.end(),hexToSring<uint8_t>(sensorNum,true));
++    logEntryFields.insert(logEntryFields.end(),hexToSring<uint8_t>(sensorType,true));
++    logEntryFields.insert(logEntryFields.end(),hexToSring<uint8_t>(recordType,true));
++    logEntryFields.insert(logEntryFields.end(),hexToSring<uint16_t>(generatorID,true));
++    logEntryFields.insert(logEntryFields.end(),hexToSring<uint8_t>(evmRev,true));
++    logEntryFields.insert(logEntryFields.end(),eventDir);
++    logEntryFields.insert(logEntryFields.end(),hexToSring<uint8_t>((eventType & 0x7f),true));
++    logEntryFields.insert(logEntryFields.end(),hexToSring<uint8_t>(eventData1,true));
++    logEntryFields.insert(logEntryFields.end(),hexToSring<uint8_t>(eventData2,true));
++    logEntryFields.insert(logEntryFields.end(),hexToSring<uint8_t>(eventData3,true));
++}
++
++void SELEntryOKHandler(std::vector<std::string>& logEntryFields, MessageID messageID,
++                    uint8_t recordType, uint16_t generatorID, uint8_t evmRev,
++                    uint8_t sensorType, uint8_t sensorNum, uint8_t eventType,
++                    uint8_t eventData1, uint8_t eventData2, uint8_t eventData3)
++{
++    std::string eventDir;
++    std::string connection;
++    std::string path;
++    std::string sensorStr;
++    std::string sensorTypeStr;
++
++    if(eventType & 0x80)
++    {
++        eventDir = "Deassertion";
++    }
++    else
++    {
++        eventDir = "Assertion";
++    }
++
++    path = ipmi::getPathFromSensorNumber(sensorNum);
++
++    if (path.empty())
++    {
++        sensorStr = hexToSring<uint8_t>(sensorNum,true);
++    }
++    else
++    {
++        sensorStr = ipmi::getSensorNameStringFromPath(path);
++    }
++
++    sensorTypeStr = ipmitool::ipmiGetGenericSensorType(sensorType);
++
++    if(sensorTypeStr.empty())
++    {
++        sensorTypeStr = hexToSring<uint8_t>(sensorType,true);
++    }
++
++    logEntryFields.insert(logEntryFields.end(),"reserved");
++    logEntryFields.insert(logEntryFields.end(),sensorStr);
++    logEntryFields.insert(logEntryFields.end(),sensorTypeStr);
++    logEntryFields.insert(logEntryFields.end(),getEventDesc(sensorType,eventType,eventData1,eventData2));
++    logEntryFields.insert(logEntryFields.end(),hexToSring<uint8_t>(recordType,true));
++    logEntryFields.insert(logEntryFields.end(),hexToSring<uint16_t>(generatorID,true));
++    logEntryFields.insert(logEntryFields.end(),hexToSring<uint8_t>(evmRev,true));
++    logEntryFields.insert(logEntryFields.end(),hexToSring<uint8_t>(eventData1,true));
++    logEntryFields.insert(logEntryFields.end(),hexToSring<uint8_t>(eventData2,true));
++    logEntryFields.insert(logEntryFields.end(),hexToSring<uint8_t>(eventData3,true));
++    logEntryFields.insert(logEntryFields.end(),eventDir);
++    logEntryFields.insert(logEntryFields.end(),getEventType(eventType));
++}
++
++void SELEntryThresholdHandler(std::vector<std::string>& logEntryFields, MessageID messageID,
++                    uint8_t recordType, uint16_t generatorID, uint8_t evmRev,
++                    uint8_t sensorType, uint8_t sensorNum, uint8_t eventType,
++                    uint8_t eventData1, uint8_t eventData2, uint8_t eventData3)
++{
++    std::string eventDir;
++    std::string connection;
++    std::string path;
++    std::string sensorStr;
++    std::string sensorTypeStr;
++    std::string eventDesc;
++
++    if(eventType & 0x80)
++    {
++        eventDir = "Deassertion";
++    }
++    else
++    {
++        eventDir = "Assertion";
++    }
++
++    path = ipmi::getPathFromSensorNumber(sensorNum);
++
++    if (path.empty())
++    {
++        sensorStr = hexToSring<uint8_t>(sensorNum,true);
++        eventDesc = getEventDesc(sensorType,eventType,eventData1,eventData2);
++    }
++    else
++    {
++        sensorStr = ipmi::getSensorNameStringFromPath(path);
++        eventDesc = getEventDesc(sensorType,eventType,eventData1,eventData2) +
++                    ", " +
++                    thresholdReadingHandler(path,eventData1,eventData2,eventData3);
++    }
++
++    sensorTypeStr = ipmitool::ipmiGetGenericSensorType(sensorType);
++
++    if(sensorTypeStr.empty())
++    {
++        sensorTypeStr = hexToSring<uint8_t>(sensorType,true);
++    }
++
++    logEntryFields.insert(logEntryFields.end(),"reserved");
++    logEntryFields.insert(logEntryFields.end(),sensorStr);
++    logEntryFields.insert(logEntryFields.end(),sensorTypeStr);
++    logEntryFields.insert(logEntryFields.end(),eventDesc);
++    logEntryFields.insert(logEntryFields.end(),hexToSring<uint8_t>(recordType,true));
++    logEntryFields.insert(logEntryFields.end(),hexToSring<uint16_t>(generatorID,true));
++    logEntryFields.insert(logEntryFields.end(),hexToSring<uint8_t>(evmRev,true));
++    logEntryFields.insert(logEntryFields.end(),hexToSring<uint8_t>(eventData1,true));
++    logEntryFields.insert(logEntryFields.end(),hexToSring<uint8_t>(eventData2,true));
++    logEntryFields.insert(logEntryFields.end(),hexToSring<uint8_t>(eventData3,true));
++    logEntryFields.insert(logEntryFields.end(),eventDir);
++    logEntryFields.insert(logEntryFields.end(),getEventType(eventType));
++
++}
++
++MessageID setMessageID(uint8_t eventType, uint8_t eventData1)
++{
++    uint8_t eventTypeSplit = (eventType & 0x7f);
++    MessageID messageID = MessageID::SELEntry;
++
++    if(eventTypeSplit == 0x01)
++    {
++        switch(eventData1  & 0x0f)
++        {
++            case 0x02:
++            case 0x03:
++            case 0x04:
++            case 0x05:
++            case 0x08:
++            case 0x09:
++            case 0x0A:
++            case 0x0B:
++                messageID = MessageID::SELEntryCritical;
++                break;
++            case 0x00:
++            case 0x01:
++            case 0x06:
++                messageID = MessageID::SELEntryWarning;
++                break;
++            default:
++                messageID = MessageID::SELEntry;
++                break;
++        }
++    }
++    else if((0x02 <= eventTypeSplit) && (eventTypeSplit <= 0x0C))
++    {
++        messageID = MessageID::SELEntryOK;
++    }
++    else if(eventTypeSplit == 0x6f)
++    {
++        messageID = MessageID::SELEntryOK;
++    }
++    else
++    {
++        messageID = MessageID::SELEntry;
++    }
++    return messageID;
++}
++
++void setmessageArgs(std::vector<std::string>& logEntryFields, MessageID messageID,
++                    uint8_t recordType, uint16_t generatorID, uint8_t evmRev,
++                    uint8_t sensorType, uint8_t sensorNum, uint8_t eventType,
++                    uint8_t eventData1, uint8_t eventData2, uint8_t eventData3)
++{
++    switch (messageID)
++    {
++        case MessageID::SELEntry:
++            SELEntryHandler(logEntryFields, messageID, recordType,
++                            generatorID, evmRev, sensorType,
++                            sensorNum, eventType, eventData1,
++                            eventData2, eventData3);
++            break;
++        case MessageID::SELEntryOK:
++            SELEntryOKHandler(logEntryFields, messageID, recordType,
++                            generatorID, evmRev, sensorType,
++                            sensorNum, eventType, eventData1,
++                            eventData2, eventData3);
++            break;
++        case MessageID::SELEntryCritical:
++        case MessageID::SELEntryWarning:
++            SELEntryThresholdHandler(logEntryFields, messageID, recordType,
++                            generatorID, evmRev, sensorType,
++                            sensorNum, eventType, eventData1,
++                            eventData2, eventData3);
++            break;
++        default:
++            SELEntryHandler(logEntryFields, messageID, recordType,
++                            generatorID, evmRev, sensorType,
++                            sensorNum, eventType, eventData1,
++                            eventData2, eventData3);
++            break;
++    }
++}
++
++bool clearSEL()
++{
++    static constexpr auto ipmiBusName = "xyz.openbmc_project.Logging.IPMI";
++    static constexpr auto ipmiObjPath = "/xyz/openbmc_project/Logging/IPMI";
++    static constexpr auto ipmiIntf = "xyz.openbmc_project.Logging.IPMI";
++    static constexpr char const* eventCleared= "/xyz/openbmc_project/sensors/event_disabled/EVENT_CLEARED";
++    std::vector<uint8_t> eventData{0x02,0xFF,0xff};
++
++    auto bus = sdbusplus::bus::new_default();
++    uint16_t genid = 0x20;
++    bool assert=1;
++
++    auto method = bus.new_method_call(ipmiBusName, ipmiObjPath, ipmiIntf, "IpmiSelAdd");
++    method.append("SEL Entry",  std::string(eventCleared), eventData, assert, genid);
++
++    try
++    {
++        bus.call(method);
++    }
++    catch (sdbusplus::exception_t& e)
++    {
++       return false;
++    }
++
++    return true;
++}
+\ No newline at end of file
+diff --git a/redfish-core/lib/log_services.hpp b/redfish-core/lib/log_services.hpp
+old mode 100644
+new mode 100755
+index 59ebf51..57e4b7a
+--- a/redfish-core/lib/log_services.hpp
++++ b/redfish-core/lib/log_services.hpp
+@@ -42,10 +42,15 @@
+ #include <span>
+ #include <string_view>
+ #include <variant>
++#include <utils/logutils.hpp>
+ 
+ namespace redfish
+ {
+ 
++#define RESPONSE_OK     0x00
++#define RESPONSE_END    0x01
++#define RESPONSE_IGNORE 0x02
++
+ constexpr char const* crashdumpObject = "com.intel.crashdump";
+ constexpr char const* crashdumpPath = "/com/intel/crashdump";
+ constexpr char const* crashdumpInterface = "com.intel.crashdump";
+@@ -346,10 +351,9 @@ inline static bool
+ }
+ 
+ static bool
+-    getRedfishLogFiles(std::vector<std::filesystem::path>& redfishLogFiles)
++    getRedfishLogFiles(std::vector<std::filesystem::path>& redfishLogFiles, const std::string redfishLogFilename)
+ {
+-    static const std::filesystem::path redfishLogDir = "/var/log";
+-    static const std::string redfishLogFilename = "redfish";
++    static const std::filesystem::path redfishLogDir = "/var/lib/ipmi";
+ 
+     // Loop through the directory looking for redfish log files
+     for (const std::filesystem::directory_entry& dirEnt :
+@@ -1053,11 +1057,11 @@ inline void requestRoutesJournalEventLogClear(App& app)
+         "/redfish/v1/Systems/system/LogServices/EventLog/Actions/LogService.ClearLog/")
+         .privileges({{"ConfigureComponents"}})
+         .methods(boost::beast::http::verb::post)(
+-            [](const crow::Request&,
++            [](const crow::Request& req,
+                const std::shared_ptr<bmcweb::AsyncResp>& asyncResp) {
+                 // Clear the EventLog by deleting the log files
+                 std::vector<std::filesystem::path> redfishLogFiles;
+-                if (getRedfishLogFiles(redfishLogFiles))
++                if (getRedfishLogFiles(redfishLogFiles, "redfish"))
+                 {
+                     for (const std::filesystem::path& file : redfishLogFiles)
+                     {
+@@ -1065,6 +1069,30 @@ inline void requestRoutesJournalEventLogClear(App& app)
+                         std::filesystem::remove(file, ec);
+                     }
+                 }
++                if (getRedfishLogFiles(redfishLogFiles, "ipmi_sel"))
++                {
++                    for (const std::filesystem::path& file : redfishLogFiles)
++                    {
++                        std::error_code ec;
++                        std::filesystem::remove(file, ec);
++                    }
++                }
++
++                static boost::asio::steady_timer timeout(*req.ioService);
++                timeout.expires_after(std::chrono::seconds(3));
++                timeout.async_wait([asyncResp](const boost::system::error_code& ec) {
++                    if (ec)
++                    {
++                        // operation_aborted is expected if timer is canceled before
++                        // completion.
++                        if (ec != boost::asio::error::operation_aborted)
++                        {
++                            BMCWEB_LOG_ERROR << "Async_wait failed " << ec;
++                        }
++                        return;
++                    }
++                    clearSEL();
++                });
+ 
+                 // Reload rsyslog so it knows to start new log files
+                 crow::connections::systemBus->async_method_call(
+@@ -1094,14 +1122,14 @@ static int fillEventLogEntryJson(const std::string& logEntryID,
+     size_t space = logEntry.find_first_of(' ');
+     if (space == std::string::npos)
+     {
+-        return 1;
++        return RESPONSE_END;
+     }
+     std::string timestamp = logEntry.substr(0, space);
+     // Then get the log contents
+     size_t entryStart = logEntry.find_first_not_of(' ', space);
+     if (entryStart == std::string::npos)
+     {
+-        return 1;
++        return RESPONSE_END;
+     }
+     std::string_view entry(logEntry);
+     entry.remove_prefix(entryStart);
+@@ -1112,13 +1140,81 @@ static int fillEventLogEntryJson(const std::string& logEntryID,
+     // We need at least a MessageId to be valid
+     if (logEntryFields.empty())
+     {
+-        return 1;
++        return RESPONSE_END;
++    }
++    std::string messageID = logEntryFields[0];
++
++    std::string entryType;
++    std::string name;
++    MessageID messageIDBuffer;
++    std::string messageBuffer;
++
++    if (messageID.find("OpenBMC")==std::string::npos)
++    {
++        //Workaround for rsyslog record same record ID
++        if(checkEventExist(logEntryFields[0]))
++        {
++            return RESPONSE_IGNORE;
++        }
++
++        entryType = "SEL";
++
++        name = "Log Entry " + logEntryFields[0];
++
++        std::string eventDataStr = logEntryFields[2];
++        std::vector<uint8_t> eventDataBytes;
++        fromHexStr(eventDataStr, eventDataBytes);
++
++        uint8_t recordType = std::stoul(logEntryFields[1], nullptr, 16);
++
++        if(eventDataBytes.size() > 3)
++        {
++            uint16_t generatorID = (eventDataBytes[1] << 8) + eventDataBytes[0];
++            messageID = hexToSring<uint8_t>(eventDataBytes[eventDataBytes.size()-4],true)+
++              hexToSring<uint8_t>(eventDataBytes[6],false)+
++              hexToSring<uint8_t>(eventDataBytes[7],false)+
++              hexToSring<uint8_t>(eventDataBytes[8],false);
++            messageIDBuffer = setMessageID(eventDataBytes[5],eventDataBytes[6]);
++            messageBuffer = MessageIDToString(messageIDBuffer);
++            logEntryFields.clear();
++            setmessageArgs(logEntryFields, messageIDBuffer, recordType, generatorID, eventDataBytes[2],
++                           eventDataBytes[3], eventDataBytes[4],eventDataBytes[5], eventDataBytes[6],
++                           eventDataBytes[7], eventDataBytes[8]);
++        }
++        else
++        {
++            std::string sensorPath = logEntryFields[4];
++            bool eventDir = std::stoul(logEntryFields[5]) ? 0 : 1;
++            uint8_t sensorType = ipmi::getSensorTypeFromPath(sensorPath);
++            uint8_t sensorNum = ipmi::getSensorNumberFromPath(sensorPath);
++            uint8_t eventType = (ipmi::getSensorEventTypeFromPath(sensorPath) & 0x7f);
++            uint16_t generatorID = std::stoul(logEntryFields[3], nullptr, 16);
++            uint8_t evmRev = 0x04;
++
++            eventType = ((eventDir << 7) | eventType);
++
++            messageID = hexToSring<uint8_t>(eventType,true)+
++                hexToSring<uint8_t>(eventDataBytes[0],false)+
++                hexToSring<uint8_t>(eventDataBytes[1],false)+
++                hexToSring<uint8_t>(eventDataBytes[2],false);
++            messageIDBuffer = setMessageID(eventType,eventDataBytes[0]);
++            messageBuffer = MessageIDToString(messageIDBuffer);
++            logEntryFields.clear();
++            setmessageArgs(logEntryFields, messageIDBuffer, recordType, generatorID, evmRev,
++                           sensorType, sensorNum, eventType, eventDataBytes[0],
++                           eventDataBytes[1], eventDataBytes[2]);
++        }
++    }
++    else
++    {
++        entryType = "Event";
++        name = "System Event Log Entry";
++        messageBuffer = messageID;
+     }
+-    std::string& messageID = logEntryFields[0];
+ 
+     // Get the Message from the MessageRegistry
+     const message_registries::Message* message =
+-        message_registries::getMessage(messageID);
++        message_registries::getMessage(messageBuffer);
+ 
+     std::string msg;
+     std::string severity;
+@@ -1171,12 +1267,12 @@ static int fillEventLogEntryJson(const std::string& logEntryID,
+         {"@odata.id",
+          "/redfish/v1/Systems/system/LogServices/EventLog/Entries/" +
+              logEntryID},
+-        {"Name", "System Event Log Entry"},
++        {"Name", std::move(name)},
+         {"Id", logEntryID},
+         {"Message", std::move(msg)},
+         {"MessageId", std::move(messageID)},
+         {"MessageArgs", messageArgs},
+-        {"EntryType", "Event"},
++        {"EntryType", std::move(entryType)},
+         {"Severity", std::move(severity)},
+         {"Created", std::move(timestamp)}};
+     return 0;
+@@ -1216,10 +1312,13 @@ inline void requestRoutesJournalEventLogEntryCollection(App& app)
+             // Go through the log files and create a unique ID for each
+             // entry
+             std::vector<std::filesystem::path> redfishLogFiles;
+-            getRedfishLogFiles(redfishLogFiles);
++            getRedfishLogFiles(redfishLogFiles, "redfish");
++            getRedfishLogFiles(redfishLogFiles, "ipmi_sel");
+             uint64_t entryCount = 0;
+             std::string logEntry;
+ 
++            clearEventBuffer();
++
+             // Oldest logs are in the last file, so start there and loop
+             // backwards
+             for (auto it = redfishLogFiles.rbegin();
+@@ -1257,12 +1356,17 @@ inline void requestRoutesJournalEventLogEntryCollection(App& app)
+ 
+                     logEntryArray.push_back({});
+                     nlohmann::json& bmcLogEntry = logEntryArray.back();
+-                    if (fillEventLogEntryJson(idStr, logEntry, bmcLogEntry) !=
+-                        0)
++                    int ret = fillEventLogEntryJson(idStr, logEntry, bmcLogEntry);
++                    if (ret == RESPONSE_END)
+                     {
+                         messages::internalError(asyncResp->res);
+                         return;
+                     }
++                    else if(ret == RESPONSE_IGNORE)
++                    {
++                        entryCount--;
++                        logEntryArray.erase(logEntryArray.end()-1);
++                    }
+                 }
+             }
+             asyncResp->res.jsonValue["Members@odata.count"] = entryCount;
+@@ -1289,9 +1393,12 @@ inline void requestRoutesJournalEventLogEntry(App& app)
+                 // Go through the log files and check the unique ID for each
+                 // entry to find the target entry
+                 std::vector<std::filesystem::path> redfishLogFiles;
+-                getRedfishLogFiles(redfishLogFiles);
++                getRedfishLogFiles(redfishLogFiles, "redfish");
++                getRedfishLogFiles(redfishLogFiles, "ipmi_sel");
+                 std::string logEntry;
+ 
++                clearEventBuffer();
++
+                 // Oldest logs are in the last file, so start there and loop
+                 // backwards
+                 for (auto it = redfishLogFiles.rbegin();
+@@ -1320,9 +1427,9 @@ inline void requestRoutesJournalEventLogEntry(App& app)
+ 
+                         if (idStr == targetID)
+                         {
+-                            if (fillEventLogEntryJson(
+-                                    idStr, logEntry,
+-                                    asyncResp->res.jsonValue) != 0)
++                            int ret = fillEventLogEntryJson(idStr, logEntry, asyncResp->res.jsonValue);
++
++                            if (ret == RESPONSE_END)
+                             {
+                                 messages::internalError(asyncResp->res);
+                                 return;
+-- 
+2.7.4
+

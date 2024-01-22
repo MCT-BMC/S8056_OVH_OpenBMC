@@ -1,0 +1,8 @@
+[Unit]
+Description=Log Power buttong press 
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/env pwrbutton_update.sh
+SyslogIdentifier=pwrbutton_press
+

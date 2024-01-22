@@ -1,0 +1,95 @@
+From 50570898a7d8d46858db74e3fd354b479cfbb0e0 Mon Sep 17 00:00:00 2001
+From: Ren_Chen <Ren_Chen@wiwynn.com>
+Date: Thu, 22 Oct 2020 18:23:27 +0800
+Subject: [PATCH] Add to configure MaxValue and MinValue in ADC sensor
+ Decription: - The Setting of ADC sensor's MaxValue and MinValue are hard code
+ in the upstream code. We revise the method to set the MaxValue amd MinValue
+ sensor values from JSON.
+
+Designed:
+- Support to set MaxValue and MinValue from JSON.
+---
+ include/ADCSensor.hpp | 1 +
+ src/ADCSensor.cpp     | 8 +++-----
+ src/ADCSensorMain.cpp | 8 +++++++-
+ 3 files changed, 11 insertions(+), 6 deletions(-)
+
+diff --git a/include/ADCSensor.hpp b/include/ADCSensor.hpp
+index 9ba0060..ea76c57 100644
+--- a/include/ADCSensor.hpp
++++ b/include/ADCSensor.hpp
+@@ -67,6 +67,7 @@ class ADCSensor : public Sensor, public std::enable_shared_from_this<ADCSensor>
+               boost::asio::io_service& io, const std::string& sensorName,
+               std::vector<thresholds::Threshold>&& thresholds,
+               const double scaleFactor, const float pollRate,
++              const double maxValue, const double minValue,
+               PowerState readState, const std::string& sensorConfiguration,
+               std::optional<BridgeGpio>&& bridgeGpio);
+     ~ADCSensor() override;
+diff --git a/src/ADCSensor.cpp b/src/ADCSensor.cpp
+index ef7a90a..b1d2e89 100644
+--- a/src/ADCSensor.cpp
++++ b/src/ADCSensor.cpp
+@@ -39,9 +39,7 @@ static constexpr unsigned int gpioBridgeEnableMs = 20;
+ // scaling factor from hwmon
+ static constexpr unsigned int sensorScaleFactor = 1000;
+ 
+-static constexpr double roundFactor = 10000;     // 3 decimal places
+-static constexpr double maxVoltageReading = 1.8; // pre sensor scaling
+-static constexpr double minVoltageReading = 0;
++static constexpr double roundFactor = 10000; // 3 decimal places
+ 
+ ADCSensor::ADCSensor(const std::string& path,
+                      sdbusplus::asio::object_server& objectServer,
+@@ -49,13 +47,13 @@ ADCSensor::ADCSensor(const std::string& path,
+                      boost::asio::io_service& io, const std::string& sensorName,
+                      std::vector<thresholds::Threshold>&& thresholdsIn,
+                      const double scaleFactor, const float pollRate,
++                     const double maxValue, const double minValue,
+                      PowerState readState,
+                      const std::string& sensorConfiguration,
+                      std::optional<BridgeGpio>&& bridgeGpio) :
+     Sensor(boost::replace_all_copy(sensorName, " ", "_"),
+            std::move(thresholdsIn), sensorConfiguration,
+-           "xyz.openbmc_project.Configuration.ADC", false,
+-           maxVoltageReading / scaleFactor, minVoltageReading / scaleFactor,
++           "xyz.openbmc_project.Configuration.ADC", false, maxValue, minValue,
+            conn, readState),
+     std::enable_shared_from_this<ADCSensor>(), objServer(objectServer),
+     inputDev(io, open(path.c_str(), O_RDONLY)), waitTimer(io), path(path),
+diff --git a/src/ADCSensorMain.cpp b/src/ADCSensorMain.cpp
+index 9d29895..88f46ab 100644
+--- a/src/ADCSensorMain.cpp
++++ b/src/ADCSensorMain.cpp
+@@ -37,6 +37,8 @@
+ 
+ static constexpr bool debug = false;
+ static constexpr float pollRateDefault = 0.5;
++static constexpr double maxReading = 20;
++static constexpr double minReading = 0;
+ 
+ namespace fs = std::filesystem;
+ 
+@@ -238,6 +240,9 @@ void createSensors(
+                     setReadState(powerState, readState);
+                 }
+ 
++                auto limits = std::make_pair(minReading, maxReading);
++                findLimits(limits, baseConfiguration);
++
+                 auto findCPU = baseConfiguration->second.find("CPURequired");
+                 if (findCPU != baseConfiguration->second.end())
+                 {
+@@ -291,7 +296,8 @@ void createSensors(
+                 sensor = std::make_shared<ADCSensor>(
+                     path.string(), objectServer, dbusConnection, io, sensorName,
+                     std::move(sensorThresholds), scaleFactor, pollRate,
+-                    readState, *interfacePath, std::move(bridgeGpio));
++                    limits.second, limits.first, readState, *interfacePath,
++                    std::move(bridgeGpio));
+                 sensor->setupRead();
+             }
+         }));
+-- 
+2.28.0
+

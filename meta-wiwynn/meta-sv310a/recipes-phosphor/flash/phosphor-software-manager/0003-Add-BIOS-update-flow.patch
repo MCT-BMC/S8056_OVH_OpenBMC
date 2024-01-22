@@ -1,0 +1,269 @@
+From 2e8baa6819f11546ee4ee8ad5f215ea356d077fa Mon Sep 17 00:00:00 2001
+From: Ren_Chen <Ren_Chen@wiwynn.com>
+Date: Mon, 21 Jun 2021 10:08:48 +0800
+Subject: [PATCH 2/2] Add BIOS update flow
+
+Description:
+- Add bios update function, including set environment variable
+  and get firmware file name.
+
+Designed:
+- Add bios update function:
+  - Add function to get the bios firmware file name in the /tmp/image/<versionid>.
+  - Add set/unset environment variable function to set the bios firmware file name.
+---
+ activation.cpp                   | 81 ++++++++++++++++++++++++++------
+ activation.hpp                   |  2 +
+ image_manager.cpp                | 10 +++-
+ item_updater.cpp                 | 36 ++++++++++++++
+ item_updater.hpp                 |  6 +++
+ obmc-flash-host-bios@.service.in |  2 +-
+ 6 files changed, 120 insertions(+), 17 deletions(-)
+
+diff --git a/activation.cpp b/activation.cpp
+index 187f04c..bbc5c87 100644
+--- a/activation.cpp
++++ b/activation.cpp
+@@ -90,8 +90,11 @@ auto Activation::activation(Activations value) -> Activations
+     if (value == softwareServer::Activation::Activations::Activating)
+     {
+ 
++#if defined(HOST_BIOS_UPGRADE) || defined(CPLD_UPDATE)
++    auto purpose = parent.versions.find(versionId)->second->purpose();
++#endif
++
+ #ifdef HOST_BIOS_UPGRADE
+-        auto purpose = parent.versions.find(versionId)->second->purpose();
+         if (purpose == VersionPurpose::Host)
+         {
+             if (!activationProgress)
+@@ -313,8 +316,11 @@ void Activation::unitStateChange(sdbusplus::message::message& msg)
+         return;
+     }
+ 
+-#ifdef HOST_BIOS_UPGRADE
++#if defined(HOST_BIOS_UPGRADE) || defined(CPLD_UPDATE)
+     auto purpose = parent.versions.find(versionId)->second->purpose();
++#endif
++
++#ifdef HOST_BIOS_UPGRADE
+     if (purpose == VersionPurpose::Host)
+     {
+         onStateChangesBios(msg);
+@@ -446,18 +452,45 @@ void Activation::deleteFile()
+ #ifdef HOST_BIOS_UPGRADE
+ void Activation::flashWriteHost()
+ {
+-    auto method = bus.new_method_call(SYSTEMD_BUSNAME, SYSTEMD_PATH,
+-                                      SYSTEMD_INTERFACE, "StartUnit");
+-    auto biosServiceFile = "obmc-flash-host-bios@" + versionId + ".service";
+-    method.append(biosServiceFile, "replace");
+-    try
+-    {
+-        auto reply = bus.call(method);
+-    }
+-    catch (const SdBusError& e)
++    std::string bios_fw_file_name;
++    auto ret = getFwFileName(&bios_fw_file_name);
++    bios_info.clear();
++
++    if (ret == 0)
+     {
+-        log<level::ERR>("Error in trying to upgrade Host Bios.");
+-        report<InternalFailure>();
++        std::string bios_fw_file_name_str("bios_fw_file_name");
++
++        bios_fw_file_name = bios_fw_file_name_str + "=" + bios_fw_file_name;
++        bios_info.push_back(bios_fw_file_name);
++
++        auto set_environment_method = bus.new_method_call(SYSTEMD_BUSNAME, SYSTEMD_PATH,
++                                            SYSTEMD_INTERFACE, "SetEnvironment");
++
++        set_environment_method.append(bios_info);
++        try
++        {
++            auto reply = bus.call(set_environment_method);
++        }
++        catch (const SdBusError& e)
++        {
++            log<level::ERR>("Error in trying to SetEnvironment.");
++            deleteFile();
++            report<InternalFailure>();
++        }
++
++        auto method = bus.new_method_call(SYSTEMD_BUSNAME, SYSTEMD_PATH,
++                            SYSTEMD_INTERFACE, "StartUnit");
++        auto biosServiceFile = "obmc-flash-host-bios@" + versionId + ".service";
++        method.append(biosServiceFile, "replace");
++        try
++        {
++            auto reply = bus.call(method);
++        }
++        catch (const SdBusError& e)
++        {
++            log<level::ERR>("Error in trying to upgrade Host Bios.");
++            report<InternalFailure>();
++        }
+     }
+ }
+ 
+@@ -489,14 +522,32 @@ void Activation::onStateChangesBios(sdbusplus::message::message& msg)
+             // Set Activation value to active
+             activation(softwareServer::Activation::Activations::Active);
+ 
+-            log<level::INFO>("Bios upgrade completed successfully.");
++            // Unset environment proeprty
++            auto unset_environment_method = bus.new_method_call(SYSTEMD_BUSNAME, SYSTEMD_PATH,
++                                              SYSTEMD_INTERFACE, "UnsetEnvironment");
++ 
++            unset_environment_method.append(bios_info);
++            try
++            {
++                auto reply = bus.call(unset_environment_method);
++            }
++            catch (const SdBusError& e)
++            {
++                log<level::ERR>("Error in trying to UnsetEnvironment.");
++                report<InternalFailure>();
++            }
++
++            // Delete file in the /tmp/image/<version id>
++            deleteFile();
++
++            log<level::INFO>("BIOS upgrade completed successfully.");
+         }
+         else if (newStateResult == "failed")
+         {
+             // Set Activation value to Failed
+             activation(softwareServer::Activation::Activations::Failed);
+ 
+-            log<level::ERR>("Bios upgrade failed.");
++            log<level::ERR>("BIOS upgrade failed.");
+         }
+     }
+ 
+diff --git a/activation.hpp b/activation.hpp
+index 03e346b..cb77174 100644
+--- a/activation.hpp
++++ b/activation.hpp
+@@ -246,6 +246,8 @@ class Activation : public ActivationInherit, public Flash
+ 
+     /** @brief Function that acts on Bios upgrade service file state changes */
+     void onStateChangesBios(sdbusplus::message::message&);
++
++    std::vector<std::string> bios_info;
+ #endif
+ 
+ #ifdef CPLD_UPDATE
+diff --git a/image_manager.cpp b/image_manager.cpp
+index 96bd0bf..1fa3654 100644
+--- a/image_manager.cpp
++++ b/image_manager.cpp
+@@ -202,7 +202,7 @@ int Manager::processImage(const std::string& tarFilePath)
+         objPath = std::string{SOFTWARE_OBJPATH} + "/BMC";
+         imageDirPath /= "BMC";
+     }
+- 
++
+ #ifdef CPLD_UPDATE
+     if(purpose == Version::VersionPurpose::CPLD)
+     {
+@@ -211,6 +211,14 @@ int Manager::processImage(const std::string& tarFilePath)
+     }
+ #endif
+ 
++#ifdef HOST_BIOS_UPGRADE
++    if(purpose == Version::VersionPurpose::Host)
++    {
++       objPath = std::string{SOFTWARE_OBJPATH} + "/BIOS";
++       imageDirPath /= "BIOS";
++    }
++#endif
++
+     if (fs::exists(imageDirPath))
+     {
+         fs::remove_all(imageDirPath);
+diff --git a/item_updater.cpp b/item_updater.cpp
+index 5b35d47..e71c704 100644
+--- a/item_updater.cpp
++++ b/item_updater.cpp
+@@ -627,6 +627,42 @@ void ItemUpdater::processCPLDImage()
+                 bus, path, *this, id, activationState, associations)));
+ }
+ 
++void ItemUpdater::processBIOSImage()
++{
++    using VersionClass = phosphor::software::manager::Version;
++    std::string version = "NULL";
++    std::string id = "BIOS";
++    auto purpose = server::Version::VersionPurpose::Host;
++    auto path = fs::path(SOFTWARE_OBJPATH) / id;
++
++    AssociationList associations = {};
++
++    auto activationState = server::Activation::Activations::Active;
++    // Create an association to the BMC inventory item
++    associations.emplace_back(std::make_tuple(
++        ACTIVATION_FWD_ASSOCIATION, ACTIVATION_REV_ASSOCIATION,
++        bmcInventoryPath));
++
++    // Create an active association since this image is active
++    createActiveAssociation(path);
++
++    // Create Version instance for this version.
++    auto versionPtr = std::make_unique<VersionClass>(
++        bus, path, version, purpose, "", "",
++        std::bind(&ItemUpdater::erase, this, std::placeholders::_1));
++
++    versionPtr->deleteObject =
++        std::make_unique<phosphor::software::manager::Delete>(
++            bus, path, *versionPtr);
++
++    versions.insert(std::make_pair(id, std::move(versionPtr)));
++
++    // Create Activation instance for this version.
++    activations.insert(std::make_pair(
++        id, std::make_unique<Activation>(
++                bus, path, *this, id, activationState, associations)));
++}
++
+ void ItemUpdater::createActiveAssociation(const std::string& path)
+ {
+     assocs.emplace_back(
+diff --git a/item_updater.hpp b/item_updater.hpp
+index 215eecf..39a6263 100644
+--- a/item_updater.hpp
++++ b/item_updater.hpp
+@@ -61,6 +61,7 @@ class ItemUpdater : public ItemUpdaterInherit
+     {
+         setBMCInventoryPath();
+         processBMCImage();
++        processBIOSImage();
+         processCPLDImage();
+         restoreFieldModeStatus();
+ #ifdef HOST_BIOS_UPGRADE
+@@ -93,6 +94,11 @@ class ItemUpdater : public ItemUpdaterInherit
+      */
+     void processBMCImage();
+ 
++    /**
++     * @brief Get BIOS Version.
++     */
++    void processBIOSImage();
++
+     /**
+      * @brief Get CPLD Version.
+      */
+diff --git a/obmc-flash-host-bios@.service.in b/obmc-flash-host-bios@.service.in
+index 13a01af..9282c4b 100644
+--- a/obmc-flash-host-bios@.service.in
++++ b/obmc-flash-host-bios@.service.in
+@@ -4,4 +4,4 @@ Description=Flash Host Bios image %I to Host
+ [Service]
+ Type=oneshot
+ RemainAfterExit=no
+-ExecStart=echo Please add custom command for flashing image /tmp/image/%i
++ExecStart=/usr/sbin/bios-updater ${bios_fw_file_name}
+-- 
+2.28.0
+

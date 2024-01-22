@@ -1,0 +1,24 @@
+From d6e60e5e8cda33f26fc48515b5081660cc6255a0 Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Thu, 18 Aug 2022 05:38:26 +0800
+Subject: [PATCH] Add additional information for updating progress
+
+---
+ activation.hpp | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/activation.hpp b/activation.hpp
+index 9b7a69c..199e723 100644
+--- a/activation.hpp
++++ b/activation.hpp
+@@ -159,6 +159,7 @@ class ActivationProgress : public ActivationProgressInherit
+                                   action::emit_interface_added)
+     {
+         progress(0);
++        additionalInfo("");
+     }
+ };
+ 
+-- 
+2.25.1
+

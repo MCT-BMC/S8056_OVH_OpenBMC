@@ -1,0 +1,109 @@
+From ab133fa441b7b1597a66244e628c01d4032dd224 Mon Sep 17 00:00:00 2001
+From: Eli Huang <Eli_Huang@wiwynn.com>
+Date: Thu, 29 Jul 2021 11:04:50 +0800
+Subject: [PATCH] Add flow for CPLD update through i2c
+
+---
+ activation.cpp              |  4 +++
+ image_manager.cpp           | 57 +++++++++++++++++++++++++++++++++++++
+ obmc-flash-cpld@.service.in |  2 +-
+ 3 files changed, 62 insertions(+), 1 deletion(-)
+
+diff --git a/activation.cpp b/activation.cpp
+index bbc5c87..2780604 100644
+--- a/activation.cpp
++++ b/activation.cpp
+@@ -626,6 +626,10 @@ void Activation::onStateChangesCPLD(sdbusplus::message::message& msg)
+ 
+         if (newStateResult == "done")
+         {
++            cpld_info.emplace_back("cpld_i2c_bus");
++            cpld_info.emplace_back("cpld_i2c_addr");
++            cpld_info.emplace_back("cpld_update_type");
++
+             // Set activation progress to 100
+             activationProgress->progress(100);
+ 
+diff --git a/image_manager.cpp b/image_manager.cpp
+index 1fa3654..ec43e94 100644
+--- a/image_manager.cpp
++++ b/image_manager.cpp
+@@ -208,6 +208,63 @@ int Manager::processImage(const std::string& tarFilePath)
+     {
+        objPath = std::string{SOFTWARE_OBJPATH} + "/CPLD";
+        imageDirPath /= "CPLD";
++
++        std::string cpldI2cBus("cpld_i2c_bus");
++        std::string cpldI2cAddr("cpld_i2c_addr");
++        std::string cpldUpdateType("cpld_update_type");
++        std::vector<std::string> cpldInfo;
++
++        //Get updateType
++        auto updateTypeString = Version::getValue(manifestPath.string(), "UpdateType");
++        if (updateTypeString.empty())
++        {
++            updateTypeString == "unKnown";
++        }
++
++        if(updateTypeString == "i2c" && purpose == Version::VersionPurpose::CPLD)
++        {
++            //Get bus
++            auto busString = Version::getValue(manifestPath.string(), "Bus");
++            if (busString.empty())
++            {
++                log<level::ERR>("Manifest error : Bus not found");
++                return -1;
++            }
++
++            //Get Addr
++            auto addrString = Version::getValue(manifestPath.string(), "Addr");
++            if (addrString.empty())
++            {
++                log<level::ERR>("Manifest error : address not found");
++                return -1;
++            }
++
++            cpldUpdateType = cpldUpdateType + "=i2c";
++            cpldI2cBus = cpldI2cBus + "=" + busString;
++            cpldI2cAddr = cpldI2cAddr + "=" + addrString;
++            cpldInfo.emplace_back(cpldI2cBus);
++            cpldInfo.emplace_back(cpldI2cAddr);
++        }
++        else
++        {
++            cpldUpdateType = cpldUpdateType + "=jtag";
++        }
++
++        cpldInfo.emplace_back(cpldUpdateType);
++
++        auto set_environment_method = bus.new_method_call(SYSTEMD_BUSNAME, SYSTEMD_PATH,
++                                            SYSTEMD_INTERFACE, "SetEnvironment");
++
++        set_environment_method.append(cpldInfo);
++        try
++        {
++            auto reply = bus.call(set_environment_method);
++        }
++        catch (const sdbusplus::exception::SdBusError& e)
++        {
++            log<level::ERR>("Error in trying to SetEnvironment.");
++            return -1;
++        }
+     }
+ #endif
+ 
+diff --git a/obmc-flash-cpld@.service.in b/obmc-flash-cpld@.service.in
+index a4bff72..647ceca 100644
+--- a/obmc-flash-cpld@.service.in
++++ b/obmc-flash-cpld@.service.in
+@@ -4,4 +4,4 @@ Description=Flash CPLD image to CPLD
+ [Service]
+ Type=oneshot
+ RemainAfterExit=no
+-ExecStart=/usr/sbin/cpld-updater ${cpld_fw_file_name}
+\ No newline at end of file
++ExecStart=/bin/sh -c 'if [ "${cpld_update_type}" == "i2c" ]; then /usr/sbin/cpld-updater --i2c ${cpld_i2c_bus} ${cpld_i2c_addr} ${cpld_fw_file_name}; else /usr/sbin/cpld-updater --jtag ${cpld_fw_file_name}; fi'
+\ No newline at end of file
+-- 
+2.32.0
+

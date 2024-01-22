@@ -1,0 +1,72 @@
+From 209be01e4249a33c16a2c4c27b851465e27001cd Mon Sep 17 00:00:00 2001
+From: Wayne Tung <Wayne_Tung@wiwynn.com>
+Date: Mon, 9 Nov 2020 10:52:32 +0800
+Subject: [PATCH] Add interrupt type in watchdog
+
+---
+ .../State/Watchdog.interface.yaml             | 38 +++++++++++++++++++
+ 1 file changed, 38 insertions(+)
+
+diff --git a/yaml/xyz/openbmc_project/State/Watchdog.interface.yaml b/yaml/xyz/openbmc_project/State/Watchdog.interface.yaml
+index f54ec3b..41a3a73 100644
+--- a/yaml/xyz/openbmc_project/State/Watchdog.interface.yaml
++++ b/yaml/xyz/openbmc_project/State/Watchdog.interface.yaml
+@@ -54,6 +54,11 @@ properties:
+       description: >
+           The timer user at the time of expiration.
+       default: 'Reserved'
++    - name: InterruptType
++      type: enum[self.InterruptType]
++      description: >
++          The timer interrupt type.
++      default: 'None'
+ 
+ enumerations:
+    - name: Action
+@@ -72,6 +77,22 @@ enumerations:
+        - name: 'PowerCycle'
+          description: >
+            Perform a power cycle of the system.
++       - name: 'Reserved1'
++         description: >
++           Reserved.
++       - name: 'Reserved2'
++         description: >
++           Reserved.
++       - name: 'Reserved3'
++         description: >
++           Reserved.
++       - name: 'Reserved4'
++         description: >
++           Reserved.
++       - name: 'TimerInterrupt'
++         default: 8
++         description: >
++           Timer is interrupted.
+ 
+    - name: TimerUse
+      description: >
+@@ -95,3 +116,20 @@ enumerations:
+        - name: 'OEM'
+          description: >
+            OEM.
++
++   - name: InterruptType
++     description: >
++       The interrupt type.
++     values:
++       - name: 'None'
++         description: >
++           None.
++       - name: 'SMI'
++         description: >
++           SMI.
++       - name: 'NMI'
++         description: >
++           NMI.
++       - name: 'MessagingInterrupt'
++         description: >
++           Messaging Interrupt.
+-- 
+2.28.0
+

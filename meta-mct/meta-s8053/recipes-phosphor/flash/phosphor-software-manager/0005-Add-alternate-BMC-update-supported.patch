@@ -1,0 +1,300 @@
+From 1e75726907e06b3d52eae9b61c88eddcecc69ffa Mon Sep 17 00:00:00 2001
+From: John Chung <john.chung@mic.com.tw>
+Date: Wed, 14 Dec 2022 11:16:37 +0800
+Subject: [PATCH] Add alternate BMC update supported
+
+Using fixed bmc devivce when updatting BMC flash
+---
+ activation.cpp                 | 145 +++++++++++++++++++++++++++++++++
+ activation.hpp                 |  14 ++++
+ item_updater.cpp               |  15 +++-
+ meson.build                    |   5 ++
+ meson_options.txt              |   3 +
+ obmc-flash-alt-bmc@.service.in |   9 ++
+ 6 files changed, 190 insertions(+), 1 deletion(-)
+ create mode 100644 obmc-flash-alt-bmc@.service.in
+
+diff --git a/activation.cpp b/activation.cpp
+index 6eaa099..ae9b082 100644
+--- a/activation.cpp
++++ b/activation.cpp
+@@ -152,6 +152,30 @@ auto Activation::activation(Activations value) -> Activations
+         }
+ #endif
+ 
++#ifdef ALT_BMC_UPGRADE
++        auto altBmcPurpose = parent.versions.find(versionId)->second->purpose();
++        if ((altBmcPurpose == VersionPurpose::BMC2 && getBmcbootSource() == 0) ||
++            (altBmcPurpose == VersionPurpose::BMC && getBmcbootSource() == 1))
++        {
++            if (!activationProgress)
++            {
++                activationProgress =
++                    std::make_unique<ActivationProgress>(bus, path);
++            }
++
++            // Enable systemd signals
++            subscribeToSystemdSignals();
++
++            // Set initial progress
++            activationProgress->progress(0);
++
++            // Initiate image writing to flash
++            flashWriteAltBmc();
++
++            return softwareServer::Activation::activation(value);
++        }
++#endif
++
+         auto versionStr = parent.versions.find(versionId)->second->version();
+ 
+         if (!minimum_ship_level::verify(versionStr))
+@@ -383,6 +407,16 @@ void Activation::unitStateChange(sdbusplus::message_t& msg)
+     }
+ #endif
+ 
++#ifdef ALT_BMC_UPGRADE
++    auto altBmcPurpose = parent.versions.find(versionId)->second->purpose();
++    if ((altBmcPurpose == VersionPurpose::BMC2 && getBmcbootSource() == 0) ||
++        (altBmcPurpose == VersionPurpose::BMC && getBmcbootSource() == 1))
++    {
++        onStateChangesAltBmc(msg);
++        return;
++    }
++#endif
++
+     onStateChanges(msg);
+ 
+     return;
+@@ -811,6 +845,117 @@ int32_t Activation::getSelectVrPurpose(std::string vrImagePath)
+ 
+ #endif
+ 
++#ifdef ALT_BMC_UPGRADE
++void Activation::flashWriteAltBmc()
++{
++    std::string imagePath;
++    auto ret = getAltBmcImagePath(imagePath);
++
++    if(ret!=0)
++    {
++        log<level::ERR>("Error in finding alt bmc path.");
++        report<InternalFailure>();
++        return;
++    }
++
++    std::replace(imagePath.begin(), imagePath.end(), '/', '-');
++
++    auto method = bus.new_method_call(SYSTEMD_BUSNAME, SYSTEMD_PATH,
++                                      SYSTEMD_INTERFACE, "StartUnit");
++    auto serviceFile = "obmc-flash-alt-bmc@" + imagePath + ".service";
++    method.append(serviceFile, "replace");
++    try
++    {
++        auto reply = bus.call(method);
++    }
++    catch (const sdbusplus::exception_t& e)
++    {
++        log<level::ERR>("Error in trying to upgrade alt bmc.");
++        report<InternalFailure>();
++    }
++}
++
++void Activation::onStateChangesAltBmc(sdbusplus::message::message& msg)
++{
++    uint32_t newStateID{};
++    sdbusplus::message::object_path newStateObjPath;
++    std::string newStateUnit{};
++    std::string newStateResult{};
++
++    // Read the msg and populate each variable
++    msg.read(newStateID, newStateObjPath, newStateUnit, newStateResult);
++
++    auto serviceFile = "obmc-flash-alt-bmc@" + versionId + ".service";
++
++    if (newStateUnit == serviceFile)
++    {
++        // unsubscribe to systemd signals
++        unsubscribeFromSystemdSignals();
++
++        // Remove version object from image manager
++        deleteImageManagerObject();
++
++        if (newStateResult == "done")
++        {
++            // Set activation progress to 100
++            activationProgress->progress(100);
++
++            // Set Activation value to active
++            activation(softwareServer::Activation::Activations::Active);
++
++            log<level::INFO>("ALT BMC upgrade completed successfully.");
++        }
++        else if (newStateResult == "failed")
++        {
++            // Set Activation value to Failed
++            activation(softwareServer::Activation::Activations::Failed);
++
++            log<level::ERR>("ALT BMC upgrade failed.");
++        }
++    }
++
++    return;
++}
++
++int32_t Activation::getAltBmcImagePath(std::string& imagePath)
++{
++    fs::path dirPath(std::string{IMG_UPLOAD_DIR});
++    dirPath = dirPath / versionId;
++
++    int fileCounter = 0;
++    for (auto& it: fs::directory_iterator(dirPath))
++    {
++        if ( it.path().filename() != "MANIFEST" )
++        {
++            imagePath = it.path();
++        }
++        fileCounter++;
++    }
++
++    // The count of files should be 2 : firmware file and Manifest.
++    if (fileCounter != 2)
++    {
++        log<level::ERR>("Erro in number of files");
++        return -1;
++    }
++
++    return 0;
++}
++
++uint8_t Activation::getBmcbootSource()
++{
++    static const std::string bootSourceFilePath = "/run/boot-source";
++    uint8_t bootSource = 0;
++    std::ifstream ifs(bootSourceFilePath);
++    std::string line;
++    getline(ifs, line);
++    bootSource = std::stoi(line);
++
++    return bootSource;
++}
++
++#endif
++
+ void Activation::rebootBmc()
+ {
+     auto method = bus.new_method_call(SYSTEMD_BUSNAME, SYSTEMD_PATH,
+diff --git a/activation.hpp b/activation.hpp
+index 3a23637..76f9115 100644
+--- a/activation.hpp
++++ b/activation.hpp
+@@ -276,6 +276,20 @@ class Activation : public ActivationInherit, public Flash
+     int32_t getSelectVrPurpose(std::string vrImagePath);
+ #endif
+ 
++#ifdef ALT_BMC_UPGRADE
++    /* @brief write to alt bmc flash function */
++    void flashWriteAltBmc();
++
++    /** @brief Function that acts on alt bmc upgrade service file state changes */
++    void onStateChangesAltBmc(sdbusplus::message::message&);
++
++    /** @brief Get the ALT BMC image path. */
++    int32_t getAltBmcImagePath(std::string&);
++
++    /** @brief Get the BMC boot source. */
++    uint8_t getBmcbootSource();
++#endif
++
+     /** @brief Overloaded function that acts on service file state changes */
+     void onStateChanges(sdbusplus::message_t&) override;
+ 
+diff --git a/item_updater.cpp b/item_updater.cpp
+index cd39c65..73544de 100644
+--- a/item_updater.cpp
++++ b/item_updater.cpp
+@@ -77,6 +77,9 @@ void ItemUpdater::createActivation(sdbusplus::message_t& msg)
+  #endif
+ #ifdef VR_UPGRADE
+                         value == VersionPurpose::VR ||
++#endif
++#ifdef ALT_BMC_UPGRADE
++                        value == VersionPurpose::BMC2 ||
+ #endif
+                         value == VersionPurpose::System)
+                     {
+@@ -142,7 +145,17 @@ void ItemUpdater::createActivation(sdbusplus::message_t& msg)
+         // Determine the Activation state by processing the given image dir.
+         auto activationState = server::Activation::Activations::Invalid;
+         ItemUpdater::ActivationStatus result;
+-        if (purpose == VersionPurpose::BMC || purpose == VersionPurpose::System)
++
++        static const std::string bootSourceFilePath = "/run/boot-source";
++        uint8_t bootSource = 0;
++        std::ifstream ifs(bootSourceFilePath);
++        std::string line;
++        getline(ifs, line);
++        bootSource = std::stoi(line);
++
++        if ((purpose == VersionPurpose::BMC && bootSource == 0) ||
++            (purpose == VersionPurpose::BMC2 && bootSource == 1) ||
++             purpose == VersionPurpose::System)
+             result = ItemUpdater::validateSquashFSImage(filePath);
+         else
+             result = ItemUpdater::ActivationStatus::ready;
+diff --git a/meson.build b/meson.build
+index 83c8e72..15481fb 100644
+--- a/meson.build
++++ b/meson.build
+@@ -69,6 +69,7 @@ conf.set('MMC_LAYOUT', get_option('bmc-layout').contains('mmc'))
+ conf.set('HOST_BIOS_UPGRADE', get_option('host-bios-upgrade').enabled())
+ conf.set('CPLD_UPGRADE', get_option('cpld-upgrade').enabled())
+ conf.set('VR_UPGRADE', get_option('vr-upgrade').enabled())
++conf.set('ALT_BMC_UPGRADE', get_option('alt-bmc-upgrade').enabled())
+ conf.set('WANT_SIGNATURE_VERIFY', \
+     get_option('verify-signature').enabled() or \
+     get_option('verify-full-signature').enabled())
+@@ -227,6 +228,10 @@ if get_option('vr-upgrade').enabled()
+     unit_files += 'obmc-flash-vr-p0-vddio@.service.in'
+ endif
+ 
++if get_option('alt-bmc-upgrade').enabled()
++    unit_files += 'obmc-flash-alt-bmc@.service.in'
++endif
++
+ if get_option('sync-bmc-files').enabled()
+     executable(
+         'phosphor-sync-software-manager',
+diff --git a/meson_options.txt b/meson_options.txt
+index f7410d1..30db681 100644
+--- a/meson_options.txt
++++ b/meson_options.txt
+@@ -18,6 +18,9 @@ option('cpld-upgrade', type: 'feature',
+ option('vr-upgrade', type: 'feature',
+     description: 'Enable vr upgrade support.')
+ 
++option('alt-bmc-upgrade', type: 'feature',
++    description: 'Enable alt bmc upgrade support.')
++
+ option('sync-bmc-files', type: 'feature', value: 'enabled',
+     description: 'Enable sync of filesystem files.')
+ 
+diff --git a/obmc-flash-alt-bmc@.service.in b/obmc-flash-alt-bmc@.service.in
+new file mode 100644
+index 0000000..b211fae
+--- /dev/null
++++ b/obmc-flash-alt-bmc@.service.in
+@@ -0,0 +1,9 @@
++[Unit]
++Description=Flash alternate BMC image %I to Host
++
++[Service]
++Type=oneshot
++RemainAfterExit=no
++ExecStart=/usr/bin/env alt-bmc-update-handler %I 1
++ExecStartPost=/usr/bin/env image-active %I Ready None
++SyslogIdentifier=alt-bmc-update-handler
+\ No newline at end of file
+-- 
+2.25.1
+
